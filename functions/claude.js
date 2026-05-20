@@ -1,9 +1,7 @@
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405 }
-
   try {
     const body = JSON.parse(event.body)
-
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -18,18 +16,9 @@ exports.handler = async (event) => {
         messages: body.messages
       })
     })
-
     const data = await response.json()
-
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }
+    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }
   } catch (e) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: e.message })
-    }
+    return { statusCode: 500, body: JSON.stringify({ error: e.message }) }
   }
 }
