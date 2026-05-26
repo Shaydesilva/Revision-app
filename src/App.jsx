@@ -407,21 +407,88 @@ async function claudeSearch(query,cards){
   catch{return[]}
 }
 
-async function extractFromPDF(b64,existing){
+function normPT(s){
+  return(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()
+}
+
+async function extractFromPDF(b64,existingCards){
   try{
-    const raw=await callClaude(`Extract NEW vocabulary phrases and grammar from this Brazilian Portuguese lesson document.
-STRICT RULES:
-- SKIP entirely any section labeled Revisao, Revisao 1, Revisao 2
-- SKIP lines that are just: !, *, ? or legend explanations
-- SKIP lines starting with: To Learn:, Proxima aula:, Homework:, DIDNT GO OVER TODAY
-- SKIP notes marked (errado)
-- SKIP repeated pattern variations — eu quero ir pra praia/bar/festa becomes ONE card: eu quero ir pra...
-- ONLY extract genuinely new vocabulary expressions grammar rules
-Return ONLY a JSON array no markdown: [{"portuguese":"...","english":"..." or null,"type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"..." or null,"contrast":"..." or null,"exampleSentence":"..." or null}]`,
-    [{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:'Extract new items only:'}]}],4000)
-    const items=JSON.parse(raw.replace(/```json|```/g,'').trim())
-    return items.filter(i=>i.portuguese&&!existing.has(i.portuguese.trim()))
-  }catch(e){console.error(e);return[]}
+    // Build existing list for Claude to compare against
+    const existingList=existingCards.map(c=>c.portuguese).join('\n')
+    const existingNorm=new Set(existingCards.map(c=>normPT(c.portuguese)))
+
+    // Pass 1 — identify structure (cheap, fast)
+    const structRaw=await callClaude(
+      `You are analyzing a Brazilian Portuguese lesson document structure.
+List ONLY the section headers and day numbers you find, in order.
+Identify which sections are NEW CONTENT vs REVIEW.
+New content sections: "Aula de Hoje", "Materia", "Coisas de hoje", "Aula", day content before any Revisao
+Review sections: anything labeled Revisao, Revisao 1, Revisao 2, Revisao Geral
+Reply ONLY valid JSON: {"newSections":["Day 12 - Materia","Day 13 - Aula de hoje"],"hasDays":[12,13]}`,
+      [{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:'Identify structure:'}]}],
+      600
+    )
+    let structure={newSections:[],hasDays:[]}
+    try{structure=JSON.parse(structRaw.replace(/```json|```/g,'').trim())}catch(e){}
+    const focusHint=structure.newSections.length>0
+      ?`Focus ONLY on these sections: ${structure.newSections.join(', ')}`
+      :`Focus on any content that appears to be new lesson material, not review`
+
+    // Pass 2 — targeted extraction with existing deck awareness
+    const raw=await callClaude(
+      `You are extracting new vocabulary cards from a Brazilian Portuguese lesson document.
+The student's professor writes informal, inconsistent notes. Be smart about interpreting them.
+
+STUDENT ALREADY HAS THESE WORDS (do NOT extract these):
+${existingList}
+
+${focusHint}
+
+DOCUMENT RULES — understand the structure:
+- "Revisao", "Revisao 1/2/Geral", "Revisao da ultima aula" = review of old content = SKIP ENTIRELY
+- "Aula de Hoje", "Materia", "Coisas de hoje" = new lesson content = EXTRACT FROM HERE
+- "To Learn:", "Proxima aula:", "Homework:", "DIDNT GO OVER TODAY" = skip
+- Lines with just !, *, ? = mastery rating symbols = skip
+- Pronunciation tables (CH=SH, R=H etc) = phonetics guide = skip
+- Lines marked (errado) = error examples = skip
+- Repeated patterns: if you see same structure 5x (eu quero ir pra praia/bar/festa) = make ONE template card
+
+WHAT TO EXTRACT:
+- New single words with meaning
+- New fixed expressions / frases prontas
+- New grammar rules with one example
+- New sentences that demonstrate a structure
+
+SEMANTIC DEDUP: if an item means the same thing as something already in the student's deck (even with different accents or slight variation) — skip it.
+
+Return ONLY a JSON array, no markdown, no explanation:
+[{"portuguese":"exact text with correct accents","english":"translation","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"semantic group or null","contrast":"formal Portuguese equivalent if Carioca, else null","exampleSentence":"example sentence or null"}]
+If nothing new found, return: []`,
+      [{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:'Extract new items:'}]}],
+      6000
+    )
+
+    let items=[]
+    // Handle partial JSON from token cutoff
+    let cleaned=raw.replace(/```json|```/g,'').trim()
+    if(!cleaned.endsWith(']')){
+      const lastComma=cleaned.lastIndexOf('},')
+      if(lastComma>0)cleaned=cleaned.slice(0,lastComma+1).trimEnd().replace(/,$/,'')+']'
+      else cleaned='[]'
+    }
+    try{items=JSON.parse(cleaned)}catch(e){
+      // Try to extract partial array
+      const match=cleaned.match(/\[[\s\S]*/)
+      if(match){try{items=JSON.parse(match[0])}catch(e2){items=[]}}
+    }
+
+    // Final filter: remove anything that normalises to an existing card
+    return items.filter(i=>{
+      if(!i.portuguese)return false
+      if(existingNorm.has(normPT(i.portuguese)))return false
+      return true
+    })
+  }catch(e){console.error('extractFromPDF error:',e);return[]}
 }
 
 async function iwantToSay(thought){
@@ -778,21 +845,23 @@ function Import({cards,onImport,onBack}){
   const[visible,setVisible]=useState(0)
   const[history,setHistory]=useState([])
   const ref=useRef()
-  const existing=new Set(cards.map(c=>c.portuguese.trim()))
+  const existingSize=cards.length
+  const[importStatus,setImportStatus]=useState('')
   useEffect(()=>{dbLoadImportHistory().then(setHistory)},[])
   const handleFile=async e=>{
     const file=e.target.files?.[0];if(!file)return
-    setStage('parsing');setVisible(0)
+    setStage('parsing');setVisible(0);setImportStatus('Reading document structure…')
     try{
       const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file)})
-      const items=await extractFromPDF(b64,existing)
+      setImportStatus('Identifying new content sections…')
+      const items=await extractFromPDF(b64,cards)
       setPreview(items);setStage('preview')
       items.forEach((_,i)=>setTimeout(()=>setVisible(v=>v+1),i*80))
     }catch(e){console.error(e);setStage('idle')}
   }
   const confirmImport=async()=>{
     await onImport(preview)
-    await dbLogImport(ref.current?.files?.[0]?.name||'document.pdf',preview.length,existing.size)
+    await dbLogImport(ref.current?.files?.[0]?.name||'document.pdf',preview.length,existingSize)
     setHistory(await dbLoadImportHistory())
     setStage('done')
   }
@@ -820,10 +889,14 @@ function Import({cards,onImport,onBack}){
         </div>)}
       </div>}
     </>}
-    {stage==='parsing'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:80,gap:16}}><Spinner size={28}/><span style={{fontSize:14,color:MU}}>Claude is reading your document…</span></div>}
+    {stage==='parsing'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:80,gap:20}}>
+      <Spinner size={28}/>
+      <span style={{fontSize:14,color:MU}}>{importStatus||'Reading document…'}</span>
+      <div style={{fontSize:12,color:MU,maxWidth:280,textAlign:'center',lineHeight:1.6}}>Two-pass extraction: first identifying new sections, then extracting only content not already in your deck.</div>
+    </div>}
     {stage==='preview'&&<>
       <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:16}}>
-        <div style={{fontSize:13,color:MU}}>{existing.size} existing cards skipped</div>
+        <div style={{fontSize:13,color:MU}}>{existingSize} existing cards compared against</div>
         <div style={{fontSize:28,fontWeight:800,color:GR,marginTop:4}}>{preview.length} new cards found</div>
       </div>
       {preview.length===0&&visible>=1&&<div style={{textAlign:'center',padding:'20px 0'}}>
