@@ -135,6 +135,41 @@ const SEED=[
   mk(94,'foda','badass / fucking amazing','giria',{exampleSentence:'Natureza e foda ne irmao.'}),
   mk(95,'ne','right? tag question','giria',{exampleSentence:'Ta fazendo calor demais, ne?'}),
   mk(96,'irmao','brother / bro','giria',{cluster:'address',exampleSentence:'Irmao, voce viu o jogo ontem?'}),
+  // Day 13 missed
+  mk(97,'o que e isso?','what is this?','frase_pronta',{exampleSentence:'O que e isso? Nunca vi antes.'}),
+  mk(98,'natureza','nature','vocab',{exampleSentence:'Natureza e foda ne, irmao.'}),
+  // Day 14
+  mk(99,'nossa','wow / oh my god','giria',{cluster:'exclamation',exampleSentence:'Nossa, que dia lindo!'}),
+  mk(100,'tudo bem','everything good / all good','frase_pronta',{cluster:'greeting',exampleSentence:'Tudo bem? Tudo bom!'}),
+  mk(101,'tudo bom','all good','frase_pronta',{cluster:'greeting',exampleSentence:'Oi, tudo bom por ai?'}),
+  mk(102,'ruim','bad','vocab',{contrast:'mau/mal',exampleSentence:'O tempo ta ruim hoje.'}),
+  mk(103,'tempo','time / weather','vocab',{exampleSentence:'O tempo ta otimo hoje!'}),
+  mk(104,'semana que vem','next week','frase_pronta',{exampleSentence:'A gente se ve semana que vem.'}),
+  mk(105,'segunda-feira','Monday','vocab',{cluster:'days',exampleSentence:'Te vejo segunda-feira.'}),
+  mk(106,'terca-feira','Tuesday','vocab',{cluster:'days',exampleSentence:'Terca-feira a gente vai ao mercado.'}),
+  mk(107,'quarta-feira','Wednesday','vocab',{cluster:'days',exampleSentence:'Quarta-feira e dia de treino.'}),
+  mk(108,'quinta-feira','Thursday','vocab',{cluster:'days',exampleSentence:'Quinta-feira ja?'}),
+  mk(109,'sexta-feira','Friday','vocab',{cluster:'days',exampleSentence:'Sexta-feira bora tomar uma!'}),
+  mk(110,'sabado','Saturday','vocab',{cluster:'days',exampleSentence:'Sabado a praia ta cheia.'}),
+  mk(111,'domingo','Sunday','vocab',{cluster:'days',exampleSentence:'Domingo e dia de descanso.'}),
+  mk(112,'te vejo segunda','see you Monday','frase_pronta',{exampleSentence:'Valeu cara, te vejo segunda!'}),
+  mk(113,'ser vs estar','SER = what it is. ESTAR = how it is right now','grammar',{exampleSentence:'E bonito (always). Esta bonito (right now).'}),
+  mk(114,'voce quer?','do you want?','frase_pronta',{exampleSentence:'Voce quer uma cerveja?'}),
+  mk(115,'dia lindo ne?','beautiful day right?','frase_pronta',{exampleSentence:'Dia lindo ne? Bora pra praia!'}),
+  // Day 15
+  mk(116,'outro/outra','another / other','vocab',{exampleSentence:'Me ve outra gelada, valeu.'}),
+  mk(117,'mais um/uma','one more','frase_pronta',{exampleSentence:'Mais uma? Bora!'}),
+  mk(118,'verao','summer','vocab',{exampleSentence:'No verao o Rio e incrivel.'}),
+  mk(119,'voce tem?','do you have?','frase_pronta',{exampleSentence:'Voce tem uma cerveja gelada?'}),
+  mk(120,'frio','cold','vocab',{cluster:'weather',exampleSentence:'Esta frio hoje, ne?'}),
+  mk(121,'bonito','beautiful / pretty','vocab',{exampleSentence:'Que lugar bonito, cara!'}),
+  mk(122,'nublado','cloudy','vocab',{cluster:'weather',exampleSentence:'Ta nublado mas nao vai chover.'}),
+  mk(123,'molhado','wet','vocab',{exampleSentence:'Fiquei todo molhado na chuva.'}),
+  mk(124,'ensolarado','sunny','vocab',{cluster:'weather',exampleSentence:'Dia ensolarado, bora pra praia!'}),
+  mk(125,'esta quente','it is hot right now','sentence',{contrast:'e quente (permanent fact)',exampleSentence:'Esta quente demais hoje!'}),
+  mk(126,'esta frio','it is cold right now','sentence',{contrast:'e frio (permanent fact)',exampleSentence:'Esta frio la fora, leva um casaco.'}),
+  mk(127,'esta nublado','it is cloudy right now','sentence',{exampleSentence:'Esta nublado, nao vai dar praia hoje.'}),
+  mk(128,'e bonito','it is beautiful (permanent quality)','sentence',{contrast:'esta bonito (looking good right now)',exampleSentence:'E bonito aqui, ne?'}),
 ]
 
 const SB_URL=import.meta.env.VITE_SUPABASE_URL
@@ -411,157 +446,126 @@ function normPT(s){
   return(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()
 }
 
-// Extract raw text from PDF using pdfjs-dist (loaded via CDN in index.html)
-async function extractPDFText(file){
-  const pdfjsLib=window['pdfjs-dist/build/pdf']
-  if(!pdfjsLib)throw new Error('pdfjs not loaded')
-  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-  const arrayBuffer=await file.arrayBuffer()
-  const pdf=await pdfjsLib.getDocument({data:arrayBuffer}).promise
-  let fullText=''
-  for(let i=1;i<=pdf.numPages;i++){
-    const page=await pdf.getPage(i)
-    const content=await page.getTextContent()
-    const pageText=content.items.map(item=>item.str).join(' ')
-    fullText+=`\n--- PAGE ${i} ---\n${pageText}`
-  }
-  return fullText
-}
-
-// Split text into day-based chunks
+// Split pasted text into day chunks
 function splitByDays(text){
   const chunks=[]
-  const dayRegex=/(?:^|\n)\s*Day\s+(\d+)/gi
+  const dayRegex=/(?:^|\n)\s*(Day|DAY)\s+(\d+)/g
   let match
-  let lastIdx=0
-  let lastDay=0
   const positions=[]
   while((match=dayRegex.exec(text))!==null){
-    positions.push({day:parseInt(match[1]),idx:match.index})
+    positions.push({day:parseInt(match[2]),idx:match.index})
   }
+  if(positions.length===0)return[{day:0,text:text.trim()}]
   for(let i=0;i<positions.length;i++){
     const{day,idx}=positions[i]
     const end=i+1<positions.length?positions[i+1].idx:text.length
     chunks.push({day,text:text.slice(idx,end).trim()})
   }
-  if(chunks.length===0)chunks.push({day:0,text:text})
   return chunks
 }
 
-async function extractFromPDF(file,existingCards){
-  try{
-    const existingList=existingCards.map(c=>c.portuguese).join('\n')
-    const existingNorm=new Set(existingCards.map(c=>normPT(c.portuguese)))
-    const existingDays=new Set(existingCards.map(c=>c.sourceDay).filter(Boolean))
-
-    // Step 1: extract raw text from PDF
-    let fullText
-    try{
-      fullText=await extractPDFText(file)
-    }catch(e){
-      // pdfjs not available — fall back to base64 single-chunk approach
-      console.warn('pdfjs unavailable, using fallback')
-      const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file)})
-      return await extractFromPDFBase64(b64,existingCards)
-    }
-
-    // Step 2: split by day
-    const chunks=splitByDays(fullText)
-    console.log(`Found ${chunks.length} day chunks:`,chunks.map(c=>c.day))
-
-    // Step 3: determine which days are new (not already covered by seed)
-    const SEED_DAYS=[1,2,3,4,5,6,7,8,9,10,11]
-    const newChunks=chunks.filter(c=>c.day===0||!SEED_DAYS.includes(c.day))
-    const chunksToProcess=newChunks.length>0?newChunks:chunks
-
-    console.log(`Processing ${chunksToProcess.length} chunks`)
-
-    // Step 4: process each new chunk
-    const allItems=[]
-    const seenNorm=new Set([...existingNorm])
-
-    for(const chunk of chunksToProcess){
-      if(chunk.text.length<50)continue
-      // Skip chunks that look like pure review
-      const lowerText=chunk.text.toLowerCase()
-      const reviewRatio=(lowerText.match(/revis[aã]o/g)||[]).length
-      const contentSignals=(lowerText.match(/aula de hoje|matéria|materia|coisas de hoje/g)||[]).length
-      if(reviewRatio>3&&contentSignals===0){
-        console.log(`Skipping chunk Day ${chunk.day} — looks like review only`)
-        continue
-      }
-
-      const raw=await ct(
-        `You are extracting NEW vocabulary cards from a Brazilian Portuguese lesson.
-The professor writes informal messy notes — be smart about interpreting them.
-
-STUDENT ALREADY HAS THESE WORDS (semantic dedup — do NOT extract if same meaning):
-${existingList}
-
-RULES:
-- SKIP sections labeled Revisao/Revisão (review of old content)
-- SKIP pronunciation tables (CH=SH, R=H, etc)
-- SKIP lines: !, *, ?, "To Learn:", "Proxima aula:", "Homework:", "(errado)"
-- SKIP "DIDNT GO OVER TODAY"
-- For repeated patterns (eu quero ir pra praia/bar/festa) → ONE template card only
-- Accept fuzzy formatting — the notes are messy by design
-- If a word/phrase has a Carioca informal form AND formal Portuguese — note both
-
-For each genuinely NEW item return:
-{"portuguese":"...","english":"...","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"..." or null,"contrast":"formal Portuguese if Carioca expression, else null","exampleSentence":"..." or null}
-
-Return ONLY a valid JSON array. If nothing new: []`,
-        `DAY ${chunk.day} LESSON NOTES:\n${chunk.text.slice(0,4000)}`,
-        2000
-      )
-
-      let items=[]
-      try{
-        let cleaned=raw.replace(/```json|```/g,'').trim()
-        if(!cleaned.endsWith(']')){
-          const last=cleaned.lastIndexOf('},')
-          cleaned=last>0?cleaned.slice(0,last+1)+']':'[]'
-        }
-        items=JSON.parse(cleaned)
-      }catch(e){
-        const match=raw.match(/\[[\s\S]*\]/)
-        if(match){try{items=JSON.parse(match[0])}catch(e2){}}
-      }
-
-      // Dedup within results and against existing
-      const filtered=items.filter(i=>{
-        if(!i||!i.portuguese)return false
-        const n=normPT(i.portuguese)
-        if(seenNorm.has(n))return false
-        seenNorm.add(n)
-        return true
-      })
-      allItems.push(...filtered)
-      console.log(`Day ${chunk.day}: found ${filtered.length} new items`)
-    }
-
-    return allItems
-  }catch(e){
-    console.error('extractFromPDF error:',e)
-    return[]
-  }
-}
-
-// Fallback for when pdfjs is unavailable (shouldn't normally be needed)
-async function extractFromPDFBase64(b64,existingCards){
+// Extract new cards from pasted text
+async function extractFromText(pastedText,existingCards){
   const existingList=existingCards.map(c=>c.portuguese).join('\n')
   const existingNorm=new Set(existingCards.map(c=>normPT(c.portuguese)))
-  try{
-    const raw=await callClaude(
-      `Extract new vocabulary from this Portuguese lesson PDF. Student already has:\n${existingList}\nReturn ONLY JSON array of new items: [{"portuguese":"...","english":"...","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":null,"contrast":null,"exampleSentence":null}]`,
-      [{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:'Extract:'}]}],
-      4000
-    )
-    const items=JSON.parse(raw.replace(/```json|```/g,'').trim())
-    return items.filter(i=>i.portuguese&&!existingNorm.has(normPT(i.portuguese)))
-  }catch(e){return[]}
-}
+  const ALWAYS_SKIP=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
+  const chunks=splitByDays(pastedText)
+  console.log('Found chunks:',chunks.map(c=>`Day ${c.day}`))
+
+  // Determine which days to skip
+  const dayCardCounts={}
+  existingCards.forEach(c=>{if(c.sourceDay)dayCardCounts[c.sourceDay]=(dayCardCounts[c.sourceDay]||0)+1})
+  const coveredDays=new Set([...ALWAYS_SKIP,...Object.keys(dayCardCounts).filter(d=>dayCardCounts[d]>=3).map(Number)])
+
+  const newChunks=chunks.filter(c=>c.day===0||!coveredDays.has(c.day))
+  console.log('Processing:',newChunks.map(c=>`Day ${c.day}`))
+
+  if(newChunks.length===0)return[]
+
+  const allItems=[]
+  const seenNorm=new Set([...existingNorm])
+
+  for(const chunk of newChunks){
+    if(chunk.text.length<30)continue
+
+    // Focus on new content subsections — skip straight to them if found
+    const markers=['Matéria:','Materia:','Aula de Hoje:','Aula de hoje:','Coisas de hoje:','Quer aprender:']
+    let focusText=chunk.text
+    for(const m of markers){
+      const idx=chunk.text.indexOf(m)
+      if(idx>0){focusText=chunk.text.slice(idx);break}
+    }
+    const hasMarker=markers.some(m=>chunk.text.includes(m))
+
+    // Skip chunks that are pure review with no new content signal
+    const lc=chunk.text.toLowerCase()
+    const reviewCount=(lc.match(/revis[aã]o/g)||[]).length
+    const newCount=(lc.match(/aula de hoje|matéria|materia|coisas de hoje|quer aprender/g)||[]).length
+    if(reviewCount>3&&newCount===0&&chunk.day>0&&coveredDays.has(chunk.day-1)){
+      console.log(`Skipping Day ${chunk.day} — review only`)
+      continue
+    }
+
+    const raw=await ct(
+      `You are extracting NEW vocabulary cards from a Brazilian Portuguese lesson.
+The professor writes informal messy notes in Google Docs — formatting is inconsistent.
+
+STUDENT ALREADY HAS THESE WORDS — skip anything with the same meaning (ignore accents when comparing):
+${existingList}
+
+HOW THIS DOCUMENT IS STRUCTURED:
+- "Revisão 1/2/Geral/da ultima aula:" = review of old content = SKIP ENTIRELY
+- "Matéria:", "Aula de Hoje:", "Coisas de hoje:", "Quer aprender:" = NEW content = EXTRACT
+- Lines with !, *, ?, (!) (*) (?) after them = mastery markers = SKIP THE MARKER, keep the word IF it's new
+- "To Learn:", "Proxima aula:", "Homework:" = skip
+- "(errado)" or lines marked as wrong = skip
+- Pronunciation tables (CH=SH, R=H etc) = skip
+
+WHAT TO EXTRACT:
+- New vocabulary words
+- New fixed phrases used as units
+- New grammar rules (make ONE clear card per rule)
+- Repeated patterns: eu quero ir pra praia/bar/festa → ONE card: "eu quero ir pra..." = "I want to go to..."
+- Conjugation tables: only extract if the word itself is new
+
+SEMANTIC DEDUP: if an item means the same as something in the deck (even with different accents or phrasing), skip it.
+
+Return ONLY a valid JSON array, no markdown, no explanation:
+[{"portuguese":"correct accents","english":"translation","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"semantic group or null","contrast":"formal Portuguese if Carioca, else null","exampleSentence":"example or null"}]
+If nothing new: []`,
+      `DAY ${chunk.day} LESSON TEXT${hasMarker?' (new content section)':''}:\n${focusText.slice(0,5000)}`,
+      2000
+    )
+
+    let items=[]
+    try{
+      let cleaned=raw.replace(/```json|```/g,'').trim()
+      if(!cleaned.startsWith('['))cleaned='[]'
+      if(!cleaned.endsWith(']')){
+        const last=cleaned.lastIndexOf('},')
+        cleaned=last>0?cleaned.slice(0,last+1)+']':'[]'
+      }
+      items=JSON.parse(cleaned)
+    }catch(e){
+      const match=raw.match(/\[[\s\S]*\]/)
+      if(match){try{items=JSON.parse(match[0])}catch(e2){}}
+    }
+
+    const filtered=items.filter(i=>{
+      if(!i||!i.portuguese)return false
+      const n=normPT(i.portuguese)
+      if(seenNorm.has(n))return false
+      seenNorm.add(n)
+      return true
+    }).map(i=>({...i,sourceDay:chunk.day||0}))
+
+    allItems.push(...filtered)
+    console.log(`Day ${chunk.day}: ${filtered.length} new items`)
+  }
+
+  return allItems
+}
 async function iwantToSay(thought){
   const raw=await ct(`You are a Carioca Portuguese assistant. Give the most natural Carioca way to say what the student wants — not formal Portuguese.\nReply ONLY valid JSON: {"portuguese":"Carioca version","pronunciation":"rough phonetic guide","note":"brief usage note if helpful"}`,
   `I want to say: "${thought}"`,300)
@@ -912,82 +916,121 @@ function Bank({cards}){
 // ── IMPORT ────────────────────────────────────────────────────────
 function Import({cards,onImport,onBack}){
   const[stage,setStage]=useState('idle')
+  const[pasted,setPasted]=useState('')
   const[preview,setPreview]=useState([])
   const[visible,setVisible]=useState(0)
   const[history,setHistory]=useState([])
-  const ref=useRef()
-  const existingSize=cards.length
-  const[importStatus,setImportStatus]=useState('')
+  const[statusMsg,setStatusMsg]=useState('')
+
   useEffect(()=>{dbLoadImportHistory().then(setHistory)},[])
-  const handleFile=async e=>{
-    const file=e.target.files?.[0];if(!file)return
-    setStage('parsing');setVisible(0);setImportStatus('Reading document structure…')
+
+  const run=useCallback(async()=>{
+    if(!pasted.trim())return
+    setStage('parsing');setVisible(0)
     try{
-      setImportStatus('Extracting text from PDF…')
-      const items=await extractFromPDF(file,cards)
-      setPreview(items);setStage('preview')
+      const chunks=splitByDays(pasted)
+      const days=chunks.map(c=>c.day).filter(d=>d>0)
+      setStatusMsg(`Found Day ${Math.min(...days)||'?'} – ${Math.max(...days)||'?'}. Extracting new content…`)
+      const items=await extractFromText(pasted,cards)
+      setPreview(items)
+      setStage('preview')
       items.forEach((_,i)=>setTimeout(()=>setVisible(v=>v+1),i*80))
     }catch(e){console.error(e);setStage('idle')}
-  }
+  },[pasted,cards])
+
   const confirmImport=async()=>{
     await onImport(preview)
-    await dbLogImport(ref.current?.files?.[0]?.name||'document.pdf',preview.length,existingSize)
+    await dbLogImport(`Paste ${new Date().toLocaleDateString()}`,preview.length,cards.length)
     setHistory(await dbLoadImportHistory())
     setStage('done')
   }
+
   return <div style={{padding:'52px 24px 100px',animation:'up 0.35s ease'}}>
-    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:32}}>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:28}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:26,cursor:'pointer',fontFamily:FONT}}>‹</button>
-      <div><div style={{fontSize:22,fontWeight:800,color:TX}}>Import Lesson</div><div style={{fontSize:13,color:MU,marginTop:2}}>{cards.length} cards in deck</div></div>
+      <div>
+        <div style={{fontSize:22,fontWeight:800,color:TX}}>Import Lesson</div>
+        <div style={{fontSize:13,color:MU,marginTop:2}}>{cards.length} cards in deck</div>
+      </div>
     </div>
+
     {stage==='idle'&&<>
-      <div onClick={()=>ref.current?.click()} style={{border:`2px dashed ${BD}`,borderRadius:20,padding:'56px 24px',textAlign:'center',cursor:'pointer',transition:'border-color 0.2s',marginBottom:16}} onMouseEnter={e=>e.currentTarget.style.borderColor=AC} onMouseLeave={e=>e.currentTarget.style.borderColor=BD}>
-        <div style={{fontSize:44,marginBottom:14}}>📄</div>
-        <div style={{fontSize:17,fontWeight:700,color:TX,marginBottom:6}}>Drop PDF here</div>
-        <div style={{fontSize:13,color:MU}}>or tap to select</div>
-        <input ref={ref} type="file" accept=".pdf" onChange={handleFile} style={{display:'none'}}/>
+      <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'16px 18px',marginBottom:14}}>
+        <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:1,marginBottom:6}}>HOW TO USE</div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.8}}>
+          Open your Google Doc → Select All (⌘A) → Copy (⌘C) → paste below.<br/>
+          Claude skips review sections and only extracts what's genuinely new.
+        </div>
       </div>
-      <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:20}}>
-        <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:1,marginBottom:8}}>HOW IT WORKS</div>
-        <div style={{fontSize:13,color:MU,lineHeight:1.8}}>Drop your professor's PDF. Claude skips review sections and extracts only new content. Existing cards are skipped automatically. New cards start at zero.</div>
-      </div>
-      {history.length>0&&<div>
+      <textarea
+        value={pasted}
+        onChange={e=>setPasted(e.target.value)}
+        placeholder="Paste your lesson notes here…"
+        style={{width:'100%',background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'16px',color:TX,fontSize:14,resize:'none',outline:'none',minHeight:200,boxSizing:'border-box',marginBottom:12,lineHeight:1.5}}
+        onFocus={e=>e.target.style.borderColor=AC}
+        onBlur={e=>e.target.style.borderColor=BD}
+      />
+      {pasted.trim().length>0&&<div style={{fontSize:12,color:MU,marginBottom:12}}>
+        ~{pasted.trim().split(/\s+/).length} words pasted
+        {splitByDays(pasted).filter(c=>c.day>0).length>0&&
+          ` · Days ${splitByDays(pasted).filter(c=>c.day>0).map(c=>c.day).join(', ')} detected`}
+      </div>}
+      <PBtn label="Extract new cards →" onClick={run} disabled={!pasted.trim()}/>
+      {history.length>0&&<div style={{marginTop:28}}>
         <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:1,marginBottom:12}}>IMPORT HISTORY</div>
         {history.map((h,i)=><div key={i} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 16px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div><div style={{fontSize:13,color:TX,fontWeight:600}}>{h.filename||'document.pdf'}</div><div style={{fontSize:11,color:MU,marginTop:2}}>{new Date(h.created_at).toLocaleDateString()}</div></div>
-          <div style={{textAlign:'right'}}><div style={{fontSize:13,color:GR,fontWeight:700}}>+{h.cards_added}</div><div style={{fontSize:11,color:MU}}>{h.cards_skipped} skipped</div></div>
+          <div>
+            <div style={{fontSize:13,color:TX,fontWeight:600}}>{h.filename||'Paste'}</div>
+            <div style={{fontSize:11,color:MU,marginTop:2}}>{new Date(h.created_at).toLocaleDateString()}</div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontSize:13,color:GR,fontWeight:700}}>+{h.cards_added}</div>
+            <div style={{fontSize:11,color:MU}}>{h.cards_skipped} in deck</div>
+          </div>
         </div>)}
       </div>}
     </>}
-    {stage==='parsing'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:80,gap:20}}>
+
+    {stage==='parsing'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:80,gap:16}}>
       <Spinner size={28}/>
-      <span style={{fontSize:14,color:MU}}>{importStatus||'Reading document…'}</span>
-      <div style={{fontSize:12,color:MU,maxWidth:280,textAlign:'center',lineHeight:1.6}}>Two-pass extraction: first identifying new sections, then extracting only content not already in your deck.</div>
+      <span style={{fontSize:14,color:MU,textAlign:'center'}}>{statusMsg||'Analysing notes…'}</span>
+      <span style={{fontSize:12,color:MU,maxWidth:280,textAlign:'center',lineHeight:1.6}}>Comparing against your deck and extracting only genuinely new content.</span>
     </div>}
+
     {stage==='preview'&&<>
       <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:16}}>
-        <div style={{fontSize:13,color:MU}}>{existingSize} existing cards compared against</div>
-        <div style={{fontSize:28,fontWeight:800,color:GR,marginTop:4}}>{preview.length} new cards found</div>
+        <div style={{fontSize:13,color:MU}}>{cards.length} existing cards compared</div>
+        <div style={{fontSize:28,fontWeight:800,color:preview.length>0?GR:MU,marginTop:4}}>
+          {preview.length} new card{preview.length!==1?'s':''} found
+        </div>
       </div>
-      {preview.length===0&&visible>=1&&<div style={{textAlign:'center',padding:'20px 0'}}>
-        <div style={{fontSize:16,color:MU,marginBottom:8}}>No new cards found</div>
-        <div style={{fontSize:13,color:MU,lineHeight:1.7}}>All content may already be in your deck, or only review sections were detected.</div>
-        <div style={{marginTop:16}}><GBtn label="Back" onClick={()=>setStage('idle')}/></div>
-      </div>}
-      <div style={{maxHeight:320,overflowY:'auto',marginBottom:16,display:'flex',flexDirection:'column',gap:8}}>
-        {preview.slice(0,visible).map((item,i)=><div key={i} style={{background:S,border:`1px solid ${BD}`,borderRadius:13,padding:'13px 18px',animation:'up 0.25s ease'}}>
-          <div style={{fontSize:15,fontWeight:700,color:TX}}>{item.portuguese}</div>
-          <div style={{fontSize:13,color:MU,marginTop:2}}>{item.english||'—'}</div>
-        </div>)}
-      </div>
-      {visible>=preview.length&&preview.length>0&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-        <GBtn label="Cancel" onClick={()=>setStage('idle')}/>
-        <PBtn label={`Add ${preview.length} cards`} onClick={confirmImport}/>
-      </div>}
+      {preview.length===0
+        ?<div style={{textAlign:'center',padding:'20px 0'}}>
+          <div style={{fontSize:16,color:MU,marginBottom:8}}>Nothing new found</div>
+          <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:20}}>All content in these notes is already in your deck. Try pasting notes from a newer lesson day.</div>
+          <GBtn label="Back" onClick={()=>setStage('idle')}/>
+        </div>
+        :<>
+          <div style={{maxHeight:360,overflowY:'auto',marginBottom:16,display:'flex',flexDirection:'column',gap:8}}>
+            {preview.slice(0,visible).map((item,i)=><div key={i} style={{background:S,border:`1px solid ${BD}`,borderRadius:13,padding:'13px 18px',animation:'up 0.25s ease'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                <div style={{fontSize:15,fontWeight:700,color:TX}}>{item.portuguese}</div>
+                {item.sourceDay>0&&<span style={{fontSize:10,color:MU,fontWeight:600,marginLeft:8}}>Day {item.sourceDay}</span>}
+              </div>
+              <div style={{fontSize:13,color:MU,marginTop:2}}>{item.english||'—'}</div>
+            </div>)}
+          </div>
+          {visible>=preview.length&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <GBtn label="Back" onClick={()=>{setStage('idle');setPasted('')}}/>
+            <PBtn label={`Add ${preview.length} cards`} onClick={confirmImport}/>
+          </div>}
+        </>}
     </>}
+
     {stage==='done'&&<div style={{textAlign:'center',paddingTop:60,animation:'up 0.4s ease'}}>
       <div style={{fontSize:56,marginBottom:16,animation:'pop 0.5s ease'}}>🎉</div>
-      <div style={{fontSize:24,fontWeight:800,color:TX,marginBottom:24}}>{preview.length} cards added</div>
+      <div style={{fontSize:24,fontWeight:800,color:TX,marginBottom:8}}>{preview.length} cards added</div>
+      <div style={{fontSize:13,color:MU,marginBottom:28}}>They start at level zero. Your performance takes it from here.</div>
       <PBtn label="Back to home" onClick={onBack}/>
     </div>}
   </div>
