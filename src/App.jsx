@@ -411,84 +411,155 @@ function normPT(s){
   return(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()
 }
 
-async function extractFromPDF(b64,existingCards){
+// Extract raw text from PDF using pdfjs-dist (loaded via CDN in index.html)
+async function extractPDFText(file){
+  const pdfjsLib=window['pdfjs-dist/build/pdf']
+  if(!pdfjsLib)throw new Error('pdfjs not loaded')
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  const arrayBuffer=await file.arrayBuffer()
+  const pdf=await pdfjsLib.getDocument({data:arrayBuffer}).promise
+  let fullText=''
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i)
+    const content=await page.getTextContent()
+    const pageText=content.items.map(item=>item.str).join(' ')
+    fullText+=`\n--- PAGE ${i} ---\n${pageText}`
+  }
+  return fullText
+}
+
+// Split text into day-based chunks
+function splitByDays(text){
+  const chunks=[]
+  const dayRegex=/(?:^|\n)\s*Day\s+(\d+)/gi
+  let match
+  let lastIdx=0
+  let lastDay=0
+  const positions=[]
+  while((match=dayRegex.exec(text))!==null){
+    positions.push({day:parseInt(match[1]),idx:match.index})
+  }
+  for(let i=0;i<positions.length;i++){
+    const{day,idx}=positions[i]
+    const end=i+1<positions.length?positions[i+1].idx:text.length
+    chunks.push({day,text:text.slice(idx,end).trim()})
+  }
+  if(chunks.length===0)chunks.push({day:0,text:text})
+  return chunks
+}
+
+async function extractFromPDF(file,existingCards){
   try{
-    // Build existing list for Claude to compare against
     const existingList=existingCards.map(c=>c.portuguese).join('\n')
     const existingNorm=new Set(existingCards.map(c=>normPT(c.portuguese)))
+    const existingDays=new Set(existingCards.map(c=>c.sourceDay).filter(Boolean))
 
-    // Pass 1 — identify structure (cheap, fast)
-    const structRaw=await callClaude(
-      `You are analyzing a Brazilian Portuguese lesson document structure.
-List ONLY the section headers and day numbers you find, in order.
-Identify which sections are NEW CONTENT vs REVIEW.
-New content sections: "Aula de Hoje", "Materia", "Coisas de hoje", "Aula", day content before any Revisao
-Review sections: anything labeled Revisao, Revisao 1, Revisao 2, Revisao Geral
-Reply ONLY valid JSON: {"newSections":["Day 12 - Materia","Day 13 - Aula de hoje"],"hasDays":[12,13]}`,
-      [{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:'Identify structure:'}]}],
-      600
-    )
-    let structure={newSections:[],hasDays:[]}
-    try{structure=JSON.parse(structRaw.replace(/```json|```/g,'').trim())}catch(e){}
-    const focusHint=structure.newSections.length>0
-      ?`Focus ONLY on these sections: ${structure.newSections.join(', ')}`
-      :`Focus on any content that appears to be new lesson material, not review`
+    // Step 1: extract raw text from PDF
+    let fullText
+    try{
+      fullText=await extractPDFText(file)
+    }catch(e){
+      // pdfjs not available — fall back to base64 single-chunk approach
+      console.warn('pdfjs unavailable, using fallback')
+      const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file)})
+      return await extractFromPDFBase64(b64,existingCards)
+    }
 
-    // Pass 2 — targeted extraction with existing deck awareness
-    const raw=await callClaude(
-      `You are extracting new vocabulary cards from a Brazilian Portuguese lesson document.
-The student's professor writes informal, inconsistent notes. Be smart about interpreting them.
+    // Step 2: split by day
+    const chunks=splitByDays(fullText)
+    console.log(`Found ${chunks.length} day chunks:`,chunks.map(c=>c.day))
 
-STUDENT ALREADY HAS THESE WORDS (do NOT extract these):
+    // Step 3: determine which days are new (not already covered by seed)
+    const SEED_DAYS=[1,2,3,4,5,6,7,8,9,10,11]
+    const newChunks=chunks.filter(c=>c.day===0||!SEED_DAYS.includes(c.day))
+    const chunksToProcess=newChunks.length>0?newChunks:chunks
+
+    console.log(`Processing ${chunksToProcess.length} chunks`)
+
+    // Step 4: process each new chunk
+    const allItems=[]
+    const seenNorm=new Set([...existingNorm])
+
+    for(const chunk of chunksToProcess){
+      if(chunk.text.length<50)continue
+      // Skip chunks that look like pure review
+      const lowerText=chunk.text.toLowerCase()
+      const reviewRatio=(lowerText.match(/revis[aã]o/g)||[]).length
+      const contentSignals=(lowerText.match(/aula de hoje|matéria|materia|coisas de hoje/g)||[]).length
+      if(reviewRatio>3&&contentSignals===0){
+        console.log(`Skipping chunk Day ${chunk.day} — looks like review only`)
+        continue
+      }
+
+      const raw=await ct(
+        `You are extracting NEW vocabulary cards from a Brazilian Portuguese lesson.
+The professor writes informal messy notes — be smart about interpreting them.
+
+STUDENT ALREADY HAS THESE WORDS (semantic dedup — do NOT extract if same meaning):
 ${existingList}
 
-${focusHint}
+RULES:
+- SKIP sections labeled Revisao/Revisão (review of old content)
+- SKIP pronunciation tables (CH=SH, R=H, etc)
+- SKIP lines: !, *, ?, "To Learn:", "Proxima aula:", "Homework:", "(errado)"
+- SKIP "DIDNT GO OVER TODAY"
+- For repeated patterns (eu quero ir pra praia/bar/festa) → ONE template card only
+- Accept fuzzy formatting — the notes are messy by design
+- If a word/phrase has a Carioca informal form AND formal Portuguese — note both
 
-DOCUMENT RULES — understand the structure:
-- "Revisao", "Revisao 1/2/Geral", "Revisao da ultima aula" = review of old content = SKIP ENTIRELY
-- "Aula de Hoje", "Materia", "Coisas de hoje" = new lesson content = EXTRACT FROM HERE
-- "To Learn:", "Proxima aula:", "Homework:", "DIDNT GO OVER TODAY" = skip
-- Lines with just !, *, ? = mastery rating symbols = skip
-- Pronunciation tables (CH=SH, R=H etc) = phonetics guide = skip
-- Lines marked (errado) = error examples = skip
-- Repeated patterns: if you see same structure 5x (eu quero ir pra praia/bar/festa) = make ONE template card
+For each genuinely NEW item return:
+{"portuguese":"...","english":"...","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"..." or null,"contrast":"formal Portuguese if Carioca expression, else null","exampleSentence":"..." or null}
 
-WHAT TO EXTRACT:
-- New single words with meaning
-- New fixed expressions / frases prontas
-- New grammar rules with one example
-- New sentences that demonstrate a structure
+Return ONLY a valid JSON array. If nothing new: []`,
+        `DAY ${chunk.day} LESSON NOTES:\n${chunk.text.slice(0,4000)}`,
+        2000
+      )
 
-SEMANTIC DEDUP: if an item means the same thing as something already in the student's deck (even with different accents or slight variation) — skip it.
+      let items=[]
+      try{
+        let cleaned=raw.replace(/```json|```/g,'').trim()
+        if(!cleaned.endsWith(']')){
+          const last=cleaned.lastIndexOf('},')
+          cleaned=last>0?cleaned.slice(0,last+1)+']':'[]'
+        }
+        items=JSON.parse(cleaned)
+      }catch(e){
+        const match=raw.match(/\[[\s\S]*\]/)
+        if(match){try{items=JSON.parse(match[0])}catch(e2){}}
+      }
 
-Return ONLY a JSON array, no markdown, no explanation:
-[{"portuguese":"exact text with correct accents","english":"translation","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"semantic group or null","contrast":"formal Portuguese equivalent if Carioca, else null","exampleSentence":"example sentence or null"}]
-If nothing new found, return: []`,
-      [{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:'Extract new items:'}]}],
-      6000
+      // Dedup within results and against existing
+      const filtered=items.filter(i=>{
+        if(!i||!i.portuguese)return false
+        const n=normPT(i.portuguese)
+        if(seenNorm.has(n))return false
+        seenNorm.add(n)
+        return true
+      })
+      allItems.push(...filtered)
+      console.log(`Day ${chunk.day}: found ${filtered.length} new items`)
+    }
+
+    return allItems
+  }catch(e){
+    console.error('extractFromPDF error:',e)
+    return[]
+  }
+}
+
+// Fallback for when pdfjs is unavailable (shouldn't normally be needed)
+async function extractFromPDFBase64(b64,existingCards){
+  const existingList=existingCards.map(c=>c.portuguese).join('\n')
+  const existingNorm=new Set(existingCards.map(c=>normPT(c.portuguese)))
+  try{
+    const raw=await callClaude(
+      `Extract new vocabulary from this Portuguese lesson PDF. Student already has:\n${existingList}\nReturn ONLY JSON array of new items: [{"portuguese":"...","english":"...","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":null,"contrast":null,"exampleSentence":null}]`,
+      [{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:'Extract:'}]}],
+      4000
     )
-
-    let items=[]
-    // Handle partial JSON from token cutoff
-    let cleaned=raw.replace(/```json|```/g,'').trim()
-    if(!cleaned.endsWith(']')){
-      const lastComma=cleaned.lastIndexOf('},')
-      if(lastComma>0)cleaned=cleaned.slice(0,lastComma+1).trimEnd().replace(/,$/,'')+']'
-      else cleaned='[]'
-    }
-    try{items=JSON.parse(cleaned)}catch(e){
-      // Try to extract partial array
-      const match=cleaned.match(/\[[\s\S]*/)
-      if(match){try{items=JSON.parse(match[0])}catch(e2){items=[]}}
-    }
-
-    // Final filter: remove anything that normalises to an existing card
-    return items.filter(i=>{
-      if(!i.portuguese)return false
-      if(existingNorm.has(normPT(i.portuguese)))return false
-      return true
-    })
-  }catch(e){console.error('extractFromPDF error:',e);return[]}
+    const items=JSON.parse(raw.replace(/```json|```/g,'').trim())
+    return items.filter(i=>i.portuguese&&!existingNorm.has(normPT(i.portuguese)))
+  }catch(e){return[]}
 }
 
 async function iwantToSay(thought){
@@ -852,9 +923,8 @@ function Import({cards,onImport,onBack}){
     const file=e.target.files?.[0];if(!file)return
     setStage('parsing');setVisible(0);setImportStatus('Reading document structure…')
     try{
-      const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file)})
-      setImportStatus('Identifying new content sections…')
-      const items=await extractFromPDF(b64,cards)
+      setImportStatus('Extracting text from PDF…')
+      const items=await extractFromPDF(file,cards)
       setPreview(items);setStage('preview')
       items.forEach((_,i)=>setTimeout(()=>setVisible(v=>v+1),i*80))
     }catch(e){console.error(e);setStage('idle')}
