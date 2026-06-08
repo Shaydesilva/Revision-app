@@ -178,11 +178,86 @@ const sb=(SB_URL&&SB_KEY)?createClient(SB_URL,SB_KEY):null
 const toRow=c=>({id:c.id,user_id:USER_ID,portuguese:c.portuguese,english:c.english,example_sentence:c.exampleSentence||null,type:c.type,cluster:c.cluster||null,contrast:c.contrast||null,scenario:c.scenario||null,mastery:c.mastery||0,ease_factor:c.easeFactor||2.5,interval:c.interval||0,reps:c.reps||0,next_review:c.nextReview||new Date().toISOString(),sentence_score:c.sentenceScore||0,sentence_count:c.sentenceCount||0,recognition_mastery:c.recognitionMastery||0,production_mastery:c.productionMastery||0})
 const fromRow=r=>({id:r.id,portuguese:r.portuguese,english:r.english,exampleSentence:r.example_sentence,type:r.type,cluster:r.cluster,contrast:r.contrast,scenario:r.scenario,mastery:r.mastery||0,easeFactor:r.ease_factor||2.5,interval:r.interval||0,reps:r.reps||0,nextReview:r.next_review||new Date().toISOString(),sentenceScore:r.sentence_score||0,sentenceCount:r.sentence_count||0,recognitionMastery:r.recognition_mastery||0,productionMastery:r.production_mastery||0})
 
-async function dbLoad(){if(!sb)return null;try{const[{data:cards},{data:state}]=await Promise.all([sb.from('cards').select('*').eq('user_id',USER_ID),sb.from('user_state').select('*').eq('user_id',USER_ID).single()]);return{cards:(cards||[]).map(fromRow),state:state||null}}catch(e){return null}}
-async function dbSeed(){if(!sb)return;await sb.from('cards').upsert(SEED.map(toRow),{onConflict:'id,user_id'})}
-async function dbUpdateCard(card){if(!sb)return;await sb.from('cards').update({mastery:card.mastery,ease_factor:card.easeFactor,interval:card.interval,reps:card.reps,next_review:card.nextReview,sentence_score:card.sentenceScore||0,sentence_count:card.sentenceCount||0,recognition_mastery:card.recognitionMastery||0,production_mastery:card.productionMastery||0,updated_at:new Date().toISOString()}).eq('id',card.id).eq('user_id',USER_ID)}
+// ── OFFLINE LAYER ────────────────────────────────────────────────
+const LS_CARDS='carioca_cards'
+const LS_STATE='carioca_state'
+const LS_QUEUE='carioca_queue'
+
+function lsSaveCards(cards){try{localStorage.setItem(LS_CARDS,JSON.stringify(cards))}catch(e){}}
+function lsLoadCards(){try{const d=localStorage.getItem(LS_CARDS);return d?JSON.parse(d):null}catch(e){return null}}
+function lsSaveState(s){try{localStorage.setItem(LS_STATE,JSON.stringify(s))}catch(e){}}
+function lsLoadState(){try{const d=localStorage.getItem(LS_STATE);return d?JSON.parse(d):null}catch(e){return null}}
+
+function queueWrite(op){
+  try{
+    const q=JSON.parse(localStorage.getItem(LS_QUEUE)||'[]')
+    q.push({...op,ts:Date.now()})
+    localStorage.setItem(LS_QUEUE,JSON.stringify(q))
+  }catch(e){}
+}
+async function flushQueue(){
+  if(!sb||!navigator.onLine)return
+  try{
+    const q=JSON.parse(localStorage.getItem(LS_QUEUE)||'[]')
+    if(!q.length)return
+    console.log(`Flushing ${q.length} queued writes`)
+    for(const op of q){
+      if(op.type==='updateCard')await sb.from('cards').update(op.data).eq('id',op.id).eq('user_id',USER_ID)
+      if(op.type==='saveState')await sb.from('user_state').upsert({user_id:USER_ID,...op.data},{onConflict:'user_id'})
+    }
+    localStorage.setItem(LS_QUEUE,'[]')
+    console.log('Queue flushed')
+  }catch(e){console.error('Flush failed',e)}
+}
+
+async function dbLoad(){
+  // Try Supabase first
+  if(sb&&navigator.onLine){
+    try{
+      const[{data:cards},{data:state}]=await Promise.all([
+        sb.from('cards').select('*').eq('user_id',USER_ID),
+        sb.from('user_state').select('*').eq('user_id',USER_ID).single()
+      ])
+      const result={cards:(cards||[]).map(fromRow),state:state||null}
+      // Mirror to localStorage
+      lsSaveCards(result.cards)
+      if(result.state)lsSaveState(result.state)
+      return result
+    }catch(e){console.warn('Supabase load failed, trying local cache')}
+  }
+  // Fall back to localStorage cache
+  const cards=lsLoadCards()
+  const state=lsLoadState()
+  if(cards?.length){console.log('Loaded from local cache');return{cards,state}}
+  return null
+}
+
+async function dbSeed(){
+  if(!sb||!navigator.onLine)return
+  await sb.from('cards').upsert(SEED.map(toRow),{onConflict:'id,user_id'})
+}
+
+async function dbUpdateCard(card){
+  // Always update localStorage immediately
+  const cached=lsLoadCards()||[]
+  const updated=cached.map(c=>c.id===card.id?{...c,...card}:c)
+  lsSaveCards(updated)
+  // Supabase: write if online, queue if not
+  const data={mastery:card.mastery,ease_factor:card.easeFactor,interval:card.interval,reps:card.reps,next_review:card.nextReview,sentence_score:card.sentenceScore||0,sentence_count:card.sentenceCount||0,recognition_mastery:card.recognitionMastery||0,production_mastery:card.productionMastery||0,updated_at:new Date().toISOString()}
+  if(sb&&navigator.onLine){
+    try{await sb.from('cards').update(data).eq('id',card.id).eq('user_id',USER_ID);return}catch(e){}
+  }
+  queueWrite({type:'updateCard',id:card.id,data})
+}
 async function dbInsertCards(newCards){if(!sb)return;await sb.from('cards').insert(newCards.map(toRow))}
-async function dbSaveState(streak,lastDate,sentenceHistory){if(!sb)return;await sb.from('user_state').upsert({user_id:USER_ID,streak_days:streak,last_session_date:lastDate,sentence_history:sentenceHistory||[],updated_at:new Date().toISOString()},{onConflict:'user_id'})}
+async function dbSaveState(streak,lastDate,sentenceHistory){
+  const data={streak_days:streak,last_session_date:lastDate,sentence_history:sentenceHistory||[],updated_at:new Date().toISOString()}
+  lsSaveState({...data})
+  if(sb&&navigator.onLine){
+    try{await sb.from('user_state').upsert({user_id:USER_ID,...data},{onConflict:'user_id'});return}catch(e){}
+  }
+  queueWrite({type:'saveState',data})
+}
 async function dbLogReview(cardId,quality,mode){if(!sb)return;await sb.from('card_reviews').insert({user_id:USER_ID,card_id:cardId,quality,mode})}
 
 async function callClaude(system,messages,max=900){const r=await fetch('/.netlify/functions/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages,max_tokens:max})});const d=await r.json();return d.content?.[0]?.text||''}
@@ -599,7 +674,7 @@ async function evalFullChat(history,turnCorrections,cards){
 }
 
 // ── PHRASE ────────────────────────────────────────────────────────
-function Phrase({cards,onRateMultiple,sentenceHistory,onSaveSentence,onBack}){
+function Phrase({cards,onRateMultiple,sentenceHistory,onSaveSentence,onBack,isOnline=true}){
   const[tab,setTab]=useState('practice')
   return <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 64px)'}}>
     <div style={{padding:'16px 20px 0',display:'flex',alignItems:'center',gap:12}}>
@@ -654,10 +729,12 @@ function Practice({cards,onRateMultiple,sentenceHistory,onSaveSentence}){
   </div>
   return <div style={{padding:'20px 20px 40px'}}>
     {phase==='idle'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center',paddingTop:48,gap:16,animation:'up 0.3s ease'}}>
-      <div style={{fontSize:52}}>💬</div>
+      <div style={{fontSize:52}}>{isOnline?'💬':'✈️'}</div>
       <div style={{fontSize:22,fontWeight:800,color:TX}}>Phrase Practice</div>
-      <div style={{fontSize:14,color:MU,lineHeight:1.7,maxWidth:300}}>Claude builds a real Rio scenario from your vocabulary. Write what you'd actually say — no accent penalties.</div>
-      <PBtn label="Generate scenario →" onClick={generate}/>
+      {isOnline
+        ?<div style={{fontSize:14,color:MU,lineHeight:1.7,maxWidth:300}}>Claude builds a real Rio scenario from your vocabulary. Write what you'd actually say — no accent penalties.</div>
+        :<div style={{fontSize:14,color:YE,lineHeight:1.7,maxWidth:300}}>Needs an internet connection. Use Study mode to review flashcards offline.</div>}
+      {isOnline&&<PBtn label="Generate scenario →" onClick={generate}/>}
     </div>}
     {phase==='loading'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:80,gap:16}}><Spinner size={28}/><span style={{fontSize:14,color:MU}}>Claude is thinking…</span></div>}
     {(phase==='writing'||phase==='evaluating')&&scenario&&<div style={{animation:'up 0.3s ease'}}>
@@ -914,7 +991,7 @@ function Bank({cards}){
 }
 
 // ── IMPORT ────────────────────────────────────────────────────────
-function Import({cards,onImport,onBack}){
+function Import({cards,onImport,onBack,isOnline=true}){
   const[stage,setStage]=useState('idle')
   const[pasted,setPasted]=useState('')
   const[preview,setPreview]=useState([])
@@ -945,6 +1022,7 @@ function Import({cards,onImport,onBack}){
     setStage('done')
   }
 
+  if(!isOnline)return <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'calc(100vh - 64px)',padding:40,textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>✈️</div><div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:8}}>Import needs internet</div><div style={{fontSize:14,color:MU,lineHeight:1.7}}>Save your Google Doc paste for when you land. Your deck is fully available offline.</div></div>
   return <div style={{padding:'52px 24px 100px',animation:'up 0.35s ease'}}>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:28}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:26,cursor:'pointer',fontFamily:FONT}}>‹</button>
@@ -1043,8 +1121,18 @@ export default function App(){
   const[sentenceHistory,setSentenceHistory]=useState([])
   const[screen,setScreen]=useState('home')
   const[loaded,setLoaded]=useState(false)
+  const[isOnline,setIsOnline]=useState(navigator.onLine)
 
   useEffect(()=>{const style=document.createElement('style');style.textContent=CSS;document.head.appendChild(style);return()=>document.head.removeChild(style)},[])
+
+  // Online/offline detection + queue flush on reconnect
+  useEffect(()=>{
+    const goOnline=()=>{setIsOnline(true);flushQueue()}
+    const goOffline=()=>setIsOnline(false)
+    window.addEventListener('online',goOnline)
+    window.addEventListener('offline',goOffline)
+    return()=>{window.removeEventListener('online',goOnline);window.removeEventListener('offline',goOffline)}
+  },[])
 
   useEffect(()=>{
     const load=async()=>{
@@ -1052,6 +1140,8 @@ export default function App(){
       if(data?.cards?.length){setCards(data.cards);setStreak(data.state?.streak_days||0);setLastDate(data.state?.last_session_date||null);setSentenceHistory(data.state?.sentence_history||[])}
       else{await dbSeed();setCards(SEED)}
       setLoaded(true)
+      // Flush any writes queued from last offline session
+      flushQueue()
     }
     load()
   },[])
@@ -1126,12 +1216,16 @@ export default function App(){
   const tier=getTier(mastered)
 
   return <div style={{background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX,display:'flex',flexDirection:'column'}}>
+    {!isOnline&&<div style={{background:`${YE}22`,borderBottom:`1px solid ${YE}44`,padding:'8px 20px',display:'flex',alignItems:'center',gap:8,position:'sticky',top:0,zIndex:150}}>
+      <span style={{fontSize:13}}>✈️</span>
+      <span style={{fontSize:12,color:YE,fontWeight:600}}>Offline — study works fully. Claude features need connection.</span>
+    </div>}
     <div style={{flex:1,overflowY:'auto',paddingBottom:64}}>
       {screen==='home'&&<Home cards={cards} streak={streak} lastDate={lastDate} tier={tier} go={setScreen}/>}
       {screen==='study'&&<Study cards={cards} onRate={onRate} onBack={()=>setScreen('home')}/>}
-      {screen==='phrase'&&<Phrase cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} onBack={()=>setScreen('home')}/>}
+      {screen==='phrase'&&<Phrase cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} onBack={()=>setScreen('home')} isOnline={isOnline}/>}
       {screen==='bank'&&<Bank cards={cards}/>}
-      {screen==='import'&&<Import cards={cards} onImport={onImport} onBack={()=>setScreen('home')}/>}
+      {screen==='import'&&<Import cards={cards} onImport={onImport} onBack={()=>setScreen('home')} isOnline={isOnline}/>}
     </div>
     <Nav screen={screen} go={setScreen} due={due}/>
   </div>
