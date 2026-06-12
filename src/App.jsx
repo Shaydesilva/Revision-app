@@ -1461,10 +1461,14 @@ export default function App(){
           if(sbCards?.length){
             const sbMapped=sbCards.map(fromRow)
             const sbIds=new Set(sbMapped.map(c=>c.id))
-            const localOnly=localCards.filter(c=>!sbIds.has(c.id))
-            const merged=[...sbMapped,...localOnly]
+            const localIds=new Set(localCards.map(c=>c.id))
+            // Local wins for SM-2 state — local is always most recent
+            // Add cards from Supabase that aren't in local (added on another device)
+            const sbOnlyCards=sbMapped.filter(c=>!localIds.has(c.id))
+            const merged=[...localCards,...sbOnlyCards]
             if(merged.length>localCards.length){lsSave(LS_CARDS,merged);setCards(merged)}
-            if(localOnly.length)sb.from('cards').upsert(localOnly.map(toRow),{onConflict:'id,user_id'}).catch(()=>{})
+            // Push ALL local cards to Supabase — brings SM-2 state up to date
+            sb.from('cards').upsert(merged.map(toRow),{onConflict:'id,user_id'}).catch(()=>{})
           }else{syncToSupabase(localCards)}
           const{data:stateRows}=await sb.from('user_state').select('*').eq('user_id',USER_ID).limit(1)
           if(stateRows?.[0])lsSave(LS_STATE,stateRows[0])
