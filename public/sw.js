@@ -1,4 +1,4 @@
-const CACHE='carioca-v1'
+const CACHE='carioca-v2'
 const ASSETS=['/','index.html','/src/main.jsx']
 
 self.addEventListener('install',e=>{
@@ -22,10 +22,12 @@ self.addEventListener('activate',e=>{
 
 self.addEventListener('fetch',e=>{
   const url=new URL(e.request.url)
+  // Don't intercept Supabase or Netlify function calls — let them fail naturally offline
   if(url.hostname.includes('supabase.co')||url.pathname.startsWith('/.netlify')){
     e.respondWith(fetch(e.request).catch(()=>new Response(JSON.stringify({error:'offline'}),{headers:{'Content-Type':'application/json'}})))
     return
   }
+  // For app assets: cache first, network fallback
   e.respondWith(
     caches.match(e.request).then(cached=>{
       if(cached)return cached
