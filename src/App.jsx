@@ -1224,10 +1224,10 @@ function CardForm({card,onSave,onClose}){
   return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:480,background:S,borderRadius:'20px 20px 0 0',padding:'24px 24px 40px',animation:'slideUp 0.25s ease'}}>
       <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:20}}>{card?'Edit card':'Add card'}</div>
-      {[{label:'Portuguese *',val:pt,set:setPt,ph:'e.g. bora'},{label:'English *',val:en,set:setEn,ph:'e.g. let\'s go'},{label:'Example sentence',val:ex,set:setEx,ph:'optional'},{label:'Formal equivalent',val:ct,set:setCt,ph:'optional'}].map(f=><div key={f.label} style={{marginBottom:14}}>
+      {[{label:'Portuguese *',val:pt,set:setPt,ph:'e.g. bora'},{label:'English *',val:en,set:setEn,ph:'e.g. let\'s go'},{label:'Example sentence',val:ex,set:setEx,ph:'optional'},{label:'Formal equivalent',val:ct,set:setCt,ph:'optional'}].map(f=>(<div key={f.label} style={{marginBottom:14}}>
         <div style={{fontSize:11,color:MU,fontWeight:600,marginBottom:6}}>{f.label.toUpperCase()}</div>
         <input value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph} style={{width:'100%',background:S2,border:`1px solid ${BD}`,borderRadius:10,padding:'12px',color:TX,fontSize:14,outline:'none',boxSizing:'border-box'}} onFocus={e=>e.target.style.borderColor=AC} onBlur={e=>e.target.style.borderColor=BD}/>
-      </div>}
+      </div>))
       <div style={{marginBottom:16}}>
         <div style={{fontSize:11,color:MU,fontWeight:600,marginBottom:6}}>TYPE</div>
         <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['giria','vocab','frase_pronta','grammar','sentence'].map(t=><button key={t} onClick={()=>setType(t)} style={{padding:'6px 12px',background:type===t?AC:S2,color:type===t?'#fff':MU,border:'none',borderRadius:8,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:FONT}}>{t}</button>)}</div>
