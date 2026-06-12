@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const USER_ID='00000000-0000-0000-0000-000000000001'
@@ -210,33 +210,29 @@ async function flushQueue(){
   }catch(e){console.error('Flush failed',e)}
 }
 
-async function dbLoad(){
-  if(sb&&navigator.onLine){
-    try{
-      // Separate queries — user_state missing on first install shouldn't kill card load
-      const{data:cards,error:ce}=await sb.from('cards').select('*').eq('user_id',USER_ID)
-      if(ce)throw ce
-      const{data:stateRows}=await sb.from('user_state').select('*').eq('user_id',USER_ID).limit(1)
-      const state=(stateRows&&stateRows.length>0)?stateRows[0]:null
-      const mapped=(cards||[]).map(fromRow)
-      // Always mirror to localStorage after successful Supabase load
-      if(mapped.length)lsSaveCards(mapped)
-      if(state)lsSaveState(state)
-      return{cards:mapped,state}
-    }catch(e){console.warn('Supabase load failed:',e.message||e)}
-  }
-  // Offline or Supabase failed — use local cache
-  const cards=lsLoadCards()
-  const state=lsLoadState()
-  if(cards?.length){console.log('Using local cache:',cards.length,'cards');return{cards,state}}
-  return null
-}
+// localStorage is PRIMARY. Supabase is cloud backup.
+// NEVER overwrite localStorage with fewer cards than it already has.
+function getLocalCards(){return lsLoadCards()||[]}
 
 async function dbSeed(){
-  // Always save SEED to localStorage so offline works immediately
-  lsSaveCards(SEED)
+  // Only seed localStorage if empty
+  if(!getLocalCards().length){lsSaveCards(SEED)}
   if(!sb||!navigator.onLine)return
-  try{await sb.from('cards').upsert(SEED.map(toRow),{onConflict:'id,user_id'})}catch(e){console.warn('Seed upsert failed',e)}
+  try{await sb.from('cards').upsert(SEED.map(toRow),{onConflict:'id,user_id'})}catch(e){}
+}
+
+// Sync local cards up to Supabase (push anything missing from cloud)
+async function syncToSupabase(localCards){
+  if(!sb||!navigator.onLine||!localCards.length)return
+  try{
+    const{data:sbCards}=await sb.from('cards').select('id').eq('user_id',USER_ID)
+    const sbIds=new Set((sbCards||[]).map(r=>r.id))
+    const missing=localCards.filter(c=>!sbIds.has(c.id))
+    if(missing.length){
+      await sb.from('cards').upsert(missing.map(toRow),{onConflict:'id,user_id'})
+      console.log('Synced',missing.length,'cards to Supabase')
+    }
+  }catch(e){console.warn('Sync to Supabase failed:',e.message)}
 }
 
 async function dbUpdateCard(card){
@@ -481,11 +477,23 @@ function StudyDone({hist,combo,wrongCount,onBack}){
 
 
 async function dbSaveHoF(entry){if(!sb)return;await sb.from('sentence_hall_of_fame').insert({user_id:USER_ID,...entry})}
-async function dbLoadHoF(){if(!sb)return[];const{data}=await sb.from('sentence_hall_of_fame').select('*').eq('user_id',USER_ID).order('naturalness_score',{ascending:false}).limit(20);return data||[]}
+async function dbLoadHoF(){
+  if(!sb||!navigator.onLine)return[]
+  try{const{data}=await sb.from('sentence_hall_of_fame').select('*').eq('user_id',USER_ID).order('naturalness_score',{ascending:false}).limit(20);return data||[]}
+  catch(e){return[]}
+}
 async function dbLogImport(filename,added,skipped){if(!sb)return;await sb.from('import_history').insert({user_id:USER_ID,filename,cards_added:added,cards_skipped:skipped})}
-async function dbLoadImportHistory(){if(!sb)return[];const{data}=await sb.from('import_history').select('*').eq('user_id',USER_ID).order('created_at',{ascending:false}).limit(10);return data||[]}
+async function dbLoadImportHistory(){
+  if(!sb||!navigator.onLine)return[]
+  try{const{data}=await sb.from('import_history').select('*').eq('user_id',USER_ID).order('created_at',{ascending:false}).limit(10);return data||[]}
+  catch(e){return[]}
+}
 async function dbUpdateErrorPattern(errorType,example){if(!sb)return;try{const{data}=await sb.from('error_patterns').select('*').eq('user_id',USER_ID).eq('error_type',errorType).single();if(data){const examples=[...(data.examples||[]).slice(-4),example];await sb.from('error_patterns').update({count:(data.count||0)+1,last_seen:new Date().toISOString(),examples}).eq('user_id',USER_ID).eq('error_type',errorType)}else{await sb.from('error_patterns').insert({user_id:USER_ID,error_type:errorType,count:1,last_seen:new Date().toISOString(),examples:[example]})}}catch(e){}}
-async function dbLoadErrorPatterns(){if(!sb)return[];try{const{data}=await sb.from('error_patterns').select('*').eq('user_id',USER_ID).order('count',{ascending:false});return data||[]}catch(e){return[]}}
+async function dbLoadErrorPatterns(){
+  if(!sb||!navigator.onLine)return[]
+  try{const{data,error}=await sb.from('error_patterns').select('*').eq('user_id',USER_ID).order('count',{ascending:false});if(error)return[];return data||[]}
+  catch(e){return[]}
+}
 
 const FULL_RULES=`CRITICAL RULES — follow exactly:
 1. NEVER penalise missing or wrong accents. ta=ta, voce=voce, e=e in casual context — all fine.
@@ -687,6 +695,21 @@ async function evalFullChat(history,turnCorrections,cards){
 }
 
 // ── PHRASE ────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component{
+  constructor(props){super(props);this.state={error:null}}
+  static getDerivedStateFromError(e){return{error:e.message||'Unknown error'}}
+  componentDidCatch(e,info){console.error('Component crashed:',e,info)}
+  render(){
+    if(this.state.error)return <div style={{padding:'40px 24px',textAlign:'center'}}>
+      <div style={{fontSize:32,marginBottom:16}}>⚠️</div>
+      <div style={{fontSize:16,fontWeight:700,color:TX,marginBottom:8}}>Something crashed</div>
+      <div style={{fontSize:12,color:MU,marginBottom:20,fontFamily:'monospace',background:S2,padding:'12px',borderRadius:8}}>{this.state.error}</div>
+      <button onClick={()=>this.setState({error:null})} style={{background:AC,color:'#fff',border:'none',borderRadius:12,padding:'12px 24px',fontSize:14,fontWeight:700,cursor:'pointer'}}>Try again</button>
+    </div>
+    return this.props.children
+  }
+}
+
 function Phrase({cards,onRateMultiple,sentenceHistory,onSaveSentence,onBack,isOnline=true}){
   const[tab,setTab]=useState('practice')
   return <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 64px)'}}>
@@ -1150,11 +1173,46 @@ export default function App(){
 
   useEffect(()=>{
     const load=async()=>{
-      const data=await dbLoad()
-      if(data?.cards?.length){setCards(data.cards);setStreak(data.state?.streak_days||0);setLastDate(data.state?.last_session_date||null);setSentenceHistory(data.state?.sentence_history||[])}
-      else{await dbSeed();setCards(SEED)}
+      // 1. Load from localStorage immediately — always reliable
+      let cards=lsLoadCards()
+      const state=lsLoadState()
+      if(!cards||!cards.length){
+        // First install — seed localStorage
+        lsSaveCards(SEED)
+        cards=SEED
+        dbSeed() // push seed to Supabase in background
+      }
+      setCards(cards)
+      setStreak(state?.streak_days||0)
+      setLastDate(state?.last_session_date||null)
+      setSentenceHistory(state?.sentence_history||[])
       setLoaded(true)
-      // Flush any writes queued from last offline session
+      // 2. Supabase sync in background — MERGE, never overwrite with fewer
+      if(sb&&navigator.onLine){
+        try{
+          const{data:sbCards}=await sb.from('cards').select('*').eq('user_id',USER_ID)
+          if(sbCards?.length){
+            const sbMapped=sbCards.map(fromRow)
+            const sbIds=new Set(sbMapped.map(c=>c.id))
+            const localOnly=cards.filter(c=>!sbIds.has(c.id))
+            const merged=[...sbMapped,...localOnly]
+            // Only update if we gained cards
+            if(merged.length>cards.length){
+              lsSaveCards(merged)
+              setCards(merged)
+            }
+            // Push any local-only cards up to Supabase
+            if(localOnly.length){
+              sb.from('cards').upsert(localOnly.map(toRow),{onConflict:'id,user_id'}).catch(()=>{})
+            }
+          }else{
+            // Supabase empty — push all local cards up
+            syncToSupabase(cards)
+          }
+          const{data:stateRows}=await sb.from('user_state').select('*').eq('user_id',USER_ID).limit(1)
+          if(stateRows?.[0])lsSaveState(stateRows[0])
+        }catch(e){console.warn('Background sync failed:',e.message)}
+      }
       flushQueue()
     }
     load()
@@ -1241,7 +1299,7 @@ export default function App(){
     <div style={{flex:1,overflowY:'auto',paddingBottom:64}}>
       {screen==='home'&&<Home cards={cards} streak={streak} lastDate={lastDate} tier={tier} go={setScreen}/>}
       {screen==='study'&&<Study cards={cards} onRate={onRate} onBack={()=>setScreen('home')}/>}
-      {screen==='phrase'&&<Phrase cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} onBack={()=>setScreen('home')} isOnline={isOnline}/>}
+      {screen==='phrase'&&<ErrorBoundary><Phrase cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} onBack={()=>setScreen('home')} isOnline={isOnline}/></ErrorBoundary>}
       {screen==='bank'&&<Bank cards={cards}/>}
       {screen==='import'&&<Import cards={cards} onImport={onImport} onBack={()=>setScreen('home')} isOnline={isOnline}/>}
     </div>
