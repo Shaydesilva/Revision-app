@@ -211,36 +211,39 @@ async function flushQueue(){
 }
 
 async function dbLoad(){
-  // Try Supabase first
   if(sb&&navigator.onLine){
     try{
-      const[{data:cards},{data:state}]=await Promise.all([
-        sb.from('cards').select('*').eq('user_id',USER_ID),
-        sb.from('user_state').select('*').eq('user_id',USER_ID).single()
-      ])
-      const result={cards:(cards||[]).map(fromRow),state:state||null}
-      // Mirror to localStorage
-      lsSaveCards(result.cards)
-      if(result.state)lsSaveState(result.state)
-      return result
-    }catch(e){console.warn('Supabase load failed, trying local cache')}
+      // Separate queries — user_state missing on first install shouldn't kill card load
+      const{data:cards,error:ce}=await sb.from('cards').select('*').eq('user_id',USER_ID)
+      if(ce)throw ce
+      const{data:stateRows}=await sb.from('user_state').select('*').eq('user_id',USER_ID).limit(1)
+      const state=(stateRows&&stateRows.length>0)?stateRows[0]:null
+      const mapped=(cards||[]).map(fromRow)
+      // Always mirror to localStorage after successful Supabase load
+      if(mapped.length)lsSaveCards(mapped)
+      if(state)lsSaveState(state)
+      return{cards:mapped,state}
+    }catch(e){console.warn('Supabase load failed:',e.message||e)}
   }
-  // Fall back to localStorage cache
+  // Offline or Supabase failed — use local cache
   const cards=lsLoadCards()
   const state=lsLoadState()
-  if(cards?.length){console.log('Loaded from local cache');return{cards,state}}
+  if(cards?.length){console.log('Using local cache:',cards.length,'cards');return{cards,state}}
   return null
 }
 
 async function dbSeed(){
+  // Always save SEED to localStorage so offline works immediately
+  lsSaveCards(SEED)
   if(!sb||!navigator.onLine)return
-  await sb.from('cards').upsert(SEED.map(toRow),{onConflict:'id,user_id'})
+  try{await sb.from('cards').upsert(SEED.map(toRow),{onConflict:'id,user_id'})}catch(e){console.warn('Seed upsert failed',e)}
 }
 
 async function dbUpdateCard(card){
-  // Always update localStorage immediately
+  // Update localStorage — add if not present, update if present
   const cached=lsLoadCards()||[]
-  const updated=cached.map(c=>c.id===card.id?{...c,...card}:c)
+  const exists=cached.some(c=>c.id===card.id)
+  const updated=exists?cached.map(c=>c.id===card.id?{...c,...card}:c):[...cached,card]
   lsSaveCards(updated)
   // Supabase: write if online, queue if not
   const data={mastery:card.mastery,ease_factor:card.easeFactor,interval:card.interval,reps:card.reps,next_review:card.nextReview,sentence_score:card.sentenceScore||0,sentence_count:card.sentenceCount||0,recognition_mastery:card.recognitionMastery||0,production_mastery:card.productionMastery||0,updated_at:new Date().toISOString()}
@@ -249,7 +252,13 @@ async function dbUpdateCard(card){
   }
   queueWrite({type:'updateCard',id:card.id,data})
 }
-async function dbInsertCards(newCards){if(!sb)return;await sb.from('cards').insert(newCards.map(toRow))}
+async function dbInsertCards(newCards){
+  // Always write to localStorage immediately
+  const cached=lsLoadCards()||[]
+  lsSaveCards([...cached,...newCards])
+  if(!sb)return
+  try{await sb.from('cards').insert(newCards.map(toRow))}catch(e){console.warn('Insert failed, queued locally',e)}
+}
 async function dbSaveState(streak,lastDate,sentenceHistory){
   const data={streak_days:streak,last_session_date:lastDate,sentence_history:sentenceHistory||[],updated_at:new Date().toISOString()}
   lsSaveState({...data})
@@ -583,33 +592,37 @@ async function extractFromText(pastedText,existingCards){
     }
 
     const raw=await ct(
-      `You are extracting NEW vocabulary cards from a Brazilian Portuguese lesson.
-The professor writes informal messy notes in Google Docs — formatting is inconsistent.
+      `You are a smart vocabulary extractor for a Brazilian Portuguese student's lesson notes.
+The professor (Victor) writes informal, inconsistent Google Doc notes. Be intelligent about interpreting them.
 
-STUDENT ALREADY HAS THESE WORDS — skip anything with the same meaning (ignore accents when comparing):
+STUDENT'S EXISTING DECK — skip ANYTHING semantically equivalent to these (accent differences don't matter):
 ${existingList}
 
-HOW THIS DOCUMENT IS STRUCTURED:
-- "Revisão 1/2/Geral/da ultima aula:" = review of old content = SKIP ENTIRELY
-- "Matéria:", "Aula de Hoje:", "Coisas de hoje:", "Quer aprender:" = NEW content = EXTRACT
-- Lines with !, *, ?, (!) (*) (?) after them = mastery markers = SKIP THE MARKER, keep the word IF it's new
-- "To Learn:", "Proxima aula:", "Homework:" = skip
-- "(errado)" or lines marked as wrong = skip
-- Pronunciation tables (CH=SH, R=H etc) = skip
+THIS PROFESSOR'S NOTE FORMAT — learn to recognise each section type:
+  REVIEW (SKIP ENTIRELY): "Revisão 1:", "Revisão 2:", "Revisão Geral:", "Revisão da ultima aula:", "Revisão de hoje:"
+  NEW CONTENT (EXTRACT): "Matéria:", "Aula de Hoje:", "Coisas de hoje:", "Quer aprender:"
+  META (SKIP): "To Learn:", "Proxima aula:", "Homework:", "DIDNT GO OVER TODAY", "Legenda pra revisão:"
+  MASTERY MARKS (skip mark, keep word if new): lines ending in (!), (*), (?) or !, *, ?
+  ERRORS (SKIP): anything with "(errado)" or marked X
+  PHONETICS (SKIP): "CH = SH", "R = H" — pronunciation tables only
 
-WHAT TO EXTRACT:
-- New vocabulary words
-- New fixed phrases used as units
-- New grammar rules (make ONE clear card per rule)
-- Repeated patterns: eu quero ir pra praia/bar/festa → ONE card: "eu quero ir pra..." = "I want to go to..."
-- Conjugation tables: only extract if the word itself is new
+EXTRACTION LOGIC:
+- Single new word → vocab card
+- New fixed phrase used as a unit → frase_pronta
+- New grammar rule → ONE grammar card summarising it clearly
+- Same structure repeated (eu quero ir pra praia/festa/bar) → ONE template: "eu quero ir pra..."
+- Conjugation tables → extract BASE FORM only if it's genuinely new
+- Days of the week, weather words, adjectives → extract if not in deck
+- Ser vs estar rule → one clear grammar card if not in deck
 
-SEMANTIC DEDUP: if an item means the same as something in the deck (even with different accents or phrasing), skip it.
+ONLY extract items a language student needs to memorise as a standalone unit.
+SKIP anything already semantically covered by the deck above.
 
-Return ONLY a valid JSON array, no markdown, no explanation:
-[{"portuguese":"correct accents","english":"translation","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"semantic group or null","contrast":"formal Portuguese if Carioca, else null","exampleSentence":"example or null"}]
-If nothing new: []`,
-      `DAY ${chunk.day} LESSON TEXT${hasMarker?' (new content section)':''}:\n${focusText.slice(0,5000)}`,
+Return ONLY a valid JSON array, no markdown:
+[{"portuguese":"with correct accents","english":"clear translation","type":"giria|vocab|frase_pronta|grammar|sentence","cluster":"semantic group or null","contrast":"formal Portuguese if Carioca, else null","exampleSentence":"natural example sentence or null"}]
+Nothing new → []`,
+      `DAY ${chunk.day} NOTES${hasMarker?' — new content section shown':''}:
+${focusText.slice(0,5000)}`,
       2000
     )
 
@@ -684,15 +697,15 @@ function Phrase({cards,onRateMultiple,sentenceHistory,onSaveSentence,onBack,isOn
       </div>
     </div>
     <div style={{flex:1,overflowY:'auto'}}>
-      {tab==='practice'&&<Practice cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence}/>}
-      {tab==='chat'&&<ChatMode cards={cards} onRateMultiple={onRateMultiple}/>}
+      {tab==='practice'&&<Practice cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} isOnline={isOnline}/>}
+      {tab==='chat'&&<ChatMode cards={cards} onRateMultiple={onRateMultiple} isOnline={isOnline}/>}
       {tab==='say'&&<IWantToSay/>}
       {tab==='best'&&<BestSentences/>}
     </div>
   </div>
 }
 
-function Practice({cards,onRateMultiple,sentenceHistory,onSaveSentence}){
+function Practice({cards,onRateMultiple,sentenceHistory,onSaveSentence,isOnline=true}){
   const[phase,setPhase]=useState('idle')
   const[scenario,setScenario]=useState(null)
   const[ans,setAns]=useState('')
@@ -785,7 +798,7 @@ const CHAT_SCENES=[
   {key:'freestyle',label:'💬 Freestyle',desc:'You describe the situation'},
 ]
 
-function ChatMode({cards,onRateMultiple}){
+function ChatMode({cards,onRateMultiple,isOnline=true}){
   const[phase,setPhase]=useState('pick')
   const[history,setHistory]=useState([])
   const[turnCorrections,setTurnCorrections]=useState([])
@@ -824,6 +837,7 @@ function ChatMode({cards,onRateMultiple}){
   if(phase==='pick')return <div style={{padding:'20px',animation:'up 0.3s ease'}}>
     <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:6}}>Choose a situation</div>
     <div style={{fontSize:13,color:MU,marginBottom:20}}>Claude plays a Carioca local. Conversation runs until you end it.</div>
+    {!isOnline&&<div style={{padding:'16px 18px',background:`${YE}15`,border:`1px solid ${YE}44`,borderRadius:12,marginBottom:16,fontSize:13,color:YE}}>✈️ Needs internet — come back when you land.</div>}
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
       {CHAT_SCENES.map(s=><div key={s.key}>
         <button onClick={()=>s.key!=='freestyle'&&start(s)} style={{width:'100%',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',textAlign:'left',cursor:s.key==='freestyle'?'default':'pointer',fontFamily:FONT,transition:'border-color 0.15s'}} onMouseEnter={e=>e.currentTarget.style.borderColor=AC} onMouseLeave={e=>e.currentTarget.style.borderColor=BD}>
@@ -1192,8 +1206,12 @@ export default function App(){
   },[touchStreak])
 
   const onImport=useCallback(async items=>{
-    const newCards=items.map((it,i)=>mk(`imp-${Date.now()}-${i}`,it.portuguese,it.english||'—',it.type||'vocab',{cluster:it.cluster||null,contrast:it.contrast||null,exampleSentence:it.exampleSentence||null}))
-    setCards(prev=>[...prev,...newCards])
+    const newCards=items.map((it,i)=>mk(`imp-${Date.now()}-${i}`,it.portuguese,it.english||'—',it.type||'vocab',{cluster:it.cluster||null,contrast:it.contrast||null,exampleSentence:it.exampleSentence||null,sourceDay:it.sourceDay||0}))
+    setCards(prev=>{
+      const updated=[...prev,...newCards]
+      lsSaveCards(updated)  // persist full card list immediately
+      return updated
+    })
     await dbInsertCards(newCards)
   },[])
 
