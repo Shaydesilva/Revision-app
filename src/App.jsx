@@ -45,7 +45,9 @@ function buildDeck(cards){
   const due=cards.filter(c=>!c.priority&&new Date(c.nextReview)<=now&&c.mastery>0).sort(()=>Math.random()-0.5)
   const fresh=cards.filter(c=>!c.priority&&c.mastery===0).sort(()=>Math.random()-0.5)
   const prioritySlots=priority.sort(()=>Math.random()-0.5).slice(0,5)
-  const remaining=[...due,...fresh.slice(0,Math.max(3,Math.round(due.length*0.3)))].slice(0,15)
+  // When no due cards, serve 20 fresh — not the 30% rule which gives only 3
+  const freshCount=due.length===0?20:Math.max(5,Math.round(due.length*0.3))
+  const remaining=[...due,...fresh.slice(0,freshCount)].slice(0,20)
   return enforceInterleaving([...prioritySlots,...remaining])
 }
 
@@ -558,23 +560,38 @@ function Home({cards,streak,lastDate,tier,go}){
 
 function Study({cards,onRate,active}){
   const[mode,setMode]=useState('flash')
+  const[flashKey,setFlashKey]=useState(0)
+  const restart=useCallback(()=>setFlashKey(k=>k+1),[])
   return<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 64px)'}}>
     <div style={{padding:'16px 20px 0',display:'flex',gap:8}}>
-      {[['flash','Flashcards'],['elim','Elimination']].map(([k,l])=><button key={k} onClick={()=>setMode(k)} onMouseDown={()=>SND.init()} style={{padding:'8px 18px',borderRadius:10,background:mode===k?AC:S2,color:mode===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:13,fontWeight:700,fontFamily:FONT}}>{l}</button>)}
+      {[['flash','Flashcards'],['elim','Elimination']].map(([k,l])=><button key={k} onClick={()=>{setMode(k);if(k==='flash')setFlashKey(n=>n+1)}} onMouseDown={()=>SND.init()} style={{padding:'8px 18px',borderRadius:10,background:mode===k?AC:S2,color:mode===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:13,fontWeight:700,fontFamily:FONT}}>{l}</button>)}
     </div>
     <div style={{flex:1,overflow:'hidden'}}>
-      {mode==='flash'&&<FlashCards cards={cards} onRate={onRate}/>}
+      {mode==='flash'&&<FlashCards key={flashKey} cards={cards} onRate={onRate} onRestart={restart}/>}
       {mode==='elim'&&<EliminationGame cards={cards} onRate={onRate}/>}
     </div>
   </div>
 }
 
-function FlashCards({cards,onRate}){
-  const deck=useMemo(()=>{const d=buildDeck(cards);return d.length?d:cards.slice(0,20)},[])
+function FlashCards({cards,onRate,onRestart}){
+  // Build initial batch — due first, then fresh
+  const makeBatch=useCallback((seen=new Set())=>{
+    const now=new Date()
+    const priority=cards.filter(c=>c.priority&&!seen.has(c.id))
+    const due=cards.filter(c=>!c.priority&&new Date(c.nextReview)<=now&&c.mastery>0&&!seen.has(c.id)).sort(()=>Math.random()-0.5)
+    const fresh=cards.filter(c=>!c.priority&&c.mastery===0&&!seen.has(c.id)).sort(()=>Math.random()-0.5)
+    // If nothing new left, cycle everything
+    const pool=priority.length||due.length||fresh.length
+      ?[...priority,...due,...fresh]
+      :cards.sort(()=>Math.random()-0.5)
+    return enforceInterleaving(pool.slice(0,20))
+  },[cards])
+
+  const[deck,setDeck]=useState(()=>makeBatch())
   const[idx,setIdx]=useState(0)
-  const[deckState,setDeckState]=useState(deck)
-  const[isRetest,setIsRetest]=useState(false)
+  const[seenIds,setSeenIds]=useState(new Set())
   const[wrongCards,setWrongCards]=useState([])
+  const[isRetest,setIsRetest]=useState(false)
   const[flipped,setFlipped]=useState(false)
   const[flipping,setFlipping]=useState(false)
   const[phase,setPhase]=useState('front')
@@ -582,38 +599,63 @@ function FlashCards({cards,onRate}){
   const[ev,setEv]=useState(null)
   const[showCorrection,setShowCorrection]=useState(false)
   const[combo,setCombo]=useState(0)
-  const[hist,setHist]=useState([])
-  const[done,setDone]=useState(false)
+  const[maxCombo,setMaxCombo]=useState(0)
+  const[sessionCount,setSessionCount]=useState(0)
+  const[sessionCorrect,setSessionCorrect]=useState(0)
+  const[showFinish,setShowFinish]=useState(false)
   const[cardKey,setCardKey]=useState(0)
   const[statCard,setStatCard]=useState(null)
   const[hintRevealed,setHintRevealed]=useState(false)
   const[generatingMnemonic,setGeneratingMnemonic]=useState(false)
   const[localMnemonic,setLocalMnemonic]=useState(null)
-  const card=deckState[idx]
+  const card=deck[idx]
   const isDeep=card&&card.mastery>=2
   const mnemonic=localMnemonic||(card?.mnemonic)||null
 
   useEffect(()=>{setLocalMnemonic(null);setHintRevealed(false)},[idx,cardKey])
 
+  // Top up deck when approaching end
+  useEffect(()=>{
+    if(!isRetest&&idx>=deck.length-3){
+      const newSeen=new Set([...seenIds,...deck.map(c=>c.id)])
+      const more=makeBatch(newSeen)
+      if(more.length){setDeck(prev=>[...prev,...more]);setSeenIds(newSeen)}
+      // If nothing genuinely new, cycle from scratch after retest
+    }
+  },[idx,deck,isRetest,seenIds,makeBatch])
+
   const doFlip=useCallback(cb=>{SND.play('flip');setFlipping(true);setTimeout(()=>{cb();setFlipping(false)},170)},[])
 
   const advance=useCallback(q=>{
-    // If hint was used, cap at quality 3
     const effectiveQ=hintRevealed?Math.min(q,3):q
     onRate(card.id,effectiveQ,'study')
     if(effectiveQ<3&&!isRetest)setWrongCards(w=>[...w,card])
     const newCombo=effectiveQ>=3?combo+1:0
     setCombo(newCombo)
+    setMaxCombo(m=>Math.max(m,newCombo))
     SND.play(effectiveQ<3?'wrong':newCombo>=3?'combo':'correct',newCombo)
-    setHist(h=>[...h,{card,q:effectiveQ}])
+    setSessionCount(c=>c+1)
+    if(effectiveQ>=4)setSessionCorrect(c=>c+1)
     setShowCorrection(false);setHintRevealed(false);setLocalMnemonic(null)
     const nextIdx=idx+1
-    if(nextIdx>=deckState.length){
-      if(!isRetest&&wrongCards.length>0){setDeckState([...wrongCards]);setIdx(0);setIsRetest(true);setFlipped(false);setPhase('front');setAns('');setEv(null);setCardKey(k=>k+1);return}
-      SND.play('done');setDone(true);return
+    // End of deck — do retest if wrong cards, then keep going
+    if(nextIdx>=deck.length){
+      if(!isRetest&&wrongCards.length>0){
+        setDeck([...wrongCards]);setIdx(0);setIsRetest(true)
+        setFlipped(false);setPhase('front');setAns('');setEv(null);setCardKey(k=>k+1)
+        return
+      }
+      // Retest done or no wrong cards — load next batch
+      setIsRetest(false);setWrongCards([])
+      const newSeen=new Set([...seenIds,...deck.map(c=>c.id)])
+      const more=makeBatch(newSeen)
+      setDeck(more.length?more:makeBatch(new Set()))
+      setSeenIds(more.length?newSeen:new Set())
+      setIdx(0);setFlipped(false);setPhase('front');setAns('');setEv(null);setCardKey(k=>k+1)
+      return
     }
     doFlip(()=>{setIdx(nextIdx);setFlipped(false);setPhase('front');setAns('');setEv(null);setCardKey(k=>k+1)})
-  },[card,idx,deckState,isRetest,wrongCards,combo,hintRevealed,onRate,doFlip])
+  },[card,idx,deck,isRetest,wrongCards,combo,hintRevealed,seenIds,makeBatch,onRate,doFlip])
 
   const tap=useCallback(async()=>{
     if(flipped||flipping)return
@@ -634,106 +676,55 @@ function FlashCards({cards,onRate}){
     if(generatingMnemonic)return
     setGeneratingMnemonic(true)
     const m=await generateMnemonic(card,mnemonic)
-    if(m){
-      setLocalMnemonic(m)
-      onRate(card.id,card.mastery>0?null:0,'meta')
-      await dbUpdateCardMeta(card.id,{mnemonic:m})
-    }
+    if(m){setLocalMnemonic(m);await dbUpdateCardMeta(card.id,{mnemonic:m})}
     setGeneratingMnemonic(false)
-  },[card,mnemonic,generatingMnemonic,onRate])
+  },[card,mnemonic,generatingMnemonic])
 
   const removeMnemonic=useCallback(async()=>{
     setLocalMnemonic(null)
     await dbUpdateCardMeta(card.id,{mnemonic:null})
   },[card])
 
-  if(done)return<StudyDone hist={hist} combo={combo} wrongCount={wrongCards.length}/>
-  if(!card)return<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:16}}><div style={{fontSize:18,color:MU}}>No cards to review</div><div style={{fontSize:13,color:MU}}>You're all caught up!</div></div>
+  if(showFinish)return<StudyDone
+    sessionCount={sessionCount}
+    sessionCorrect={sessionCorrect}
+    combo={combo}
+    maxCombo={maxCombo}
+    onRestart={()=>{
+      setShowFinish(false);setDeck(makeBatch());setIdx(0);setSeenIds(new Set())
+      setWrongCards([]);setIsRetest(false);setCombo(0);setMaxCombo(0)
+      setSessionCount(0);setSessionCorrect(0);setFlipped(false);setPhase('front')
+      setAns('');setEv(null);setCardKey(k=>k+1)
+    }}
+  />
+
+  if(!card)return<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:16}}><Spinner/><span style={{color:MU}}>Loading cards…</span></div>
 
   return<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
     {statCard&&<CardStatPopup card={statCard} onClose={()=>setStatCard(null)}/>}
-    <div style={{padding:'12px 20px 8px',display:'flex',alignItems:'center',gap:12}}>
-      <div style={{flex:1,height:3,background:BD,borderRadius:3}}><div style={{height:'100%',width:`${((idx)/deckState.length)*100}%`,background:isRetest?YE:AC,borderRadius:3,transition:'width 0.3s'}}/></div>
+    <div style={{padding:'12px 20px 8px',display:'flex',alignItems:'center',gap:10}}>
+      {/* Streak counter */}
+      {combo>=3&&<div style={{display:'flex',alignItems:'center',gap:4,background:`${YE}18`,border:`1px solid ${YE}33`,borderRadius:20,padding:'4px 12px'}}>
+        <span style={{fontSize:14}}>🔥</span>
+        <span style={{fontSize:14,color:YE,fontWeight:800}}>{combo}</span>
+      </div>}
+      <div style={{flex:1,height:3,background:BD,borderRadius:3}}>
+        <div style={{height:'100%',width:`${Math.min(100,(sessionCount%20)*5)}%`,background:isRetest?YE:AC,borderRadius:3,transition:'width 0.3s'}}/>
+      </div>
       {isRetest&&<span style={{fontSize:11,color:YE,fontWeight:700}}>RE-TEST</span>}
-      {combo>=3&&<span style={{fontSize:13,color:YE,fontWeight:700}}>🔥{combo}</span>}
-      <span style={{fontSize:12,color:MU}}>{idx+1}/{deckState.length}</span>
+      <span style={{fontSize:12,color:MU,fontWeight:500}}>{sessionCount} done</span>
+      <button onClick={()=>setShowFinish(true)} style={{fontSize:11,color:MU,background:'none',border:`1px solid ${BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT}}>Finish</button>
     </div>
-    <div style={{flex:1,padding:'8px 20px 16px',display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-        <Tag text={card.type}/>
-        {card.contrast&&<Tag text="Carioca" color={GR}/>}
-        {card.priority&&<span style={{fontSize:13}}>⭐</span>}
-        <button onClick={()=>setStatCard(card)} style={{background:'none',border:'none',cursor:'pointer',marginLeft:'auto',display:'flex',alignItems:'center',gap:4}}><MasteryDots mastery={card.mastery}/></button>
-      </div>
-      <div style={{position:'relative',flex:1,display:'flex',flexDirection:'column'}}>
-        {deckState[idx+2]&&<div style={{position:'absolute',inset:0,background:S,border:`1px solid ${BD}`,borderRadius:22,transform:'translateY(12px) scale(0.91)',opacity:0.28}}/>}
-        {deckState[idx+1]&&<div style={{position:'absolute',inset:0,background:S,border:`1px solid ${BD}`,borderRadius:22,transform:'translateY(6px) scale(0.956)',opacity:0.52}}/>}
-        <div key={cardKey} style={{position:'relative',flex:1,zIndex:2,display:'flex',flexDirection:'column',animation:'up 0.28s ease',opacity:flipping?0:1,transform:flipping?'scaleX(0.05)':'scaleX(1)',transition:flipping?'all 0.15s ease':'none'}}>
-          {!flipped
-            ?<div onClick={phase!=='typing'?tap:undefined} style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:22,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'32px 28px',textAlign:'center',cursor:phase==='typing'?'default':'pointer'}}>
-              {phase==='front'&&<>
-                <div style={{fontSize:11,color:MU,letterSpacing:2,fontWeight:600,marginBottom:16}}>PORTUGUESE</div>
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:card.exampleSentence?12:20}}>
-                  <div style={{fontSize:card.portuguese.length>22?22:38,color:TX,fontWeight:700,lineHeight:1.25}}>{card.portuguese}</div>
-                  <SpeakBtn text={card.portuguese} size={18}/>
-                </div>
-                {card.exampleSentence&&<div style={{fontSize:12,color:MU,fontStyle:'italic',marginBottom:12,maxWidth:280}}>{card.exampleSentence}</div>}
-                {mnemonic&&!hintRevealed&&<button onClick={e=>{e.stopPropagation();setHintRevealed(true)}} style={{fontSize:11,color:GD,background:`${GD}18`,border:`1px solid ${GD}33`,borderRadius:20,padding:'6px 14px',cursor:'pointer',fontFamily:FONT,marginBottom:8}}>💡 Show hint</button>}
-                {mnemonic&&hintRevealed&&<div style={{background:`${GD}15`,border:`1px solid ${GD}33`,borderRadius:12,padding:'12px 16px',marginBottom:8,maxWidth:300,animation:'fadeIn 0.3s ease'}}><div style={{fontSize:11,color:GD,fontWeight:600,marginBottom:4}}>MEMORY HOOK {hintRevealed&&<span style={{color:YE,fontSize:10}}>(hint used → max △)</span>}</div><div style={{fontSize:13,color:TX}}>{mnemonic}</div></div>}
-                {!mnemonic&&<button onClick={e=>{e.stopPropagation();genMnemonic()}} style={{fontSize:11,color:MU,background:'none',border:`1px solid ${BD}`,borderRadius:20,padding:'5px 12px',cursor:'pointer',fontFamily:FONT,marginBottom:8}}>{generatingMnemonic?'Generating…':'+ Generate hint'}</button>}
-                <div style={{fontSize:13,color:MU,padding:'9px 22px',border:`1px solid ${BD}`,borderRadius:22,marginTop:8}}>{isDeep?'Tap to translate':'Tap to reveal'}</div>
-              </>}
-              {phase==='typing'&&<div style={{width:'100%'}}>
-                <div style={{fontSize:11,color:MU,letterSpacing:2,fontWeight:600,marginBottom:12}}>TRANSLATE TO ENGLISH</div>
-                <div style={{fontSize:card.portuguese.length>22?20:32,color:TX,fontWeight:700,lineHeight:1.3,marginBottom:16}}>{card.portuguese}</div>
-                <textarea value={ans} onChange={e=>setAns(e.target.value)} autoFocus placeholder="write your translation…" style={{width:'100%',background:BG,border:`1px solid ${BD}`,borderRadius:13,padding:'14px',color:TX,fontSize:15,resize:'none',outline:'none',minHeight:72,boxSizing:'border-box',marginBottom:12}} onFocus={e=>e.target.style.borderColor=AC} onBlur={e=>e.target.style.borderColor=BD}/>
-                <PBtn label="Reveal →" onClick={tap} disabled={!ans.trim()}/>
-              </div>}
-              {phase==='evaluating'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:14}}><Spinner/><span style={{fontSize:13,color:MU}}>Evaluating…</span></div>}
-            </div>
-            :<div style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:22,padding:'24px',overflowY:'auto',display:'flex',flexDirection:'column'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                <div style={{fontSize:card.portuguese.length>22?18:28,color:TX,fontWeight:700,lineHeight:1.3}}>{card.portuguese}</div>
-                <SpeakBtn text={card.portuguese}/>
-              </div>
-              <div style={{fontSize:17,color:TX,lineHeight:1.5,marginBottom:12}}>{card.english}</div>
-              {card.contrast&&<div style={{padding:'10px 0',borderTop:`1px solid ${BD}`,marginBottom:12}}><div style={{fontSize:10,color:MU,fontWeight:600,marginBottom:4}}>FORMAL PORTUGUESE</div><div style={{fontSize:13,color:MU,fontStyle:'italic'}}>{card.contrast}</div></div>}
-              {card.exampleSentence&&<div style={{padding:'10px 0',borderTop:`1px solid ${BD}`,marginBottom:12}}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}><div style={{fontSize:10,color:MU,fontWeight:600}}>EXAMPLE</div><SpeakBtn text={card.exampleSentence} size={12}/></div><div style={{fontSize:13,color:TX,fontStyle:'italic'}}>{card.exampleSentence}</div></div>}
-              {ev&&showCorrection&&<div style={{background:S2,borderRadius:14,padding:'14px',marginBottom:14,animation:'fadeIn 0.4s ease'}}><div style={{display:'flex',gap:8,marginBottom:10}}>{[{l:'Accuracy',v:ev.accuracy||50},{l:'Carioca',v:ev.naturalness||50}].map(x=>{const c=x.v>=75?GR:x.v>=50?YE:RE;return<div key={x.l} style={{flex:1,background:BG,borderRadius:10,padding:'10px',textAlign:'center'}}><div style={{fontSize:22,fontWeight:800,color:c}}>{x.v}</div><div style={{fontSize:10,color:MU,fontWeight:600,marginTop:3}}>{x.l.toUpperCase()}</div></div>})}</div>{ev.feedback&&<div style={{fontSize:13,color:TX,marginBottom:ev.correction?8:0}}>"{ev.feedback}"</div>}{ev.correction&&<div style={{fontSize:13,color:GR}}>→ {ev.correction}</div>}</div>}
-              {/* Mnemonic on back face */}
-              <div style={{borderTop:`1px solid ${BD}`,paddingTop:12,marginTop:'auto'}}>
-                {mnemonic
-                  ?<div style={{background:`${GD}15`,border:`1px solid ${GD}33`,borderRadius:12,padding:'12px',marginBottom:12}}>
-                    <div style={{fontSize:10,color:GD,fontWeight:600,marginBottom:4}}>MEMORY HOOK</div>
-                    <div style={{fontSize:13,color:TX,marginBottom:8}}>{mnemonic}</div>
-                    <div style={{display:'flex',gap:8}}>
-                      <button onClick={genMnemonic} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>{generatingMnemonic?'…':'🔄 Refresh'}</button>
-                      <button onClick={removeMnemonic} style={{fontSize:11,color:RE,background:`${RE}18`,border:`1px solid ${RE}33`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>✕ Remove</button>
-                    </div>
-                  </div>
-                  :<button onClick={genMnemonic} style={{fontSize:12,color:GD,background:`${GD}15`,border:`1px solid ${GD}33`,borderRadius:12,padding:'10px 16px',cursor:'pointer',fontFamily:FONT,width:'100%',marginBottom:12}}>{generatingMnemonic?<span style={{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}><Spinner size={14}/>Generating hook…</span>:'💡 Generate memory hook'}</button>}
-                <div style={{fontSize:11,color:MU,fontWeight:600,textAlign:'center',marginBottom:10}}>HOW DID YOU DO?{hintRevealed&&<span style={{color:YE,marginLeft:8}}>hint used — max △</span>}</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-                  {[{l:'✗',sub:'Again',q:1,c:RE},{l:'△',sub:'Almost',q:3,c:YE},{l:'✓',sub:'Got it',q:4,c:GR}].map(x=><button key={x.q} onClick={()=>advance(x.q)} disabled={x.q===4&&hintRevealed} style={{padding:'14px 8px',background:`${x.c}18`,border:`1px solid ${x.c}44`,borderRadius:14,color:x.c,cursor:x.q===4&&hintRevealed?'not-allowed':'pointer',fontFamily:FONT,opacity:x.q===4&&hintRevealed?0.3:1}} onMouseDown={e=>{SND.init();e.currentTarget.style.transform='scale(0.92)'}} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><div style={{fontSize:22,marginBottom:3}}>{x.l}</div><div style={{fontSize:12,fontWeight:500}}>{x.sub}</div></button>)}
-                </div>
-              </div>
-            </div>}
-        </div>
-      </div>
-    </div>
-  </div>
-}
-
-function StudyDone({hist,combo,wrongCount}){
-  const ok=hist.filter(h=>h.q>=4).length,al=hist.filter(h=>h.q===3).length,no=hist.filter(h=>h.q<3).length
-  const corrections=hist.filter(h=>h.q<3).map(h=>h.card.portuguese)
+function StudyDone({sessionCount,sessionCorrect,combo,maxCombo,onRestart}){
+  const pct=sessionCount>0?Math.round((sessionCorrect/sessionCount)*100):0
   return<div style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'60px 24px 100px',animation:'up 0.4s ease'}}>
-    <div style={{fontSize:56,marginBottom:16,animation:'pop 0.5s ease'}}>🎉</div>
+    <div style={{fontSize:56,marginBottom:16,animation:'pop 0.5s ease'}}>{pct>=80?'🔥':pct>=60?'💪':'📚'}</div>
     <div style={{fontSize:26,fontWeight:800,color:TX,marginBottom:6}}>Session done</div>
-    {wrongCount>0&&<div style={{fontSize:13,color:YE,marginBottom:6}}>Retested {wrongCount} missed cards</div>}
-    {combo>=3&&<div style={{fontSize:14,color:YE,fontWeight:700,marginBottom:20}}>🔥 Best combo: {combo}</div>}
-    <div style={{display:'flex',gap:28,marginBottom:corrections.length?24:16}}>{[{v:ok,c:GR,l:'correct'},{v:al,c:YE,l:'almost'},{v:no,c:RE,l:'again'}].map(x=><div key={x.l} style={{textAlign:'center'}}><div style={{fontSize:34,fontWeight:800,color:x.c}}>{x.v}</div><div style={{fontSize:11,color:MU,fontWeight:500}}>{x.l}</div></div>)}</div>
-    {corrections.length>0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'16px',width:'100%',marginBottom:16}}><div style={{fontSize:11,color:MU,fontWeight:600,marginBottom:10}}>REVIEW THESE</div><div style={{display:'flex',flexWrap:'wrap',gap:6}}>{corrections.map((p,i)=><span key={i} style={{padding:'4px 10px',borderRadius:8,background:`${RE}18`,color:RE,fontSize:12,fontWeight:600}}>{p}</span>)}</div></div>}
+    <div style={{fontSize:14,color:MU,marginBottom:28}}>{sessionCount} cards reviewed</div>
+    <div style={{display:'flex',gap:24,marginBottom:28}}>
+      {[{v:`${pct}%`,c:pct>=80?GR:pct>=60?YE:RE,l:'accuracy'},{v:maxCombo,c:YE,l:'best streak'},{v:sessionCorrect,c:GR,l:'correct'}].map(x=><div key={x.l} style={{textAlign:'center'}}><div style={{fontSize:34,fontWeight:800,color:x.c}}>{x.v}</div><div style={{fontSize:11,color:MU,fontWeight:500,marginTop:2}}>{x.l}</div></div>)}
+    </div>
+    <PBtn label="Study again →" onClick={onRestart}/>
   </div>
 }
 
@@ -1260,7 +1251,7 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
   const[initialized,setInitialized]=useState(false)
   const searchTimer=useRef(null)
 
-  const daysUntil=c=>Math.round((new Date(c.nextReview)-new Date())/86400000)
+  const daysUntil=c=>{const d=Math.round((new Date(c.nextReview||Date.now())-new Date())/86400000);return isNaN(d)?0:d}
   const reviewColor=c=>{const d=daysUntil(c);if(c.mastery>=5)return MU;if(d<0)return RE;if(d<=1)return YE;return GR}
   const reviewLabel=c=>{const d=daysUntil(c);if(c.mastery>=5)return'Mastered';if(d<0)return`${Math.abs(d)}d overdue`;if(d===0)return'Due today';return`In ${d}d`}
 
@@ -1270,12 +1261,12 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
     if(practiceFilter==='never')c=c.filter(x=>x.sentenceCount===0)
     if(practiceFilter==='practiced')c=c.filter(x=>x.sentenceCount>0)
     if(practiceFilter==='priority')c=c.filter(x=>x.priority)
-    if(search.trim()&&!claudeResults){const q=search.toLowerCase().trim();c=c.filter(x=>x.portuguese.toLowerCase().includes(q)||(x.english||'').toLowerCase().includes(q))}
+    if(search.trim()&&!claudeResults){const q=search.toLowerCase().trim();c=c.filter(x=>(x.portuguese||'').toLowerCase().includes(q)||(x.english||'').toLowerCase().includes(q))}
     return c
   },[cards,typeFilter,practiceFilter,search,claudeResults])
 
   const displayed=claudeResults||localFiltered
-  const sorted=useMemo(()=>{const now=new Date();return[...displayed].sort((a,b)=>{if(sort==='overdue')return(new Date(a.nextReview)-now)-(new Date(b.nextReview)-now);if(sort==='weakest')return a.mastery-b.mastery;if(sort==='strongest')return b.mastery-a.mastery;if(sort==='never')return a.sentenceCount-b.sentenceCount;if(sort==='az')return a.portuguese.localeCompare(b.portuguese);return 0})},[displayed,sort])
+  const sorted=useMemo(()=>{const now=new Date();return[...displayed].sort((a,b)=>{if(sort==='overdue')return(new Date(a.nextReview||Date.now())-now)-(new Date(b.nextReview||Date.now())-now);if(sort==='weakest')return a.mastery-b.mastery;if(sort==='strongest')return b.mastery-a.mastery;if(sort==='never')return a.sentenceCount-b.sentenceCount;if(sort==='az')return a.portuguese.localeCompare(b.portuguese);return 0})},[displayed,sort])
 
   const handleSearch=useCallback(val=>{
     setSearch(val);setClaudeResults(null);clearTimeout(searchTimer.current)
@@ -1293,7 +1284,7 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
   const handleAddCard=card=>{onAddCard(card)}
   const handleEditCard=updates=>{onUpdateCard({...editCard,...updates})}
   const handleTogglePriority=card=>{onUpdateCard({...card,priority:!card.priority,priorityStreak:0})}
-  const handleDeleteCard=async card=>{if(window.confirm(`Remove "${card.portuguese}" from your deck?`)){await dbDeleteCard(card.id);onDeleteCard(card.id)}}
+  const handleDeleteCard=async card=>{if(window.confirm(`Remove "${card.portuguese||'this card'}" from your deck?`)){await dbDeleteCard(card.id);if(onDeleteCard)onDeleteCard(card.id)}}
 
   return<div style={{padding:'52px 0 100px',animation:'up 0.35s ease'}}>
     {showForm&&<CardForm onSave={handleAddCard} onClose={()=>setShowForm(false)}/>}
@@ -1313,10 +1304,9 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
     </div>
     <div style={{padding:'0 20px 10px'}}><span style={{fontSize:12,color:MU}}>{sorted.length} cards</span>{claudeResults&&<span style={{fontSize:12,color:AC,marginLeft:8}}>· Claude search</span>}</div>
     <div style={{padding:'0 20px'}}>
-      {sorted.map(card=>{
-        const lp=useLongPress(()=>{/* handled via state */},500)
-        return<div key={card.id}>
-          <button {...lp} onMouseDown={e=>{lp.onMouseDown(e);if(e.buttons===1){const timer=setTimeout(()=>handleLongPress(card,e),500);return()=>clearTimeout(timer)}}} onClick={()=>setExpanded(expanded===card.id?null:card.id)} style={{width:'100%',background:S,border:`1px solid ${card.priority?GD:BD}`,borderLeft:card.priority?`3px solid ${GD}`:undefined,borderRadius:14,padding:'14px 16px',marginBottom:6,textAlign:'left',cursor:'pointer',fontFamily:FONT}}>
+      {sorted.map(card=>(
+        <div key={card.id}>
+          <button onClick={()=>setExpanded(expanded===card.id?null:card.id)} style={{width:'100%',background:S,border:`1px solid ${card.priority?GD:BD}`,borderLeft:card.priority?`3px solid ${GD}`:undefined,borderRadius:14,padding:'14px 16px',marginBottom:6,textAlign:'left',cursor:'pointer',fontFamily:FONT}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
               <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:16,fontWeight:700,color:TX}}>{card.portuguese}</span>{card.priority&&<span style={{fontSize:12}}>⭐</span>}{card.mnemonic&&<span style={{fontSize:12,opacity:0.6}}>💡</span>}</div>
               <span style={{fontSize:11,color:reviewColor(card),fontWeight:600,whiteSpace:'nowrap',marginLeft:8}}>{reviewLabel(card)}</span>
@@ -1325,15 +1315,20 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
           </button>
           {expanded===card.id&&<div style={{background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'16px',marginBottom:8,marginTop:-4,animation:'up 0.2s ease'}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
-              {[{l:'Type',v:card.type},{l:'Mastery',v:`${card.mastery}/5`},{l:'Ease factor',v:(card.easeFactor||2.5).toFixed(2)},{l:'Interval',v:`${card.interval||0}d`},{l:'Reps',v:card.reps||0},{l:'Recognition',v:`${card.recognitionMastery||0}/5`},{l:'Production',v:`${card.productionMastery||0}/5`},{l:'Sentence uses',v:card.sentenceCount||0}].map(({l,v})=><div key={l} style={{background:S,borderRadius:8,padding:'10px'}}><div style={{fontSize:10,color:MU,fontWeight:600,marginBottom:3}}>{l.toUpperCase()}</div><div style={{fontSize:13,color:TX,fontWeight:600}}>{v}</div></div>)}
+              {[{l:'Type',v:card.type},{l:'Mastery',v:`${card.mastery}/5`},{l:'Ease factor',v:(card.easeFactor||2.5).toFixed(2)},{l:'Interval',v:`${card.interval||0}d`},{l:'Reps',v:card.reps||0},{l:'Recognition',v:`${card.recognitionMastery||0}/5`},{l:'Production',v:`${card.productionMastery||0}/5`},{l:'Sentence uses',v:card.sentenceCount||0}].map(({l,v})=>(<div key={l} style={{background:S,borderRadius:8,padding:'10px'}}><div style={{fontSize:10,color:MU,fontWeight:600,marginBottom:3}}>{l.toUpperCase()}</div><div style={{fontSize:13,color:TX,fontWeight:600}}>{v}</div></div>))}
             </div>
             {card.contrast&&<div style={{background:S,borderRadius:8,padding:'10px',marginBottom:8}}><div style={{fontSize:10,color:MU,fontWeight:600,marginBottom:3}}>FORMAL EQUIVALENT</div><div style={{fontSize:13,color:MU,fontStyle:'italic'}}>{card.contrast}</div></div>}
             {card.exampleSentence&&<div style={{background:S,borderRadius:8,padding:'10px',marginBottom:8}}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}><div style={{fontSize:10,color:MU,fontWeight:600}}>EXAMPLE</div><SpeakBtn text={card.exampleSentence} size={11}/></div><div style={{fontSize:13,color:TX,fontStyle:'italic'}}>{card.exampleSentence}</div></div>}
             <MnemonicSection card={card}/>
-            <div style={{background:S,borderRadius:8,padding:'10px'}}><div style={{fontSize:10,color:MU,fontWeight:600,marginBottom:3}}>WHAT THIS MEANS</div><div style={{fontSize:12,color:MU,lineHeight:1.6}}>{card.mastery>=5?'Fully mastered.':card.priority?`Priority — reviewed every session, intervals at 33%.`:card.mastery>=3&&card.sentenceCount===0?'Solid in flashcards but never used in a sentence. Phrase mode will target it.':card.mastery>=3?'Solid — flashcards and sentences.':card.mastery>=1?'Still learning.':'Not started yet.'}</div></div>
+            <div style={{background:S,borderRadius:8,padding:'10px',marginBottom:10}}><div style={{fontSize:10,color:MU,fontWeight:600,marginBottom:3}}>WHAT THIS MEANS</div><div style={{fontSize:12,color:MU,lineHeight:1.6}}>{card.mastery>=5?'Fully mastered.':card.priority?'Priority — reviewed every session, intervals at 33%.':card.mastery>=3&&card.sentenceCount===0?'Solid in flashcards but never used in a sentence. Phrase mode will target it.':card.mastery>=3?'Solid — flashcards and sentences.':card.mastery>=1?'Still learning.':'Not started yet.'}</div></div>
+            <div style={{display:'flex',gap:8,paddingTop:8,borderTop:`1px solid ${BD}`}}>
+              <button onClick={()=>setEditCard(card)} style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:10,padding:'10px',color:MU,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:FONT}}>✏️ Edit</button>
+              <button onClick={()=>handleTogglePriority(card)} style={{flex:1,background:card.priority?`${GD}18`:S,border:`1px solid ${card.priority?GD:BD}`,borderRadius:10,padding:'10px',color:card.priority?GD:MU,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:FONT}}>{card.priority?'★ Priority':'☆ Priority'}</button>
+              <button onClick={()=>handleDeleteCard(card)} style={{flex:1,background:`${RE}15`,border:`1px solid ${RE}33`,borderRadius:10,padding:'10px',color:RE,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:FONT}}>🗑 Remove</button>
+            </div>
           </div>}
         </div>
-      })}
+      ))}
     </div>
     {/* Floating add button */}
     <button onClick={()=>setShowForm(true)} onMouseDown={()=>SND.init()} style={{position:'fixed',bottom:88,right:'calc(50% - 220px)',width:52,height:52,borderRadius:'50%',background:AC,color:'#fff',border:'none',fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(79,142,247,0.5)',zIndex:90}}>+</button>
@@ -1565,7 +1560,7 @@ export default function App(){
       <div style={{display:screen==='home'?'block':'none'}}><Home cards={cards} streak={streak} lastDate={lastDate} tier={tier} go={setScreen}/></div>
       <div style={{display:screen==='study'?'block':'none'}}><Study cards={cards} onRate={onRate} active={screen==='study'}/></div>
       <div style={{display:screen==='phrase'?'block':'none'}}><ErrorBoundary><Phrase cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} isOnline={isOnline} active={screen==='phrase'}/></ErrorBoundary></div>
-      <div style={{display:screen==='bank'?'block':'none'}}><Bank cards={cards} onUpdateCard={onUpdateCard} onAddCard={onAddCard} onDeleteCard={onDeleteCard} active={screen==='bank'}/></div>
+      <div style={{display:screen==='bank'?'block':'none'}}><ErrorBoundary><Bank cards={cards} onUpdateCard={onUpdateCard} onAddCard={onAddCard} onDeleteCard={onDeleteCard} active={screen==='bank'}/></ErrorBoundary></div>
       <div style={{display:screen==='import'?'block':'none'}}><Import cards={cards} onImport={onImport} isOnline={isOnline} active={screen==='import'}/></div>
     </div>
     <Nav screen={screen} go={setScreen} due={due}/>
