@@ -715,6 +715,71 @@ function FlashCards({cards,onRate,onRestart}){
       <span style={{fontSize:12,color:MU,fontWeight:500}}>{sessionCount} done</span>
       <button onClick={()=>setShowFinish(true)} style={{fontSize:11,color:MU,background:'none',border:`1px solid ${BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT}}>Finish</button>
     </div>
+    <div style={{flex:1,padding:'8px 20px 16px',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+        <Tag text={card.type}/>{card.contrast&&<Tag text="Carioca" color={GR}/>}{card.priority&&<span style={{fontSize:13}}>⭐</span>}
+        <button onClick={()=>setStatCard(card)} style={{background:'none',border:'none',cursor:'pointer',marginLeft:'auto',display:'flex',alignItems:'center',gap:4}}><MasteryDots mastery={card.mastery}/></button>
+      </div>
+      <div style={{position:'relative',flex:1,display:'flex',flexDirection:'column'}}>
+        {deck[idx+2]&&<div style={{position:'absolute',inset:0,background:S,border:`1px solid ${BD}`,borderRadius:22,transform:'translateY(12px) scale(0.91)',opacity:0.28}}/>}
+        {deck[idx+1]&&<div style={{position:'absolute',inset:0,background:S,border:`1px solid ${BD}`,borderRadius:22,transform:'translateY(6px) scale(0.956)',opacity:0.52}}/>}
+        <div key={cardKey} style={{position:'relative',flex:1,zIndex:2,display:'flex',flexDirection:'column',animation:'up 0.28s ease',opacity:flipping?0:1,transform:flipping?'scaleX(0.05)':'scaleX(1)',transition:flipping?'all 0.15s ease':'none'}}>
+          {!flipped
+            ?<div onClick={phase!=='typing'?tap:undefined} style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:22,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'32px 28px',textAlign:'center',cursor:phase==='typing'?'default':'pointer'}}>
+              {phase==='front'&&<>
+                <div style={{fontSize:11,color:MU,letterSpacing:2,fontWeight:600,marginBottom:16}}>PORTUGUESE</div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:card.exampleSentence?12:20}}>
+                  <div style={{fontSize:card.portuguese.length>22?22:38,color:TX,fontWeight:700,lineHeight:1.25}}>{card.portuguese}</div>
+                  <SpeakBtn text={card.portuguese} size={18}/>
+                </div>
+                {card.exampleSentence&&<div style={{fontSize:12,color:MU,fontStyle:'italic',marginBottom:12,maxWidth:280}}>{card.exampleSentence}</div>}
+                {mnemonic&&!hintRevealed&&<button onClick={e=>{e.stopPropagation();setHintRevealed(true)}} style={{fontSize:11,color:GD,background:`${GD}18`,border:`1px solid ${GD}33`,borderRadius:20,padding:'6px 14px',cursor:'pointer',fontFamily:FONT,marginBottom:8}}>💡 Show hint</button>}
+                {mnemonic&&hintRevealed&&<div style={{background:`${GD}15`,border:`1px solid ${GD}33`,borderRadius:12,padding:'12px 16px',marginBottom:8,maxWidth:300,animation:'fadeIn 0.3s ease'}}><div style={{fontSize:11,color:GD,fontWeight:600,marginBottom:4}}>MEMORY HOOK <span style={{color:YE,fontSize:10}}>(hint used → max △)</span></div><div style={{fontSize:13,color:TX}}>{mnemonic}</div></div>}
+                {!mnemonic&&<button onClick={e=>{e.stopPropagation();genMnemonic()}} style={{fontSize:11,color:MU,background:'none',border:`1px solid ${BD}`,borderRadius:20,padding:'5px 12px',cursor:'pointer',fontFamily:FONT,marginBottom:8}}>{generatingMnemonic?'Generating…':'+ Generate hint'}</button>}
+                <div style={{fontSize:13,color:MU,padding:'9px 22px',border:`1px solid ${BD}`,borderRadius:22,marginTop:8}}>{isDeep?'Tap to translate':'Tap to reveal'}</div>
+              </>}
+              {phase==='typing'&&<div style={{width:'100%'}}>
+                <div style={{fontSize:11,color:MU,letterSpacing:2,fontWeight:600,marginBottom:12}}>TRANSLATE TO ENGLISH</div>
+                <div style={{fontSize:card.portuguese.length>22?20:32,color:TX,fontWeight:700,lineHeight:1.3,marginBottom:16}}>{card.portuguese}</div>
+                <textarea value={ans} onChange={e=>setAns(e.target.value)} autoFocus placeholder="write your translation…" style={{width:'100%',background:BG,border:`1px solid ${BD}`,borderRadius:13,padding:'14px',color:TX,fontSize:15,resize:'none',outline:'none',minHeight:72,boxSizing:'border-box',marginBottom:12}} onFocus={e=>e.target.style.borderColor=AC} onBlur={e=>e.target.style.borderColor=BD}/>
+                <PBtn label="Reveal →" onClick={tap} disabled={!ans.trim()}/>
+              </div>}
+              {phase==='evaluating'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:14}}><Spinner/><span style={{fontSize:13,color:MU}}>Evaluating…</span></div>}
+            </div>
+            :<div style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:22,padding:'24px',overflowY:'auto',display:'flex',flexDirection:'column'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                <div style={{fontSize:card.portuguese.length>22?18:28,color:TX,fontWeight:700,lineHeight:1.3}}>{card.portuguese}</div>
+                <SpeakBtn text={card.portuguese}/>
+              </div>
+              <div style={{fontSize:17,color:TX,lineHeight:1.5,marginBottom:12}}>{card.english}</div>
+              {card.contrast&&<div style={{padding:'10px 0',borderTop:`1px solid ${BD}`,marginBottom:12}}><div style={{fontSize:10,color:MU,fontWeight:600,marginBottom:4}}>FORMAL PORTUGUESE</div><div style={{fontSize:13,color:MU,fontStyle:'italic'}}>{card.contrast}</div></div>}
+              {card.exampleSentence&&<div style={{padding:'10px 0',borderTop:`1px solid ${BD}`,marginBottom:12}}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}><div style={{fontSize:10,color:MU,fontWeight:600}}>EXAMPLE</div><SpeakBtn text={card.exampleSentence} size={12}/></div><div style={{fontSize:13,color:TX,fontStyle:'italic'}}>{card.exampleSentence}</div></div>}
+              {ev&&showCorrection&&<div style={{background:S2,borderRadius:14,padding:'14px',marginBottom:14,animation:'fadeIn 0.4s ease'}}>
+                <div style={{display:'flex',gap:8,marginBottom:10}}>{[{l:'Accuracy',v:ev.accuracy||50},{l:'Carioca',v:ev.naturalness||50}].map(x=>{const c=x.v>=75?GR:x.v>=50?YE:RE;return<div key={x.l} style={{flex:1,background:BG,borderRadius:10,padding:'10px',textAlign:'center'}}><div style={{fontSize:22,fontWeight:800,color:c}}>{x.v}</div><div style={{fontSize:10,color:MU,fontWeight:600,marginTop:3}}>{x.l.toUpperCase()}</div></div>})}</div>
+                {ev.feedback&&<div style={{fontSize:13,color:TX,marginBottom:ev.correction?8:0}}>"{ev.feedback}"</div>}
+                {ev.correction&&<div style={{fontSize:13,color:GR}}>→ {ev.correction}</div>}
+              </div>}
+              <div style={{marginTop:'auto',paddingTop:12}}>
+                {mnemonic&&<div style={{background:`${GD}15`,border:`1px solid ${GD}33`,borderRadius:12,padding:'12px',marginBottom:12}}>
+                  <div style={{fontSize:10,color:GD,fontWeight:600,marginBottom:4}}>MEMORY HOOK</div>
+                  <div style={{fontSize:13,color:TX,marginBottom:8}}>{mnemonic}</div>
+                  <div style={{display:'flex',gap:8}}>
+                    <button onClick={genMnemonic} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>{generatingMnemonic?'…':'🔄 Refresh'}</button>
+                    <button onClick={removeMnemonic} style={{fontSize:11,color:RE,background:`${RE}18`,border:`1px solid ${RE}33`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>✕ Remove</button>
+                  </div>
+                </div>}
+                {!mnemonic&&<button onClick={genMnemonic} style={{fontSize:12,color:GD,background:`${GD}15`,border:`1px solid ${GD}33`,borderRadius:12,padding:'10px 16px',cursor:'pointer',fontFamily:FONT,width:'100%',marginBottom:12}}>{generatingMnemonic?<span style={{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}><Spinner size={14}/>Generating…</span>:'💡 Generate memory hook'}</button>}
+                <div style={{fontSize:11,color:MU,fontWeight:600,textAlign:'center',marginBottom:10}}>HOW DID YOU DO?{hintRevealed&&<span style={{color:YE,marginLeft:8}}>hint used — max △</span>}</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+                  {[{l:'✗',sub:'Again',q:1,c:RE},{l:'△',sub:'Almost',q:3,c:YE},{l:'✓',sub:'Got it',q:4,c:GR}].map(x=><button key={x.q} onClick={()=>advance(x.q)} disabled={x.q===4&&hintRevealed} style={{padding:'14px 8px',background:`${x.c}18`,border:`1px solid ${x.c}44`,borderRadius:14,color:x.c,cursor:x.q===4&&hintRevealed?'not-allowed':'pointer',fontFamily:FONT,opacity:x.q===4&&hintRevealed?0.3:1}} onMouseDown={e=>{SND.init();e.currentTarget.style.transform='scale(0.92)'}} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><div style={{fontSize:22,marginBottom:3}}>{x.l}</div><div style={{fontSize:12,fontWeight:500}}>{x.sub}</div></button>)}
+                </div>
+              </div>
+            </div>}
+        </div>
+      </div>
+    </div>
+  </div>
+}
 function StudyDone({sessionCount,sessionCorrect,combo,maxCombo,onRestart}){
   const pct=sessionCount>0?Math.round((sessionCorrect/sessionCount)*100):0
   return<div style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'60px 24px 100px',animation:'up 0.4s ease'}}>
