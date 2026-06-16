@@ -1503,6 +1503,72 @@ export default function App(){
     return()=>{window.removeEventListener('online',goOnline);window.removeEventListener('offline',goOffline)}
   },[])
 
+  // Re-sync from Supabase when tab becomes visible (e.g. switching back to laptop)
+  useEffect(()=>{
+    const onVisible=async()=>{
+      if(document.visibilityState==='visible'&&sb&&navigator.onLine){
+        try{
+          const{data:sbCards}=await sb.from('cards').select('*').eq('user_id',USER_ID)
+          if(sbCards?.length){
+            const sbMapped=sbCards.map(fromRow)
+            const localCards=lsGet(LS_CARDS)||[]
+            const localIds=new Set(localCards.map(c=>c.id))
+            const sbOnly=sbMapped.filter(c=>!localIds.has(c.id))
+            const merged=[...localCards,...sbOnly]
+            // Only update state if we actually gained cards or SM-2 changed
+            const hasNew=sbOnly.length>0
+            const hasUpdates=sbMapped.some(sb=>{
+              const local=localCards.find(l=>l.id===sb.id)
+              return local&&sb.mastery>local.mastery
+            })
+            if(hasNew||hasUpdates){
+              // Merge: local wins for SM-2, add any Supabase-only cards
+              const finalCards=sbMapped.map(s=>{
+                const l=localCards.find(x=>x.id===s.id)
+                // Take whichever has higher mastery (most recent progress wins)
+                return l?(l.mastery>=s.mastery?l:s):s
+              })
+              const withLocalOnly=finalCards.concat(localCards.filter(l=>!sbMapped.find(s=>s.id===l.id)))
+              lsSave(LS_CARDS,withLocalOnly)
+              setCards(withLocalOnly)
+            }
+          }
+        }catch(e){}
+      }
+    }
+    document.addEventListener('visibilitychange',onVisible)
+    return()=>document.removeEventListener('visibilitychange',onVisible)
+  },[])
+
+  // Supabase realtime — push card updates from phone to laptop instantly
+  useEffect(()=>{
+    if(!sb)return
+    const channel=sb.channel('cards-live')
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'cards',filter:`user_id=eq.${USER_ID}`},payload=>{
+        const updated=fromRow(payload.new)
+        setCards(prev=>{
+          const next=prev.map(c=>{
+            if(c.id!==updated.id)return c
+            // Remote update only wins if mastery is higher (avoid overwriting fresh local work)
+            return updated.mastery>=c.mastery?{...c,...updated}:c
+          })
+          lsSave(LS_CARDS,next)
+          return next
+        })
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'cards',filter:`user_id=eq.${USER_ID}`},payload=>{
+        const newCard=fromRow(payload.new)
+        setCards(prev=>{
+          if(prev.find(c=>c.id===newCard.id))return prev
+          const next=[...prev,newCard]
+          lsSave(LS_CARDS,next)
+          return next
+        })
+      })
+      .subscribe()
+    return()=>sb.removeChannel(channel)
+  },[])
+
   useEffect(()=>{
     const load=async()=>{
       // 1. Load from localStorage immediately
