@@ -1646,9 +1646,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
       const data=await res.json()
       if(!res.ok){addLog(`Error: ${JSON.stringify(data)}`);throw new Error(data.error||`Server error ${res.status}`)}
       addLog(`Response keys: ${Object.keys(data).join(', ')}`)
-      const token=data.client_secret?.value
-      addLog(`Token: ${token?'received ('+token.slice(0,12)+'…)':'MISSING'}`)
-      if(!token){addLog('ERROR: No client_secret.value in response');throw new Error('No token — check OPENAI_API_KEY in Netlify env vars')}
+      // Original Luna: token is at data.value
+      const token=data.value||data.client_secret?.value
+      addLog(`Token: ${token?'received ('+token.slice(0,12)+'…)':'MISSING — check key format'}`)
+      if(!token){addLog('Full response: '+JSON.stringify(data));throw new Error('No token — check OPENAI_API_KEY in Netlify env vars')}
       if(data.cardMap)setCardMap(prev=>({...prev,...data.cardMap}))
       addLog('Requesting microphone…')
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})
@@ -1665,6 +1666,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
         let s=0;timerRef.current=setInterval(()=>{s++;setElapsed(s)},1000)
         reinRef.current=setInterval(()=>{if(dcRef.current?.readyState==='open')dcRef.current.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:'Keep responses short and natural. Stay in character.'}]}}))},60000)
         if(ptt)stream.getAudioTracks().forEach(t=>{t.enabled=false})
+        // Enable transcription via data channel (original Luna pattern)
+        dc.send(JSON.stringify({type:'session.update',session:{type:'realtime',input_audio_transcription:{model:'whisper-1'}}}))
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},500)
       }
       dc.onmessage=e=>{try{handleEvent(JSON.parse(e.data))}catch{}}
@@ -1672,7 +1675,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
       await pc.setLocalDescription(offer)
       const model='gpt-4o-mini-realtime-preview'
       addLog(`Sending SDP to OpenAI (model: ${model})…`)
-      const sdpRes=await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp})
+      const sdpRes=await fetch(`https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(model)}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp})
       addLog(`SDP response: ${sdpRes.status} ${sdpRes.statusText}`)
       if(!sdpRes.ok){const sdpErr=await sdpRes.text();addLog(`SDP error: ${sdpErr}`);throw new Error(`WebRTC failed: ${sdpRes.status}`)}
       await pc.setRemoteDescription({type:'answer',sdp:await sdpRes.text()})
