@@ -72,13 +72,20 @@ HOW YOU SPEAK
 
 START: Begin with a natural Carioca opening — something about his day, Rio, what's going on. Not a formal greeting. Like a friend who just picked up the phone.`
 
-    // Mint OpenAI Realtime token — matches original Luna exactly
-    const model=process.env.REALTIME_MODEL||'gpt-4o-realtime-preview'
+    // Mint OpenAI Realtime token — GA API format (updated 2025/2026)
+    const model=process.env.REALTIME_MODEL||'gpt-realtime-mini'
     const response=await fetch('https://api.openai.com/v1/realtime/client_secrets',{
       method:'POST',
       headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
       body:JSON.stringify({
-        session:{type:'realtime',model,instructions,audio:{output:{voice:'shimmer'}}}
+        session:{
+          type:'realtime',
+          model,
+          instructions,
+          audio:{output:{voice:'shimmer'}},
+          input_audio_transcription:{model:'gpt-realtime-whisper'},
+          turn_detection:{type:'server_vad',silence_duration_ms:700,threshold:0.5}
+        }
       })
     })
 
