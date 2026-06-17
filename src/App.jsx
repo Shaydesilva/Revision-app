@@ -233,11 +233,13 @@ async function dbSeed(){
 async function syncToSupabase(localCards){
   if(!sb||!navigator.onLine||!localCards.length)return
   try{
-    const{data:sbCards}=await sb.from('cards').select('id').eq('user_id',USER_ID)
-    const sbIds=new Set((sbCards||[]).map(r=>r.id))
-    const missing=localCards.filter(c=>!sbIds.has(c.id))
-    if(missing.length)await sb.from('cards').upsert(missing.map(toRow),{onConflict:'id,user_id'})
-  }catch(e){}
+    const BATCH=50
+    for(let i=0;i<localCards.length;i+=BATCH){
+      const batch=localCards.slice(i,i+BATCH)
+      await sb.from('cards').upsert(batch.map(toRow),{onConflict:'id,user_id'})
+    }
+    console.log('Synced',localCards.length,'cards to Supabase')
+  }catch(e){console.warn('Sync failed:',e.message)}
 }
 
 async function dbUpdateCard(card){
@@ -1316,6 +1318,16 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
   const[initialized,setInitialized]=useState(false)
   const searchTimer=useRef(null)
 
+  const exportBackup=useCallback(()=>{
+    const data=lsGet(LS_CARDS)||[]
+    const json=JSON.stringify(data,null,2)
+    const blob=new Blob([json],{type:'application/json'})
+    const url=URL.createObjectURL(blob)
+    const a=document.createElement('a')
+    a.href=url;a.download=`carioca-backup-${new Date().toISOString().slice(0,10)}.json`;a.click()
+    URL.revokeObjectURL(url)
+  },[])
+
   const daysUntil=c=>{const d=Math.round((new Date(c.nextReview||Date.now())-new Date())/86400000);return isNaN(d)?0:d}
   const reviewColor=c=>{const d=daysUntil(c);if(c.mastery>=5)return MU;if(d<0)return RE;if(d<=1)return YE;return GR}
   const reviewLabel=c=>{const d=daysUntil(c);if(c.mastery>=5)return'Mastered';if(d<0)return`${Math.abs(d)}d overdue`;if(d===0)return'Due today';return`In ${d}d`}
@@ -1360,6 +1372,10 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
       <div style={{position:'absolute',right:34,top:'50%',transform:'translateY(-50%)'}}>{searching?<Spinner size={16}/>:<span style={{color:MU,fontSize:16}}>⌕</span>}</div>
     </div>
     {overdue.length>0&&!search&&<div style={{margin:'0 20px 14px',padding:'12px 16px',background:`${RE}15`,border:`1px solid ${RE}44`,borderRadius:14}}><div style={{fontSize:13,color:RE,fontWeight:700}}>{overdue.length} card{overdue.length!==1?'s':''} overdue</div><div style={{fontSize:11,color:MU,marginTop:2}}>{overdue.map(c=>c.portuguese).slice(0,3).join(', ')}{overdue.length>3?'…':''}</div></div>}
+    <div style={{margin:'0 20px 10px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <span style={{fontSize:12,color:MU}}>{cards.length} cards total</span>
+      <button onClick={exportBackup} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 12px',cursor:'pointer',fontFamily:FONT}}>⬇ Backup JSON</button>
+    </div>
     <div style={{padding:'0 20px 10px',display:'flex',gap:6,overflowX:'auto'}}>
       {[['overdue','Overdue'],['weakest','Weakest'],['strongest','Strongest'],['never','Never practiced'],['az','A–Z']].map(([k,l])=><button key={k} onClick={()=>setSort(k)} style={{background:sort===k?AC:S2,color:sort===k?'#fff':MU,border:'none',borderRadius:8,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:FONT,whiteSpace:'nowrap'}}>{l}</button>)}
     </div>
@@ -1856,7 +1872,7 @@ export default function App(){
             const merged=[...localCards,...sbOnlyCards]
             if(merged.length>localCards.length){lsSave(LS_CARDS,merged);setCards(merged)}
             // Push ALL local cards to Supabase — brings SM-2 state up to date
-            sb.from('cards').upsert(merged.map(toRow),{onConflict:'id,user_id'}).catch(()=>{})
+            syncToSupabase(merged) // batched, safe for large decks
           }else{syncToSupabase(localCards)}
           const{data:stateRows}=await sb.from('user_state').select('*').eq('user_id',USER_ID).limit(1)
           if(stateRows?.[0])lsSave(LS_STATE,stateRows[0])
