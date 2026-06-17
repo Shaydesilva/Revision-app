@@ -82,9 +82,7 @@ START: Begin with a natural Carioca opening — something about his day, Rio, wh
           type:'realtime',
           model,
           instructions,
-          audio:{output:{voice:'shimmer'}},
-          input_audio_transcription:{model:'gpt-realtime-whisper'},
-          turn_detection:{type:'server_vad',silence_duration_ms:700,threshold:0.5}
+          audio:{output:{voice:'shimmer'}}
         }
       })
     })
