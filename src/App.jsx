@@ -1673,7 +1673,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
       dc.onmessage=e=>{try{handleEvent(JSON.parse(e.data))}catch{}}
       const offer=await pc.createOffer()
       await pc.setLocalDescription(offer)
-      const model='gpt-4o-mini-realtime-preview'
+      const model=data.model||'gpt-4o-realtime-preview'
       addLog(`Sending SDP to OpenAI (model: ${model})…`)
       const sdpRes=await fetch(`https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(model)}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp})
       addLog(`SDP response: ${sdpRes.status} ${sdpRes.statusText}`)
