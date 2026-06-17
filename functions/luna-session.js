@@ -72,28 +72,32 @@ HOW YOU SPEAK
 
 START: Begin with a natural Carioca opening — something about his day, Rio, what's going on. Not a formal greeting. Like a friend who just picked up the phone.`
 
-    // Mint OpenAI Realtime token
+    // Mint OpenAI Realtime token — using same endpoint as original Luna
+    const model=process.env.REALTIME_MODEL||'gpt-4o-mini-realtime-preview'
     const response=await fetch('https://api.openai.com/v1/realtime/sessions',{
       method:'POST',
       headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'gpt-4o-mini-realtime-preview',
+        model,
+        modalities:['audio','text'],
         instructions,
         voice:'shimmer',
         input_audio_transcription:{model:'whisper-1'},
-        turn_detection:{type:'server_vad',silence_duration_ms:700,threshold:0.5}
+        turn_detection:{type:'server_vad',silence_duration_ms:700,threshold:0.5,create_response:true}
       })
     })
 
     if(!response.ok){
-      const err=await response.text()
-      return{statusCode:response.status,body:JSON.stringify({error:err})}
+      const errText=await response.text()
+      console.error('OpenAI error:',response.status,errText)
+      return{statusCode:response.status,body:JSON.stringify({error:errText})}
     }
 
     const data=await response.json()
-    // Return token + card context for frontend self-assessment
+    console.log('Session created, model:',model)
+
     const cardMap={}
-    ;(allCards||[]).forEach(c=>{cardMap[c.portuguese.toLowerCase()]=c.mastery})
+    ;(allCards||[]).forEach(c=>{if(c.portuguese)cardMap[c.portuguese.toLowerCase().trim()]=c.english})
 
     return{
       statusCode:200,
