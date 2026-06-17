@@ -1554,6 +1554,9 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
   const[wordMenu,setWordMenu]=useState(null)
   const[tlCache,setTlCache]=useState({})
   const[cardMap,setCardMap]=useState({})
+  const[showDebug,setShowDebug]=useState(false)
+  const[debugLog,setDebugLog]=useState([])
+  const addLog=useCallback(msg=>{const entry=`${new Date().toLocaleTimeString()} ${msg}`;setDebugLog(p=>[entry,...p.slice(0,19)]);console.log('[Voice]',msg)},[])
   const scrollRef=useRef()
   const pcRef=useRef(null)
   const dcRef=useRef(null)
@@ -1637,13 +1640,19 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
     setPhase('connecting');setStatus('Connecting…');setMessages([]);transcriptRef.current=[]
     SND.init()
     try{
+      addLog('Calling luna-session function…')
       const res=await fetch('/.netlify/functions/luna-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current})})
+      addLog(`Function response: ${res.status} ${res.statusText}`)
       const data=await res.json()
-      if(!res.ok)throw new Error(data.error||`Server error ${res.status}`)
+      if(!res.ok){addLog(`Error: ${JSON.stringify(data)}`);throw new Error(data.error||`Server error ${res.status}`)}
+      addLog(`Response keys: ${Object.keys(data).join(', ')}`)
       const token=data.client_secret?.value
-      if(!token){console.error('Full response:',JSON.stringify(data));throw new Error('No token received — check OPENAI_API_KEY in Netlify env vars')}
+      addLog(`Token: ${token?'received ('+token.slice(0,12)+'…)':'MISSING'}`)
+      if(!token){addLog('ERROR: No client_secret.value in response');throw new Error('No token — check OPENAI_API_KEY in Netlify env vars')}
       if(data.cardMap)setCardMap(prev=>({...prev,...data.cardMap}))
+      addLog('Requesting microphone…')
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})
+      addLog('Mic granted')
       streamRef.current=stream
       const pc=new RTCPeerConnection()
       pcRef.current=pc
@@ -1662,11 +1671,14 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
       const offer=await pc.createOffer()
       await pc.setLocalDescription(offer)
       const model='gpt-4o-mini-realtime-preview'
+      addLog(`Sending SDP to OpenAI (model: ${model})…`)
       const sdpRes=await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp})
-      if(!sdpRes.ok)throw new Error('WebRTC connection failed')
+      addLog(`SDP response: ${sdpRes.status} ${sdpRes.statusText}`)
+      if(!sdpRes.ok){const sdpErr=await sdpRes.text();addLog(`SDP error: ${sdpErr}`);throw new Error(`WebRTC failed: ${sdpRes.status}`)}
       await pc.setRemoteDescription({type:'answer',sdp:await sdpRes.text()})
+      addLog('WebRTC connected!')
     }catch(err){
-      console.error('Connect failed:',err)
+      addLog(`FAILED: ${err.message}`)
       setStatus(err.message||'Connection failed');setPhase('idle');cleanup()
     }
   },[isOnline,ptt,handleEvent,cleanup])
@@ -1713,12 +1725,33 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
       </div>
     </div>}
 
+    {/* Debug panel */}
+    {showDebug&&<div style={{position:'fixed',inset:0,zIndex:300,background:'rgba(0,0,0,0.85)',display:'flex',flexDirection:'column'}} onClick={()=>setShowDebug(false)}>
+      <div onClick={e=>e.stopPropagation()} style={{margin:'60px 16px 16px',background:S,borderRadius:16,padding:'16px',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <span style={{fontSize:14,fontWeight:700,color:TX}}>Voice Debug Log</span>
+          <button onClick={()=>setDebugLog([])} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT}}>Clear</button>
+        </div>
+        <div style={{overflowY:'auto',flex:1,fontFamily:'monospace',fontSize:12}}>
+          {debugLog.length===0?<div style={{color:MU}}>No logs yet — tap Start talking</div>:debugLog.map((l,i)=>{
+            const isErr=l.includes('FAILED')||l.includes('Error')||l.includes('error')||l.includes('MISSING')
+            const isOk=l.includes('granted')||l.includes('received')||l.includes('connected')
+            return<div key={i} style={{color:isErr?RE:isOk?GR:MU,marginBottom:4,lineHeight:1.5,wordBreak:'break-all'}}>{l}</div>
+          })}
+        </div>
+        <div style={{marginTop:12,fontSize:11,color:MU,borderTop:`1px solid ${BD}`,paddingTop:10}}>
+          Tap anywhere outside to close
+        </div>
+      </div>
+    </div>}
+
     {/* Spectrum slider */}
     <div style={{padding:'12px 20px 8px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👋 Amigo</span>
         <input type="range" min={0} max={1} step={0.01} value={spectrum} onChange={e=>setSpectrum(parseFloat(e.target.value))} style={{flex:1,height:3,WebkitAppearance:'none',appearance:'none',borderRadius:2,background:`linear-gradient(to right,${GR} 0%,${AC} ${spectrum*100}%,${BD} ${spectrum*100}%)`,outline:'none',cursor:'pointer'}}/>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👩‍🏫 Tutor</span>
+        <button onClick={()=>setShowDebug(true)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,opacity:0.35,padding:'2px',lineHeight:1}}>⚙️</button>
       </div>
       <div style={{textAlign:'center',fontSize:10,color:MU,marginTop:4}}>{spectrum<0.25?'Chill — corrections minimal':spectrum<0.6?'Balanced — gentle nudges':'Active correction mode'}</div>
     </div>
