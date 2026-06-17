@@ -1638,10 +1638,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
     SND.init()
     try{
       const res=await fetch('/.netlify/functions/luna-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current})})
-      if(!res.ok)throw new Error('Session failed')
       const data=await res.json()
+      if(!res.ok)throw new Error(data.error||`Server error ${res.status}`)
       const token=data.client_secret?.value
-      if(!token)throw new Error('No token — check OPENAI_API_KEY in Netlify env vars')
+      if(!token){console.error('Full response:',JSON.stringify(data));throw new Error('No token received — check OPENAI_API_KEY in Netlify env vars')}
       if(data.cardMap)setCardMap(prev=>({...prev,...data.cardMap}))
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})
       streamRef.current=stream
@@ -1661,7 +1661,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
       dc.onmessage=e=>{try{handleEvent(JSON.parse(e.data))}catch{}}
       const offer=await pc.createOffer()
       await pc.setLocalDescription(offer)
-      const sdpRes=await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp})
+      const model='gpt-4o-mini-realtime-preview'
+      const sdpRes=await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp})
       if(!sdpRes.ok)throw new Error('WebRTC connection failed')
       await pc.setRemoteDescription({type:'answer',sdp:await sdpRes.text()})
     }catch(err){
