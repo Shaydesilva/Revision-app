@@ -1723,14 +1723,12 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
         startTimeRef.current=Date.now()
         timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
         if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
-        // Enable user speech transcription — GA format
+        // Enable user speech transcription — try with empty config (API picks model)
         dc.send(JSON.stringify({
           type:'session.update',
-          session:{
-            input_audio_transcription:{model:'gpt-realtime-whisper'},
-            turn_detection:{type:'server_vad',silence_duration_ms:600,threshold:0.5}
-          }
+          session:{input_audio_transcription:{}}
         }))
+        log('Sent session.update for transcription')
         // Trigger Luna's opening line after brief delay
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
         // Periodic reinforcement to keep model on track
@@ -1740,7 +1738,15 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
         },90000)
       }
 
-      dc.onmessage=e=>{try{onEventRef.current(JSON.parse(e.data))}catch{}}
+      dc.onmessage=e=>{
+        try{
+          const ev=JSON.parse(e.data)
+          // Log every event type so we can see what's actually firing
+          if(ev.type!=='response.output_audio_transcript.delta')log(`← ${ev.type}`)
+          if(ev.type==='session.updated')log(`Transcription: ${JSON.stringify(ev.session?.input_audio_transcription)}`)
+          onEventRef.current(ev)
+        }catch{}
+      }
       dc.onerror=e=>{log(`DC error: ${String(e)}`)}
 
       const offer=await pc.createOffer()
