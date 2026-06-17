@@ -1501,47 +1501,44 @@ function Import({cards,onImport,isOnline=true,active}){
 
 
 
-// ── VoiceMode ────────────────────────────────────────────────────
+
+// ── VoiceMode ─────────────────────────────────────────────────────────────
+
 const PT_RE_V=/[ãõâêîôûçáéíóúàü]/i
 const PT_SET_V=new Set(['tá','né','tô','cê','cara','gente','assim','então','tipo','nossa','oi','tchau','obrigado','obrigada','legal','saudade','praia','poxa','beleza','valeu','falou','não','sim','muito','mais','uma','isso','bom','boa','bem','tudo','você','mas','cadê','também','porque','pô','bora','mano','irmão','aqui','ali','lá','fome','sede','calor','frio'])
-function isPtWord(w){const c=w.toLowerCase().replace(/[.,!?;:'"()—-]/g,'');return c&&(PT_RE_V.test(c)||PT_SET_V.has(c))}
-const GOODBYE_V=['bye','tchau','até mais','gotta go','see you','boa noite','falou','goodbye']
-const CONFUSE_V=["huh","what?","sorry?","i don't understand","in english","english please","i'm lost"]
+function isPtWord(w){const c=(w||'').toLowerCase().replace(/[.,!?;:'"()—\-]/g,'');return!!c&&(PT_RE_V.test(c)||PT_SET_V.has(c))}
+const GOODBYE_V=['bye','tchau','até mais','gotta go','see you','boa noite','falou','goodbye','ciao']
 
 function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
   const[showTl,setShowTl]=useState(false)
   const[tl,setTl]=useState(null)
-  const[tlLoading,setTlLoading]=useState(false)
+  const[loading,setLoading]=useState(false)
   const isLuna=msg.role==='luna'
-
-  const handleBubbleTap=async()=>{
+  const tap=async()=>{
     if(showTl){setShowTl(false);return}
     setShowTl(true)
-    if(!tl){
-      setTlLoading(true)
-      const res=await translateWord(msg.text)
-      setTl(res?.translation||msg.text)
-      setTlLoading(false)
-    }
+    if(!tl){setLoading(true);const r=await translateWord(msg.text);setTl(r?.translation||'—');setLoading(false)}
   }
-
-  const renderWords=text=>text.split(/(\s+)/).map((tok,i)=>{
+  const words=txt=>txt.split(/(\s+)/).map((tok,i)=>{
     if(/^\s+$/.test(tok))return<span key={i}> </span>
-    const clean=tok.replace(/^["""'(]+/g,'').replace(/[.,!?;:"""')—-]+$/g,'')
-    const pt=clean&&isPtWord(clean)
-    return<span key={i} onClick={pt?async e=>{e.stopPropagation();const res=await translateWord(clean);const r=e.target.getBoundingClientRect();onWordPress(clean,res?.translation||'',msg.text,r.left,r.top-80)}:undefined} style={{color:pt?YE:TX,fontWeight:pt?600:400,background:pt?`${YE}15`:'transparent',borderRadius:pt?4:0,padding:pt?'0 2px':0,cursor:pt?'pointer':'default',display:'inline'}}>{tok}</span>
+    const clean=tok.replace(/^["""'(]+/g,'').replace(/[.,!?;:"""')—\-]+$/g,'')
+    const pt=!!clean&&isPtWord(clean)
+    return<span key={i}
+      onClick={pt?async e=>{e.stopPropagation();const r=await translateWord(clean);const rc=e.target.getBoundingClientRect();onWordPress(clean,r?.translation||'',msg.text,rc.left,Math.max(rc.top-80,60))}:undefined}
+      style={{color:pt?YE:TX,fontWeight:pt?600:400,background:pt?`${YE}15`:'transparent',borderRadius:pt?4:0,padding:pt?'0 2px':0,cursor:pt?'pointer':'default',display:'inline'}}
+    >{tok}</span>
   })
-
-  return<div style={{display:'flex',flexDirection:'column',alignItems:isLuna?'flex-start':'flex-end',marginBottom:2}}>
-    <div onClick={handleBubbleTap} style={{maxWidth:'85%',padding:'11px 15px',borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',background:isLuna?S:AC,border:isLuna?`1px solid ${BD}`:'none',fontSize:15,lineHeight:1.55,color:isLuna?TX:'#fff',cursor:'pointer'}}>
-      {isLuna?renderWords(msg.text):msg.text}
+  return<div style={{display:'flex',flexDirection:'column',alignItems:isLuna?'flex-start':'flex-end',marginBottom:4}}>
+    <div onClick={tap} style={{maxWidth:'85%',padding:'12px 16px',borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',background:isLuna?S:AC,border:isLuna?`1px solid ${BD}`:'none',fontSize:15,lineHeight:1.6,color:isLuna?TX:'#fff',cursor:'pointer'}}>
+      {isLuna?words(msg.text):msg.text}
     </div>
-    {showTl&&<div style={{maxWidth:'85%',marginTop:4,padding:'7px 12px',background:S2,border:`1px solid ${BD}`,borderRadius:10,fontSize:13,color:MU,animation:'fadeIn 0.2s ease'}}>{tlLoading?<Spinner size={12}/>:tl}</div>}
-    <div style={{fontSize:10,color:MU,marginTop:2,opacity:0.5}}>{isLuna?'tap to translate':'tap for Portuguese'}</div>
+    {showTl&&<div style={{maxWidth:'85%',marginTop:4,padding:'8px 12px',background:S2,border:`1px solid ${BD}`,borderRadius:10,fontSize:13,color:MU,animation:'fadeIn 0.2s ease'}}>{loading?<Spinner size={12}/>:tl}</div>}
+    <div style={{fontSize:10,color:MU,marginTop:2,opacity:0.4}}>{isLuna?'tap to translate':'tap for Portuguese'}</div>
   </div>
 }
 
-function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
+function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
+  // ── State ──────────────────────────────────────────────────────────────
   const[phase,setPhase]=useState('idle')
   const[spectrum,setSpectrum]=useState(0.35)
   const[messages,setMessages]=useState([])
@@ -1552,11 +1549,12 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
   const[ptt,setPtt]=useState(false)
   const[summary,setSummary]=useState(null)
   const[wordMenu,setWordMenu]=useState(null)
-  const[tlCache,setTlCache]=useState({})
-  const[cardMap,setCardMap]=useState({})
   const[showDebug,setShowDebug]=useState(false)
   const[debugLog,setDebugLog]=useState([])
-  const addLog=useCallback(msg=>{const entry=`${new Date().toLocaleTimeString()} ${msg}`;setDebugLog(p=>[entry,...p.slice(0,19)]);console.log('[Voice]',msg)},[])
+  const[cardMap,setCardMap]=useState({})
+  const[tlCache,setTlCache]=useState({})
+
+  // ── Refs — mutable values that don't cause re-renders ──────────────────
   const scrollRef=useRef()
   const pcRef=useRef(null)
   const dcRef=useRef(null)
@@ -1565,19 +1563,31 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
   const timerRef=useRef(null)
   const reinRef=useRef(null)
   const transcriptRef=useRef([])
-  const liveAccRef=useRef('')
-  const byeRef=useRef(false)
-  const spectrumRef=useRef(spectrum)
+  const lunaLiveRef=useRef('')
+  const shouldEndRef=useRef(false)
+  const phaseRef=useRef('idle')
+  const spectrumRef=useRef(0.35)
+  const pttRef=useRef(false)
+  const startTimeRef=useRef(0)
+  // Always-fresh event handler — assigned each render, zero stale closure risk
+  const onEventRef=useRef(null)
+
+  // ── Sync refs with state ───────────────────────────────────────────────
   useEffect(()=>{spectrumRef.current=spectrum},[spectrum])
-
-  useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight},[messages,liveText])
-
+  useEffect(()=>{pttRef.current=ptt},[ptt])
+  useEffect(()=>{phaseRef.current=phase},[phase])
   useEffect(()=>{
     const m={}
     cards.forEach(c=>{if(c.portuguese&&c.english)m[c.portuguese.toLowerCase().trim()]=c.english})
     setCardMap(m)
   },[cards])
+  useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight},[messages,liveText])
 
+  // ── Helpers ────────────────────────────────────────────────────────────
+  const log=useCallback(msg=>{setDebugLog(p=>[`${new Date().toLocaleTimeString()} ${msg}`,...p.slice(0,29)]);console.log('[Voice]',msg)},[])
+  const fmtTime=s=>{const m=Math.floor(s/60);return`${m}:${String(s%60).padStart(2,'0')}`}
+
+  // ── Cleanup all WebRTC resources ───────────────────────────────────────
   const cleanup=useCallback(()=>{
     clearInterval(timerRef.current)
     clearInterval(reinRef.current)
@@ -1585,142 +1595,216 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
     if(pcRef.current){try{pcRef.current.close()}catch{}pcRef.current=null}
     if(streamRef.current){streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null}
     if(audioRef.current)audioRef.current.srcObject=null
-    liveAccRef.current='';byeRef.current=false
+    lunaLiveRef.current=''
+    shouldEndRef.current=false
   },[])
 
-  const handleEvent=useCallback(ev=>{
-    if(!ev?.type)return
-    switch(ev.type){
-      case 'response.output_audio_transcript.delta':
-      case 'response.audio_transcript.delta':
-        if(ev.delta){liveAccRef.current+=ev.delta;setLiveText(liveAccRef.current);setDotMode('speak');setStatus('Luna is talking…')}
-        break
-      case 'response.output_audio_transcript.done':
-      case 'response.audio_transcript.done':{
-        const t=liveAccRef.current.trim()
-        if(t){transcriptRef.current.push({role:'assistant',text:t});setMessages(prev=>[...prev,{role:'luna',text:t,id:Date.now()}])}
-        liveAccRef.current='';setLiveText('');setDotMode('listen');setStatus(ptt?'Hold to talk':'Listening…')
-        break
-      }
-      case 'conversation.item.input_audio_transcription.completed':{
-        const t=ev.transcript?.trim();if(!t)break
-        transcriptRef.current.push({role:'user',text:t})
-        setMessages(prev=>[...prev,{role:'user',text:t,id:Date.now()}])
-        const lo=t.toLowerCase()
-        if(GOODBYE_V.some(g=>lo.includes(g)))byeRef.current=true
-        if(CONFUSE_V.some(c=>lo.includes(c))&&dcRef.current?.readyState==='open')
-          dcRef.current.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:"He didn't follow. Simplify. More English."}]}}))
-        break
-      }
-      case 'response.done':
-        setDotMode('listen');setStatus(ptt?'Hold to talk':'Listening…')
-        if(byeRef.current){byeRef.current=false;setTimeout(endSession,1500)}
-        break
-      case 'input_audio_buffer.speech_started':setDotMode('listen');setStatus('Listening…');break
-      case 'input_audio_buffer.speech_stopped':setStatus('Thinking…');setDotMode('');break
-    }
-  },[ptt])
-
+  // ── End session — save transcript, update cards ────────────────────────
   const endSession=useCallback(async()=>{
-    if(phase==='idle'||phase==='ending')return
-    const tr=[...transcriptRef.current],dur=elapsed
-    setPhase('ending');setStatus('Saving…');cleanup()
-    if(!tr.length){setPhase('idle');setElapsed(0);return}
+    if(phaseRef.current==='idle'||phaseRef.current==='ending'||phaseRef.current==='done')return
+    phaseRef.current='ending'
+    const tr=[...transcriptRef.current]
+    const dur=Math.floor((Date.now()-startTimeRef.current)/1000)
+    setPhase('ending');setStatus('Saving session…')
+    cleanup()
+    if(!tr.length){phaseRef.current='idle';setPhase('idle');setElapsed(0);return}
     try{
       const res=await fetch('/.netlify/functions/luna-session-end',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:tr,duration_seconds:dur})})
       const result=await res.json()
-      if(result.cardUpdates)onRateMultiple(result.cardUpdates,'voice')
+      if(result.cardUpdates&&Object.keys(result.cardUpdates).length)onRateMultiple(result.cardUpdates,'voice')
       setSummary(result)
-    }catch{setSummary({summary:'Session complete.',score:0,boostWords:[],struggleWords:[],newCardsAdded:[]})}
-    setPhase('done')
-  },[phase,elapsed,cleanup,onRateMultiple])
+    }catch{
+      setSummary({summary:'Session complete.',score:0,boostWords:[],struggleWords:[],newCardsAdded:[]})
+    }
+    phaseRef.current='done';setPhase('done')
+  },[cleanup,onRateMultiple])
 
+  // ── Event handler — assigned every render so always fresh ─────────────
+  onEventRef.current=(ev)=>{
+    if(!ev?.type)return
+    switch(ev.type){
+
+      case 'response.output_audio_transcript.delta':
+        // Luna streaming — accumulate into live text
+        lunaLiveRef.current+=(ev.delta||'')
+        setLiveText(lunaLiveRef.current)
+        setDotMode('speak')
+        setStatus('Luna is talking…')
+        break
+
+      case 'response.output_audio_transcript.done':{
+        // Luna finished — ev.transcript is authoritative, clear buffer
+        const text=(ev.transcript||lunaLiveRef.current).trim()
+        lunaLiveRef.current=''
+        setLiveText('')
+        if(text){
+          transcriptRef.current.push({role:'assistant',text})
+          setMessages(prev=>[...prev,{role:'luna',text,id:Date.now()}])
+        }
+        setDotMode('listen')
+        setStatus(pttRef.current?'Hold to talk':'Listening…')
+        break
+      }
+
+      case 'response.done':
+        // Response cycle complete — commit any orphaned live text (safety net only)
+        if(lunaLiveRef.current.trim()){
+          const text=lunaLiveRef.current.trim()
+          lunaLiveRef.current=''
+          setLiveText('')
+          transcriptRef.current.push({role:'assistant',text})
+          setMessages(prev=>[...prev,{role:'luna',text,id:Date.now()}])
+        }
+        setDotMode('listen')
+        setStatus(pttRef.current?'Hold to talk':'Listening…')
+        // Goodbye was detected — end session after this response finishes
+        if(shouldEndRef.current){
+          shouldEndRef.current=false
+          setTimeout(()=>endSession(),800)
+        }
+        break
+
+      case 'conversation.item.input_audio_transcription.completed':{
+        // User spoke — show in chat
+        const text=(ev.transcript||'').trim()
+        if(!text)break
+        transcriptRef.current.push({role:'user',text})
+        setMessages(prev=>[...prev,{role:'user',text,id:Date.now()}])
+        if(GOODBYE_V.some(g=>text.toLowerCase().includes(g)))shouldEndRef.current=true
+        break
+      }
+
+      case 'input_audio_buffer.speech_started':
+        setDotMode('listen');setStatus('Listening…')
+        break
+      case 'input_audio_buffer.speech_stopped':
+        setDotMode('');setStatus('Thinking…')
+        break
+    }
+  }
+
+  // ── Connect ────────────────────────────────────────────────────────────
   const connect=useCallback(async()=>{
-    if(!isOnline)return
-    setPhase('connecting');setStatus('Connecting…');setMessages([]);transcriptRef.current=[]
+    if(!isOnline||phaseRef.current!=='idle')return
+    phaseRef.current='connecting'
+    setPhase('connecting');setStatus('Connecting…')
+    setMessages([]);setLiveText('')
+    transcriptRef.current=[];lunaLiveRef.current='';shouldEndRef.current=false
     SND.init()
     try{
-      addLog('Calling luna-session function…')
+      log('Requesting session token…')
       const res=await fetch('/.netlify/functions/luna-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current})})
-      addLog(`Function response: ${res.status} ${res.statusText}`)
       const data=await res.json()
-      if(!res.ok){addLog(`Error: ${JSON.stringify(data)}`);throw new Error(data.error||`Server error ${res.status}`)}
-      addLog(`Response keys: ${Object.keys(data).join(', ')}`)
-      // Original Luna: token is at data.value
-      const token=data.value||data.client_secret?.value
-      addLog(`Token: ${token?'received ('+token.slice(0,12)+'…)':'MISSING — check key format'}`)
-      if(!token){addLog('Full response: '+JSON.stringify(data));throw new Error('No token — check OPENAI_API_KEY in Netlify env vars')}
+      if(!res.ok)throw new Error(data.error||`Server ${res.status}`)
+      const token=data.value
+      const model=data.model||'gpt-realtime-mini'
+      log(`Token: ${token?'OK':'MISSING'} | Model: ${model}`)
+      if(!token)throw new Error('No token — check OPENAI_API_KEY in Netlify env vars')
       if(data.cardMap)setCardMap(prev=>({...prev,...data.cardMap}))
-      addLog('Requesting microphone…')
+
+      log('Getting microphone…')
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})
-      addLog('Mic granted')
       streamRef.current=stream
+      log('Mic OK')
+
       const pc=new RTCPeerConnection()
       pcRef.current=pc
       const audioEl=new Audio();audioEl.autoplay=true;audioRef.current=audioEl
-      pc.ontrack=e=>{audioEl.srcObject=e.streams[0]}
+      pc.ontrack=e=>{if(audioRef.current)audioRef.current.srcObject=e.streams[0]}
       stream.getTracks().forEach(t=>pc.addTrack(t,stream))
-      const dc=pc.createDataChannel('oai-events');dcRef.current=dc
+
+      const dc=pc.createDataChannel('oai-events')
+      dcRef.current=dc
+
       dc.onopen=()=>{
-        setPhase('live');setDotMode('listen');setStatus('Listening…')
-        let s=0;timerRef.current=setInterval(()=>{s++;setElapsed(s)},1000)
-        reinRef.current=setInterval(()=>{if(dcRef.current?.readyState==='open')dcRef.current.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:'Keep responses short and natural. Stay in character.'}]}}))},60000)
-        if(ptt)stream.getAudioTracks().forEach(t=>{t.enabled=false})
-        // Enable transcription via data channel (original Luna pattern)
-        dc.send(JSON.stringify({type:'session.update',session:{type:'realtime',input_audio_transcription:{model:'whisper-1'}}}))
-        setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},500)
+        log('Data channel open — sending session.update…')
+        phaseRef.current='live';setPhase('live')
+        setDotMode('listen');setStatus(pttRef.current?'Hold to talk':'Listening…')
+        startTimeRef.current=Date.now()
+        timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
+        if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
+        // Enable user speech transcription — GA format
+        dc.send(JSON.stringify({
+          type:'session.update',
+          session:{
+            input_audio_transcription:{model:'gpt-realtime-whisper'},
+            turn_detection:{type:'server_vad',silence_duration_ms:600,threshold:0.5}
+          }
+        }))
+        // Trigger Luna's opening line after brief delay
+        setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
+        // Periodic reinforcement to keep model on track
+        reinRef.current=setInterval(()=>{
+          if(dcRef.current?.readyState==='open')
+            dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:'Keep responses short and natural. Stay in character as a Carioca local.'}]}}))
+        },90000)
       }
-      dc.onmessage=e=>{try{handleEvent(JSON.parse(e.data))}catch{}}
+
+      dc.onmessage=e=>{try{onEventRef.current(JSON.parse(e.data))}catch{}}
+      dc.onerror=e=>{log(`DC error: ${String(e)}`)}
+
       const offer=await pc.createOffer()
       await pc.setLocalDescription(offer)
-      const model=data.model||'gpt-4o-realtime-preview'
-      addLog(`Sending SDP to OpenAI (model: ${model})…`)
-      const sdpRes=await fetch(`https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(model)}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp})
-      addLog(`SDP response: ${sdpRes.status} ${sdpRes.statusText}`)
-      if(!sdpRes.ok){const sdpErr=await sdpRes.text();addLog(`SDP error: ${sdpErr}`);throw new Error(`WebRTC failed: ${sdpRes.status}`)}
+      log(`SDP → OpenAI (${model})…`)
+      const sdpRes=await fetch(
+        `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(model)}`,
+        {method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/sdp'},body:offer.sdp}
+      )
+      log(`SDP: ${sdpRes.status}`)
+      if(!sdpRes.ok){const e=await sdpRes.text();log(`SDP err: ${e}`);throw new Error(`WebRTC ${sdpRes.status}: ${e}`)}
       await pc.setRemoteDescription({type:'answer',sdp:await sdpRes.text()})
-      addLog('WebRTC connected!')
-    }catch(err){
-      addLog(`FAILED: ${err.message}`)
-      setStatus(err.message||'Connection failed');setPhase('idle');cleanup()
-    }
-  },[isOnline,ptt,handleEvent,cleanup])
+      log('Connected ✓')
 
+    }catch(err){
+      log(`FAILED: ${err.message}`)
+      cleanup()
+      phaseRef.current='idle';setPhase('idle');setStatus(err.message)
+    }
+  },[isOnline,cleanup,log])
+
+  // ── PTT ────────────────────────────────────────────────────────────────
+  const pttOn=e=>{e.preventDefault();if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=true})}
+  const pttOff=e=>{e.preventDefault();if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})}
+  const togglePtt=()=>{const n=!pttRef.current;setPtt(n);if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=!n})}
+
+  // ── Translation ────────────────────────────────────────────────────────
   const translateWord=useCallback(async word=>{
-    const key=word.toLowerCase().trim()
+    const key=(word||'').toLowerCase().trim()
+    if(!key)return{translation:'—'}
     if(tlCache[key])return tlCache[key]
     if(cardMap[key]){const r={translation:cardMap[key],fromDeck:true};setTlCache(p=>({...p,[key]:r}));return r}
     try{
-      const res=await fetch('/.netlify/functions/luna-translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,cardMap})})
-      const d=await res.json();setTlCache(p=>({...p,[key]:d}));return d
+      const r=await fetch('/.netlify/functions/luna-translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,cardMap})})
+      const d=await r.json();setTlCache(p=>({...p,[key]:d}));return d
     }catch{return{translation:'—'}}
   },[tlCache,cardMap])
 
   const addToDeck=useCallback(async(word,translation,sentence)=>{
-    const card=mk(`voice-${Date.now()}`,word,translation||'','vocab',{exampleSentence:sentence||null})
-    await onAddCard(card);setWordMenu(null)
+    await onAddCard(mk(`voice-${Date.now()}`,word||'',translation||'','vocab',{exampleSentence:sentence||null}))
+    setWordMenu(null)
   },[onAddCard])
 
-  const fmtTime=s=>{const m=Math.floor(s/60);return`${m}:${String(s%60).padStart(2,'0')}`}
-
+  // ── Done screen ────────────────────────────────────────────────────────
   if(phase==='done'&&summary)return<div style={{padding:'40px 24px 100px',animation:'up 0.4s ease'}}>
-    <div style={{fontSize:48,textAlign:'center',marginBottom:16}}>{(summary.score||0)>=75?'🔥':(summary.score||0)>=50?'💪':'📚'}</div>
+    <div style={{fontSize:52,textAlign:'center',marginBottom:16}}>{(summary.score||0)>=75?'🔥':(summary.score||0)>=50?'💪':'📚'}</div>
     <div style={{fontSize:24,fontWeight:800,color:TX,textAlign:'center',marginBottom:4}}>Session done</div>
-    <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:28}}>{fmtTime(elapsed)}</div>
+    <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:24}}>{fmtTime(elapsed)}</div>
     {summary.summary&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:16,fontSize:14,color:TX,lineHeight:1.7}}>{summary.summary}</div>}
-    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:summary.newCardsAdded?.length?12:20}}>
+    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
       {(summary.boostWords||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${GR}18`,color:GR,fontSize:12,fontWeight:600}}>{w} ✓</span>)}
-      {(summary.struggleWords||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${RE}18`,color:RE,fontSize:12,fontWeight:600}}>{w} ⭐ priority</span>)}
-      {(summary.newCardsAdded||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${AC}18`,color:AC,fontSize:12,fontWeight:600}}>+ {w}</span>)}
+      {(summary.struggleWords||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${RE}18`,color:RE,fontSize:12,fontWeight:600}}>{w} ⭐</span>)}
+      {(summary.newCardsAdded||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${AC}18`,color:AC,fontSize:12,fontWeight:600}}>+{w}</span>)}
     </div>
-    {(summary.newCardsAdded||[]).length>0&&<div style={{fontSize:12,color:MU,marginBottom:20}}>{summary.newCardsAdded.length} new word{summary.newCardsAdded.length!==1?'s':''} added to your deck.</div>}
-    <PBtn label="Talk again" onClick={()=>{setPhase('idle');setSummary(null);setElapsed(0);setMessages([])}}/>
+    {(summary.newCardsAdded||[]).length>0&&<div style={{fontSize:12,color:MU,marginBottom:20}}>{summary.newCardsAdded.length} new word{summary.newCardsAdded.length!==1?'s':''} added to deck.</div>}
+    <PBtn label="Talk again" onClick={()=>{phaseRef.current='idle';setPhase('idle');setSummary(null);setElapsed(0);setMessages([])}}/>
   </div>
 
+  // ── Main render ────────────────────────────────────────────────────────
   return<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 64px)'}}>
-    {/* Word context menu */}
+
+    {/* Word menu */}
     {wordMenu&&<div style={{position:'fixed',inset:0,zIndex:200}} onClick={()=>setWordMenu(null)}>
-      <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:wordMenu.y,left:Math.min(wordMenu.x,window.innerWidth-200),background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'8px',minWidth:180,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',animation:'up 0.15s ease'}}>
+      <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:wordMenu.y,left:Math.min(wordMenu.x,window.innerWidth-210),background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'8px',minWidth:200,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',animation:'up 0.15s ease'}}>
         <div style={{fontSize:15,fontWeight:700,color:YE,padding:'6px 12px',borderBottom:`1px solid ${BD}`,marginBottom:4}}>{wordMenu.word}</div>
         {wordMenu.translation&&<div style={{fontSize:12,color:MU,padding:'2px 12px 8px'}}>{wordMenu.translation}</div>}
         <button onClick={()=>addToDeck(wordMenu.word,wordMenu.translation,wordMenu.sentence)} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',padding:'10px 12px',cursor:'pointer',fontSize:13,color:GR,fontFamily:FONT,borderRadius:8}}>＋ Add to deck</button>
@@ -1729,67 +1813,57 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
     </div>}
 
     {/* Debug panel */}
-    {showDebug&&<div style={{position:'fixed',inset:0,zIndex:300,background:'rgba(0,0,0,0.85)',display:'flex',flexDirection:'column'}} onClick={()=>setShowDebug(false)}>
+    {showDebug&&<div style={{position:'fixed',inset:0,zIndex:300,background:'rgba(0,0,0,0.85)'}} onClick={()=>setShowDebug(false)}>
       <div onClick={e=>e.stopPropagation()} style={{margin:'60px 16px 16px',background:S,borderRadius:16,padding:'16px',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-          <span style={{fontSize:14,fontWeight:700,color:TX}}>Voice Debug Log</span>
+          <span style={{fontSize:14,fontWeight:700,color:TX}}>Debug</span>
           <button onClick={()=>setDebugLog([])} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT}}>Clear</button>
         </div>
-        <div style={{overflowY:'auto',flex:1,fontFamily:'monospace',fontSize:12}}>
-          {debugLog.length===0?<div style={{color:MU}}>No logs yet — tap Start talking</div>:debugLog.map((l,i)=>{
-            const isErr=l.includes('FAILED')||l.includes('Error')||l.includes('error')||l.includes('MISSING')
-            const isOk=l.includes('granted')||l.includes('received')||l.includes('connected')
-            return<div key={i} style={{color:isErr?RE:isOk?GR:MU,marginBottom:4,lineHeight:1.5,wordBreak:'break-all'}}>{l}</div>
-          })}
+        <div style={{overflowY:'auto',flex:1,fontFamily:'monospace',fontSize:12,lineHeight:1.6}}>
+          {debugLog.length===0?<span style={{color:MU}}>No logs yet</span>:debugLog.map((l,i)=><div key={i} style={{color:l.includes('FAILED')||l.includes('err')||l.includes('MISSING')?RE:l.includes('OK')||l.includes('✓')||l.includes('Mic')?GR:MU,marginBottom:3,wordBreak:'break-all'}}>{l}</div>)}
         </div>
-        <div style={{marginTop:12,fontSize:11,color:MU,borderTop:`1px solid ${BD}`,paddingTop:10}}>
-          Tap anywhere outside to close
-        </div>
+        <div style={{fontSize:11,color:MU,borderTop:`1px solid ${BD}`,paddingTop:10,marginTop:8}}>Tap outside to close</div>
       </div>
     </div>}
 
-    {/* Spectrum slider */}
+    {/* Spectrum bar */}
     <div style={{padding:'12px 20px 8px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👋 Amigo</span>
         <input type="range" min={0} max={1} step={0.01} value={spectrum} onChange={e=>setSpectrum(parseFloat(e.target.value))} style={{flex:1,height:3,WebkitAppearance:'none',appearance:'none',borderRadius:2,background:`linear-gradient(to right,${GR} 0%,${AC} ${spectrum*100}%,${BD} ${spectrum*100}%)`,outline:'none',cursor:'pointer'}}/>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👩‍🏫 Tutor</span>
-        <button onClick={()=>setShowDebug(true)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,opacity:0.35,padding:'2px',lineHeight:1}}>⚙️</button>
+        <button onClick={()=>setShowDebug(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,opacity:0.3,padding:'2px',lineHeight:1,flexShrink:0}}>⚙️</button>
       </div>
-      <div style={{textAlign:'center',fontSize:10,color:MU,marginTop:4}}>{spectrum<0.25?'Chill — corrections minimal':spectrum<0.6?'Balanced — gentle nudges':'Active correction mode'}</div>
+      <div style={{textAlign:'center',fontSize:10,color:MU,marginTop:4}}>{spectrum<0.25?'Flowing — corrections minimal':spectrum<0.6?'Balanced — gentle nudges':'Active correction mode'}</div>
     </div>
 
-    {/* Chat */}
-    <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:10}}>
-      {messages.length===0&&phase==='idle'&&<div style={{textAlign:'center',padding:'60px 20px 0',color:MU}}>
+    {/* Chat feed */}
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8}}>
+      {messages.length===0&&phase==='idle'&&<div style={{textAlign:'center',padding:'60px 20px 0'}}>
         <div style={{fontSize:40,marginBottom:16}}>🎙️</div>
         <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:8}}>Talk to Luna</div>
-        <div style={{fontSize:13,lineHeight:1.7}}>Your Carioca conversation partner.<br/>Tap a word to translate. Tap a bubble to see the whole thing in English or Portuguese.</div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.7}}>Your Carioca conversation partner.<br/>Tap any word to translate or add to your deck.</div>
       </div>}
       {messages.map(msg=><VoiceBubble key={msg.id} msg={msg} cardMap={cardMap} translateWord={translateWord} onWordPress={(w,t,s,x,y)=>setWordMenu({word:w,translation:t,sentence:s,x,y})}/>)}
       {liveText&&<div style={{alignSelf:'flex-start',maxWidth:'85%'}}>
-        <div style={{padding:'11px 15px',borderRadius:'18px 18px 18px 4px',background:S,border:`1px solid ${BD}`,fontSize:15,lineHeight:1.55,color:MU,fontStyle:'italic'}}>
+        <div style={{padding:'12px 16px',borderRadius:'18px 18px 18px 4px',background:S,border:`1px solid ${BD}`,fontSize:15,lineHeight:1.6,color:MU,fontStyle:'italic'}}>
           {liveText}<span style={{display:'inline-block',width:7,height:13,background:AC,borderRadius:1,marginLeft:3,animation:'pulse 0.7s ease-in-out infinite',verticalAlign:'middle'}}/>
         </div>
       </div>}
     </div>
 
-    {/* Status */}
-    <div style={{flexShrink:0,padding:'8px 20px',borderTop:`1px solid ${BD}`,display:'flex',alignItems:'center',gap:8,minHeight:38}}>
-      <div style={{width:8,height:8,borderRadius:'50%',flexShrink:0,transition:'background 0.2s',background:dotMode==='speak'?AC:dotMode==='listen'?GR:BD,animation:dotMode?'pulse 1.5s ease-in-out infinite':'none'}}/>
+    {/* Status bar */}
+    <div style={{flexShrink:0,padding:'8px 20px',borderTop:`1px solid ${BD}`,display:'flex',alignItems:'center',gap:10,minHeight:40}}>
+      <div style={{width:8,height:8,borderRadius:'50%',flexShrink:0,background:dotMode==='speak'?AC:dotMode==='listen'?GR:BD,transition:'background 0.2s',animation:dotMode?'pulse 1.5s ease-in-out infinite':'none'}}/>
       <span style={{fontSize:13,color:MU,flex:1}}>{status}</span>
-      {phase==='live'&&<span style={{fontSize:12,color:MU,fontVariantNumeric:'tabular-nums'}}>{fmtTime(elapsed)}</span>}
-      {phase==='live'&&<button onClick={()=>{const next=!ptt;setPtt(next);if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=!next})}} style={{fontSize:11,color:ptt?GR:MU,background:ptt?`${GR}18`:S2,border:`1px solid ${ptt?GR:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT}}>{ptt?'Hold':'Auto'}</button>}
+      {phase==='live'&&<span style={{fontSize:12,color:MU,fontVariantNumeric:'tabular-nums',fontFamily:'monospace'}}>{fmtTime(elapsed)}</span>}
+      {phase==='live'&&<button onClick={togglePtt} style={{fontSize:11,color:ptt?GR:MU,background:ptt?`${GR}18`:S2,border:`1px solid ${ptt?GR:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT,flexShrink:0}}>{ptt?'Hold':'Auto'}</button>}
     </div>
 
-    {/* PTT */}
     {phase==='live'&&ptt&&<div style={{padding:'6px 20px',flexShrink:0}}>
-      <button onTouchStart={e=>{e.preventDefault();if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=true})}} onTouchEnd={e=>{e.preventDefault();if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})}} onMouseDown={e=>{if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=true})}} onMouseUp={e=>{if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})}} style={{width:'100%',padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>
-        Hold to talk
-      </button>
+      <button onTouchStart={pttOn} onTouchEnd={pttOff} onMouseDown={pttOn} onMouseUp={pttOff} style={{width:'100%',padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>Hold to talk</button>
     </div>}
 
-    {/* Main CTA */}
     <div style={{padding:'8px 20px 20px',flexShrink:0}}>
       {phase==='idle'&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline}/>}
       {phase==='connecting'&&<PBtn label="Connecting…" disabled/>}
@@ -1798,6 +1872,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,active}){
     </div>
   </div>
 }
+
 
 export default function App(){
   const[cards,setCards]=useState([])
