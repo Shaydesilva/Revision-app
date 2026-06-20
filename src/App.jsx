@@ -1304,7 +1304,7 @@ function ContextMenu({card,pos,onClose,onEdit,onPriority,onRemove}){
   </div>
 }
 
-function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
+function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active,onImportNav,isOnline=true}){
   const[search,setSearch]=useState('')
   const[claudeResults,setClaudeResults]=useState(null)
   const[sort,setSort]=useState('overdue')
@@ -1411,7 +1411,8 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active}){
         </div>
       ))}
     </div>
-    {/* Floating add button */}
+    {/* Floating action buttons */}
+    <button onClick={onImportNav} onMouseDown={()=>SND.init()} style={{position:'fixed',bottom:88,right:'calc(50% - 274px)',width:46,height:46,borderRadius:'50%',background:S,border:`1px solid ${BD}`,color:TX,fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 16px rgba(0,0,0,0.4)',zIndex:90}}>↑</button>
     <button onClick={()=>setShowForm(true)} onMouseDown={()=>SND.init()} style={{position:'fixed',bottom:88,right:'calc(50% - 220px)',width:52,height:52,borderRadius:'50%',background:AC,color:'#fff',border:'none',fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(79,142,247,0.5)',zIndex:90}}>+</button>
   </div>
 }
@@ -1435,7 +1436,7 @@ function MnemonicSection({card}){
 }
 
 
-function Import({cards,onImport,isOnline=true,active}){
+function Import({cards,onImport,isOnline=true,active,onBack}){
   const[stage,setStage]=useState('idle')
   const[pasted,setPasted]=useState('')
   const[preview,setPreview]=useState([])
@@ -1466,6 +1467,7 @@ function Import({cards,onImport,isOnline=true,active}){
   if(!isOnline)return<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'calc(100vh - 64px)',padding:40,textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>✈️</div><div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:8}}>Import needs internet</div><div style={{fontSize:14,color:MU}}>Save your paste for when you land.</div></div>
 
   return<div style={{padding:'52px 24px 100px',animation:'up 0.35s ease'}}>
+    <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:16,padding:0}}>← Back to Bank</button>
     <div style={{marginBottom:28}}><div style={{fontSize:22,fontWeight:800,color:TX}}>Import Lesson</div><div style={{fontSize:13,color:MU,marginTop:2}}>{cards.length} cards in deck</div></div>
     {stage==='idle'&&<>
       <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px',marginBottom:14}}><div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:1,marginBottom:6}}>HOW TO USE</div><div style={{fontSize:13,color:MU,lineHeight:1.8}}>Open Google Doc → Select All (⌘A) → Copy (⌘C) → paste below. Claude skips review sections and only extracts what's genuinely new.</div></div>
@@ -1674,6 +1676,27 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
         break
       }
 
+      case 'conversation.item.done':
+        // Log full content — check if transcript is embedded here
+        if(ev.item?.role==='user'&&ev.item?.content){
+          log('User item content: '+JSON.stringify(ev.item.content).slice(0,200))
+          // Some API versions embed transcript directly in the item
+          const transcript=ev.item.content?.find?.(c=>c.type==='input_audio'&&c.transcript)?.transcript||
+                           ev.item.content?.find?.(c=>c.transcript)?.transcript
+          if(transcript){
+            const text=transcript.trim()
+            if(text){
+              transcriptRef.current.push({role:'user',text})
+              setMessages(prev=>[...prev,{role:'user',text,id:Date.now()}])
+            }
+          }
+        }
+        break
+
+      case 'session.updated':
+        log('Session updated — transcription: '+JSON.stringify(ev.session?.input_audio_transcription))
+        break
+
       case 'input_audio_buffer.speech_started':
         setDotMode('listen');setStatus('Listening…')
         break
@@ -1723,12 +1746,11 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
         startTimeRef.current=Date.now()
         timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
         if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
-        // Enable user speech transcription — try with empty config (API picks model)
-        dc.send(JSON.stringify({
-          type:'session.update',
-          session:{input_audio_transcription:{}}
-        }))
-        log('Sent session.update for transcription')
+        // Enable user speech transcription
+        // whisper-1 is what the original Luna used successfully
+        const suMsg={type:'session.update',session:{modalities:['text','audio'],input_audio_transcription:{model:'whisper-1'}}}
+        dc.send(JSON.stringify(suMsg))
+        log('Sent session.update: '+JSON.stringify(suMsg.session))
         // Trigger Luna's opening line after brief delay
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
         // Periodic reinforcement to keep model on track
@@ -2087,9 +2109,9 @@ export default function App(){
       <div style={{display:screen==='home'?'block':'none'}}><Home cards={cards} streak={streak} lastDate={lastDate} tier={tier} go={setScreen}/></div>
       <div style={{display:screen==='study'?'block':'none'}}><Study cards={cards} onRate={onRate} active={screen==='study'}/></div>
       <div style={{display:screen==='phrase'?'block':'none'}}><ErrorBoundary><Phrase cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} isOnline={isOnline} active={screen==='phrase'}/></ErrorBoundary></div>
-      <div style={{display:screen==='bank'?'block':'none'}}><ErrorBoundary><Bank cards={cards} onUpdateCard={onUpdateCard} onAddCard={onAddCard} onDeleteCard={onDeleteCard} active={screen==='bank'}/></ErrorBoundary></div>
+      <div style={{display:screen==='bank'?'block':'none'}}><ErrorBoundary><Bank cards={cards} onUpdateCard={onUpdateCard} onAddCard={onAddCard} onDeleteCard={onDeleteCard} active={screen==='bank'} onImportNav={()=>setScreen('import')} isOnline={isOnline}/></ErrorBoundary></div>
       <div style={{display:screen==='voice'?'block':'none'}}><ErrorBoundary><VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={screen==='voice'}/></ErrorBoundary></div>
-      <div style={{display:screen==='import'?'block':'none'}}><Import cards={cards} onImport={onImport} isOnline={isOnline} active={screen==='import'}/></div>
+      <div style={{display:screen==='import'?'block':'none'}}><Import cards={cards} onImport={onImport} isOnline={isOnline} active={screen==='import'} onBack={()=>setScreen('bank')}/></div>
     </div>
     <Nav screen={screen} go={setScreen} due={due}/>
   </div>
