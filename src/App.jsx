@@ -1411,9 +1411,11 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active,onImportNav,isOn
         </div>
       ))}
     </div>
-    {/* Floating action buttons */}
-    <button onClick={onImportNav} onMouseDown={()=>SND.init()} style={{position:'fixed',bottom:88,right:'calc(50% - 274px)',width:46,height:46,borderRadius:'50%',background:S,border:`1px solid ${BD}`,color:TX,fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 16px rgba(0,0,0,0.4)',zIndex:90}}>↑</button>
-    <button onClick={()=>setShowForm(true)} onMouseDown={()=>SND.init()} style={{position:'fixed',bottom:88,right:'calc(50% - 220px)',width:52,height:52,borderRadius:'50%',background:AC,color:'#fff',border:'none',fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(79,142,247,0.5)',zIndex:90}}>+</button>
+    {/* Floating action buttons — anchored to viewport right edge, works on any width */}
+    <div style={{position:'fixed',bottom:88,right:20,display:'flex',flexDirection:'column',gap:10,alignItems:'center',zIndex:90}}>
+      <button onClick={onImportNav} onMouseDown={()=>SND.init()} style={{width:44,height:44,borderRadius:'50%',background:S,border:`1px solid ${BD}`,color:TX,fontSize:17,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 16px rgba(0,0,0,0.4)'}}>↑</button>
+      <button onClick={()=>setShowForm(true)} onMouseDown={()=>SND.init()} style={{width:52,height:52,borderRadius:'50%',background:AC,color:'#fff',border:'none',fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(79,142,247,0.5)'}}>+</button>
+    </div>
   </div>
 }
 
