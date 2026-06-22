@@ -1318,6 +1318,37 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active,onImportNav,isOn
   const[initialized,setInitialized]=useState(false)
   const searchTimer=useRef(null)
 
+  const[dupePreview,setDupePreview]=useState(null)
+
+  const findDupes=useCallback(()=>{
+    const norm=s=>(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim()
+    const groups={}
+    cards.forEach(c=>{const k=norm(c.portuguese);if(!groups[k])groups[k]=[];groups[k].push(c)})
+    const toRemove=[]
+    Object.values(groups).forEach(g=>{
+      if(g.length<2)return
+      // Keep highest mastery, then most reps, then first by id
+      const sorted=[...g].sort((a,b)=>(b.mastery-a.mastery)||(b.reps-a.reps))
+      toRemove.push(...sorted.slice(1))
+    })
+    return toRemove
+  },[cards])
+
+  const runDedupe=useCallback(async()=>{
+    const dupes=findDupes()
+    if(!dupes.length){alert('No duplicates found!');return}
+    setDupePreview(dupes)
+  },[findDupes])
+
+  const confirmDedupe=useCallback(async()=>{
+    if(!dupePreview)return
+    for(const card of dupePreview){
+      await dbDeleteCard(card.id)
+      onDeleteCard(card.id)
+    }
+    setDupePreview(null)
+  },[dupePreview,onDeleteCard])
+
   const exportBackup=useCallback(()=>{
     const data=lsGet(LS_CARDS)||[]
     const json=JSON.stringify(data,null,2)
@@ -1372,9 +1403,30 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active,onImportNav,isOn
       <div style={{position:'absolute',right:34,top:'50%',transform:'translateY(-50%)'}}>{searching?<Spinner size={16}/>:<span style={{color:MU,fontSize:16}}>⌕</span>}</div>
     </div>
     {overdue.length>0&&!search&&<div style={{margin:'0 20px 14px',padding:'12px 16px',background:`${RE}15`,border:`1px solid ${RE}44`,borderRadius:14}}><div style={{fontSize:13,color:RE,fontWeight:700}}>{overdue.length} card{overdue.length!==1?'s':''} overdue</div><div style={{fontSize:11,color:MU,marginTop:2}}>{overdue.map(c=>c.portuguese).slice(0,3).join(', ')}{overdue.length>3?'…':''}</div></div>}
+    {/* Dedupe preview modal */}
+    {dupePreview&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={()=>setDupePreview(null)}>
+      <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:480,background:S,borderRadius:'20px 20px 0 0',padding:'24px 24px 40px',animation:'slideUp 0.25s ease'}}>
+        <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:4}}>Remove {dupePreview.length} duplicate{dupePreview.length!==1?'s':''}</div>
+        <div style={{fontSize:13,color:MU,marginBottom:16}}>Keeping the version with highest mastery for each.</div>
+        <div style={{maxHeight:200,overflowY:'auto',marginBottom:20,display:'flex',flexDirection:'column',gap:6}}>
+          {dupePreview.map(c=><div key={c.id} style={{background:S2,borderRadius:10,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div><div style={{fontSize:14,fontWeight:600,color:TX}}>{c.portuguese}</div><div style={{fontSize:12,color:MU}}>{c.english}</div></div>
+            <div style={{fontSize:11,color:MU}}>mastery {c.mastery}</div>
+          </div>)}
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          <GBtn label="Cancel" onClick={()=>setDupePreview(null)}/>
+          <PBtn label={`Remove ${dupePreview.length} dupes`} onClick={confirmDedupe} color={RE}/>
+        </div>
+      </div>
+    </div>}
+
     <div style={{margin:'0 20px 10px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
       <span style={{fontSize:12,color:MU}}>{cards.length} cards total</span>
-      <button onClick={exportBackup} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 12px',cursor:'pointer',fontFamily:FONT}}>⬇ Backup JSON</button>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={runDedupe} style={{fontSize:11,color:YE,background:`${YE}15`,border:`1px solid ${YE}33`,borderRadius:8,padding:'5px 12px',cursor:'pointer',fontFamily:FONT}}>✦ Dedupe</button>
+        <button onClick={exportBackup} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 12px',cursor:'pointer',fontFamily:FONT}}>⬇ Backup</button>
+      </div>
     </div>
     <div style={{padding:'0 20px 10px',display:'flex',gap:6,overflowX:'auto'}}>
       {[['overdue','Overdue'],['weakest','Weakest'],['strongest','Strongest'],['never','Never practiced'],['az','A–Z']].map(([k,l])=><button key={k} onClick={()=>setSort(k)} style={{background:sort===k?AC:S2,color:sort===k?'#fff':MU,border:'none',borderRadius:8,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:FONT,whiteSpace:'nowrap'}}>{l}</button>)}
@@ -1545,6 +1597,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
   // ── State ──────────────────────────────────────────────────────────────
   const[phase,setPhase]=useState('idle')
   const[spectrum,setSpectrum]=useState(0.35)
+  const[speed,setSpeed]=useState('normal') // 'normal' | 'slow'
+  const speedRef=useRef('normal')
   const[messages,setMessages]=useState([])
   const[liveText,setLiveText]=useState('')
   const[elapsed,setElapsed]=useState(0)
@@ -1578,6 +1632,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
 
   // ── Sync refs with state ───────────────────────────────────────────────
   useEffect(()=>{spectrumRef.current=spectrum},[spectrum])
+  useEffect(()=>{speedRef.current=speed},[speed])
   useEffect(()=>{pttRef.current=ptt},[ptt])
   useEffect(()=>{phaseRef.current=phase},[phase])
   useEffect(()=>{
@@ -1718,7 +1773,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
     SND.init()
     try{
       log('Requesting session token…')
-      const res=await fetch('/.netlify/functions/luna-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current})})
+      const res=await fetch('/.netlify/functions/luna-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current,speed:speedRef.current})})
       const data=await res.json()
       if(!res.ok)throw new Error(data.error||`Server ${res.status}`)
       const token=data.value
@@ -1865,6 +1920,9 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
         <button onClick={()=>setShowDebug(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,opacity:0.3,padding:'2px',lineHeight:1,flexShrink:0}}>⚙️</button>
       </div>
       <div style={{textAlign:'center',fontSize:10,color:MU,marginTop:4}}>{spectrum<0.25?'Flowing — corrections minimal':spectrum<0.6?'Balanced — gentle nudges':'Active correction mode'}</div>
+      <div style={{display:'flex',gap:8,marginTop:10,justifyContent:'center'}}>
+        {[['slow','🐢 Slow'],['normal','⚡ Normal']].map(([k,l])=><button key={k} onClick={()=>setSpeed(k)} style={{padding:'6px 18px',borderRadius:20,background:speed===k?AC:S2,color:speed===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:FONT}}>{l}</button>)}
+      </div>
     </div>
 
     {/* Chat feed */}
