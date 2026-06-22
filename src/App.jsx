@@ -1340,14 +1340,22 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active,onImportNav,isOn
     setDupePreview(dupes)
   },[findDupes])
 
-  const confirmDedupe=useCallback(async()=>{
-    if(!dupePreview)return
-    for(const card of dupePreview){
-      await dbDeleteCard(card.id)
-      onDeleteCard(card.id)
+  const confirmDedupe=()=>{
+    if(!dupePreview||!dupePreview.length)return
+    const ids=new Set(dupePreview.map(c=>c.id))
+    // Remove from localStorage in one shot
+    const cached=lsGet(LS_CARDS)||[]
+    lsSave(LS_CARDS,cached.filter(c=>!ids.has(c.id)))
+    // Update React state in one batch
+    const remaining=cached.filter(c=>!ids.has(c.id))
+    // Call onDeleteCard for each (updates parent state)
+    ids.forEach(id=>onDeleteCard(id))
+    // Delete from Supabase in background — don't await
+    if(sb&&navigator.onLine){
+      ids.forEach(id=>sb.from('cards').delete().eq('id',id).eq('user_id',USER_ID).catch(()=>{}))
     }
     setDupePreview(null)
-  },[dupePreview,onDeleteCard])
+  }
 
   const exportBackup=useCallback(()=>{
     const data=lsGet(LS_CARDS)||[]
