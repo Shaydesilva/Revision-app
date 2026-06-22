@@ -201,7 +201,9 @@ const SB_URL=import.meta.env.VITE_SUPABASE_URL
 const SB_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY
 const sb=(SB_URL&&SB_KEY)?createClient(SB_URL,SB_KEY):null
 
-const LS_CARDS='carioca_cards',LS_STATE='carioca_state',LS_QUEUE='carioca_queue'
+const LS_CARDS='carioca_cards',LS_STATE='carioca_state',LS_QUEUE='carioca_queue',LS_DELETED='carioca_deleted'
+function getDeletedIds(){try{return new Set(JSON.parse(localStorage.getItem(LS_DELETED)||'[]'))}catch{return new Set()}}
+function addDeletedIds(ids){try{const d=getDeletedIds();ids.forEach(id=>d.add(id));localStorage.setItem(LS_DELETED,JSON.stringify([...d]))}catch{}}
 function lsSave(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 function lsGet(k){try{const d=localStorage.getItem(k);return d?JSON.parse(d):null}catch(e){return null}}
 
@@ -267,6 +269,7 @@ async function dbInsertCards(newCards){
 }
 
 async function dbDeleteCard(cardId){
+  addDeletedIds([cardId])
   const cached=lsGet(LS_CARDS)||[]
   lsSave(LS_CARDS,cached.filter(c=>c.id!==cardId))
   if(sb&&navigator.onLine)await sb.from('cards').delete().eq('id',cardId).eq('user_id',USER_ID).catch(()=>{})
@@ -1345,9 +1348,9 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,onDeleteCards,active,on
     const ids=dupePreview.map(c=>c.id)
     // Single batch update — one state write, one localStorage write
     onDeleteCards(ids)
-    // Delete from Supabase in background
+    // Delete from Supabase — batch delete in one query
     if(sb&&navigator.onLine){
-      ids.forEach(id=>sb.from('cards').delete().eq('id',id).eq('user_id',USER_ID).catch(()=>{}))
+      sb.from('cards').delete().in('id',ids).eq('user_id',USER_ID).catch(()=>{})
     }
     setDupePreview(null)
   }
@@ -2069,12 +2072,13 @@ export default function App(){
             const sbMapped=sbCards.map(fromRow)
             const sbIds=new Set(sbMapped.map(c=>c.id))
             const localIds=new Set(localCards.map(c=>c.id))
-            // Local wins for SM-2 state — local is always most recent
-            // Add cards from Supabase that aren't in local (added on another device)
-            const sbOnlyCards=sbMapped.filter(c=>!localIds.has(c.id))
+            const deletedIds=getDeletedIds() // cards deliberately deleted on this device
+            // Local wins for SM-2 state
+            // Only add Supabase cards if: not in local AND not deliberately deleted
+            const sbOnlyCards=sbMapped.filter(c=>!localIds.has(c.id)&&!deletedIds.has(c.id))
             const merged=[...localCards,...sbOnlyCards]
             if(merged.length>localCards.length){lsSave(LS_CARDS,merged);setCards(merged)}
-            // Push ALL local cards to Supabase — brings SM-2 state up to date
+            // Push local state to Supabase
             syncToSupabase(merged) // batched, safe for large decks
           }else{syncToSupabase(localCards)}
           const{data:stateRows}=await sb.from('user_state').select('*').eq('user_id',USER_ID).limit(1)
@@ -2140,6 +2144,7 @@ export default function App(){
   },[])
 
   const onDeleteCards=useCallback(cardIds=>{
+    addDeletedIds(cardIds)  // permanently exclude from Supabase merge
     const idSet=new Set(cardIds)
     setCards(prev=>{const updated=prev.filter(c=>!idSet.has(c.id));lsSave(LS_CARDS,updated);return updated})
   },[])
