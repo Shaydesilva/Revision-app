@@ -1304,7 +1304,7 @@ function ContextMenu({card,pos,onClose,onEdit,onPriority,onRemove}){
   </div>
 }
 
-function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active,onImportNav,isOnline=true}){
+function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,onDeleteCards,active,onImportNav,isOnline=true}){
   const[search,setSearch]=useState('')
   const[claudeResults,setClaudeResults]=useState(null)
   const[sort,setSort]=useState('overdue')
@@ -1342,15 +1342,10 @@ function Bank({cards,onUpdateCard,onAddCard,onDeleteCard,active,onImportNav,isOn
 
   const confirmDedupe=()=>{
     if(!dupePreview||!dupePreview.length)return
-    const ids=new Set(dupePreview.map(c=>c.id))
-    // Remove from localStorage in one shot
-    const cached=lsGet(LS_CARDS)||[]
-    lsSave(LS_CARDS,cached.filter(c=>!ids.has(c.id)))
-    // Update React state in one batch
-    const remaining=cached.filter(c=>!ids.has(c.id))
-    // Call onDeleteCard for each (updates parent state)
-    ids.forEach(id=>onDeleteCard(id))
-    // Delete from Supabase in background — don't await
+    const ids=dupePreview.map(c=>c.id)
+    // Single batch update — one state write, one localStorage write
+    onDeleteCards(ids)
+    // Delete from Supabase in background
     if(sb&&navigator.onLine){
       ids.forEach(id=>sb.from('cards').delete().eq('id',id).eq('user_id',USER_ID).catch(()=>{}))
     }
@@ -2144,6 +2139,11 @@ export default function App(){
     setCards(prev=>{const updated=prev.filter(c=>c.id!==cardId);lsSave(LS_CARDS,updated);return updated})
   },[])
 
+  const onDeleteCards=useCallback(cardIds=>{
+    const idSet=new Set(cardIds)
+    setCards(prev=>{const updated=prev.filter(c=>!idSet.has(c.id));lsSave(LS_CARDS,updated);return updated})
+  },[])
+
   const onImport=useCallback(async items=>{
     const newCards=items.map((it,i)=>mk(`imp-${Date.now()}-${i}`,it.portuguese,it.english||'—',it.type||'vocab',{cluster:it.cluster||null,contrast:it.contrast||null,exampleSentence:it.exampleSentence||null,sourceDay:it.sourceDay||0}))
     setCards(prev=>{const updated=[...prev,...newCards];lsSave(LS_CARDS,updated);return updated})
@@ -2177,7 +2177,7 @@ export default function App(){
       <div style={{display:screen==='home'?'block':'none'}}><Home cards={cards} streak={streak} lastDate={lastDate} tier={tier} go={setScreen}/></div>
       <div style={{display:screen==='study'?'block':'none'}}><Study cards={cards} onRate={onRate} active={screen==='study'}/></div>
       <div style={{display:screen==='phrase'?'block':'none'}}><ErrorBoundary><Phrase cards={cards} onRateMultiple={onRateMultiple} sentenceHistory={sentenceHistory} onSaveSentence={onSaveSentence} isOnline={isOnline} active={screen==='phrase'}/></ErrorBoundary></div>
-      <div style={{display:screen==='bank'?'block':'none'}}><ErrorBoundary><Bank cards={cards} onUpdateCard={onUpdateCard} onAddCard={onAddCard} onDeleteCard={onDeleteCard} active={screen==='bank'} onImportNav={()=>setScreen('import')} isOnline={isOnline}/></ErrorBoundary></div>
+      <div style={{display:screen==='bank'?'block':'none'}}><ErrorBoundary><Bank cards={cards} onUpdateCard={onUpdateCard} onAddCard={onAddCard} onDeleteCard={onDeleteCard} onDeleteCards={onDeleteCards} active={screen==='bank'} onImportNav={()=>setScreen('import')} isOnline={isOnline}/></ErrorBoundary></div>
       <div style={{display:screen==='voice'?'block':'none'}}><ErrorBoundary><VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={screen==='voice'}/></ErrorBoundary></div>
       <div style={{display:screen==='import'?'block':'none'}}><Import cards={cards} onImport={onImport} isOnline={isOnline} active={screen==='import'} onBack={()=>setScreen('bank')}/></div>
     </div>
