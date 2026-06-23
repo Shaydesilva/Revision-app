@@ -1987,38 +1987,26 @@ export default function App(){
     return()=>{window.removeEventListener('online',goOnline);window.removeEventListener('offline',goOffline)}
   },[])
 
-  // Re-sync from Supabase when tab becomes visible (e.g. switching back to laptop)
+  // Re-sync from Supabase when tab becomes visible
   useEffect(()=>{
     const onVisible=async()=>{
-      if(document.visibilityState==='visible'&&sb&&navigator.onLine){
-        try{
-          const{data:sbCards}=await sb.from('cards').select('*').eq('user_id',USER_ID)
-          if(sbCards?.length){
-            const sbMapped=sbCards.map(fromRow)
-            const localCards=lsGet(LS_CARDS)||[]
-            const localIds=new Set(localCards.map(c=>c.id))
-            const sbOnly=sbMapped.filter(c=>!localIds.has(c.id))
-            const merged=[...localCards,...sbOnly]
-            // Only update state if we actually gained cards or SM-2 changed
-            const hasNew=sbOnly.length>0
-            const hasUpdates=sbMapped.some(sb=>{
-              const local=localCards.find(l=>l.id===sb.id)
-              return local&&sb.mastery>local.mastery
-            })
-            if(hasNew||hasUpdates){
-              // Merge: local wins for SM-2, add any Supabase-only cards
-              const finalCards=sbMapped.map(s=>{
-                const l=localCards.find(x=>x.id===s.id)
-                // Take whichever has higher mastery (most recent progress wins)
-                return l?(l.mastery>=s.mastery?l:s):s
-              })
-              const withLocalOnly=finalCards.concat(localCards.filter(l=>!sbMapped.find(s=>s.id===l.id)))
-              lsSave(LS_CARDS,withLocalOnly)
-              setCards(withLocalOnly)
-            }
-          }
-        }catch(e){}
-      }
+      if(document.visibilityState!=='visible'||!sb||!navigator.onLine)return
+      try{
+        const{data:sbCards}=await sb.from('cards').select('*').eq('user_id',USER_ID)
+        if(!sbCards?.length)return
+        const sbMapped=sbCards.map(fromRow)
+        const localCards=lsGet(LS_CARDS)||[]
+        const localIds=new Set(localCards.map(c=>c.id))
+        const deletedIds=getDeletedIds() // never restore deliberately deleted cards
+        // Only add cards from Supabase that: (a) aren't local yet, (b) weren't deleted here
+        const newFromSb=sbMapped.filter(c=>!localIds.has(c.id)&&!deletedIds.has(c.id))
+        if(newFromSb.length>0){
+          const merged=[...localCards,...newFromSb]
+          lsSave(LS_CARDS,merged)
+          setCards(merged)
+        }
+        // Note: local SM-2 always wins — we never overwrite local card data with Supabase
+      }catch(e){}
     }
     document.addEventListener('visibilitychange',onVisible)
     return()=>document.removeEventListener('visibilitychange',onVisible)
@@ -2044,6 +2032,7 @@ export default function App(){
         const newCard=fromRow(payload.new)
         setCards(prev=>{
           if(prev.find(c=>c.id===newCard.id))return prev
+          if(getDeletedIds().has(newCard.id))return prev // never restore deleted cards
           const next=[...prev,newCard]
           lsSave(LS_CARDS,next)
           return next
