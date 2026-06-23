@@ -1610,9 +1610,12 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
   const[elapsed,setElapsed]=useState(0)
   const[status,setStatus]=useState('Ready')
   const[dotMode,setDotMode]=useState('')
-  const[ptt,setPtt]=useState(false)
+  const[ptt,setPtt]=useState(true)
   const[summary,setSummary]=useState(null)
   const[wordMenu,setWordMenu]=useState(null)
+  const[textInput,setTextInput]=useState('')
+  const[showTextInput,setShowTextInput]=useState(false)
+  const[sendingText,setSendingText]=useState(false)
   const[showDebug,setShowDebug]=useState(false)
   const[debugLog,setDebugLog]=useState([])
   const[cardMap,setCardMap]=useState({})
@@ -1631,7 +1634,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
   const shouldEndRef=useRef(false)
   const phaseRef=useRef('idle')
   const spectrumRef=useRef(0.35)
-  const pttRef=useRef(false)
+  const pttRef=useRef(true)
   const startTimeRef=useRef(0)
   // Always-fresh event handler — assigned each render, zero stale closure risk
   const onEventRef=useRef(null)
@@ -1859,6 +1862,19 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
   const togglePtt=()=>{const n=!pttRef.current;setPtt(n);if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=!n})}
 
   // ── Translation ────────────────────────────────────────────────────────
+  const sendText=useCallback(async()=>{
+    const msg=textInput.trim()
+    if(!msg||!dcRef.current||dcRef.current.readyState!=='open')return
+    setSendingText(true)
+    transcriptRef.current.push({role:'user',text:msg})
+    setMessages(prev=>[...prev,{role:'user',text:msg,id:Date.now()}])
+    setTextInput('')
+    dcRef.current.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:msg}]}}))
+    setTimeout(()=>{if(dcRef.current?.readyState==='open')dcRef.current.send(JSON.stringify({type:'response.create'}))},100)
+    setSendingText(false)
+    if(GOODBYE_V.some(g=>msg.toLowerCase().includes(g)))shouldEndRef.current=true
+  },[textInput])
+
   const translateWord=useCallback(async word=>{
     const key=(word||'').toLowerCase().trim()
     if(!key)return{translation:'—'}
@@ -1951,11 +1967,28 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
       <div style={{width:8,height:8,borderRadius:'50%',flexShrink:0,background:dotMode==='speak'?AC:dotMode==='listen'?GR:BD,transition:'background 0.2s',animation:dotMode?'pulse 1.5s ease-in-out infinite':'none'}}/>
       <span style={{fontSize:13,color:MU,flex:1}}>{status}</span>
       {phase==='live'&&<span style={{fontSize:12,color:MU,fontVariantNumeric:'tabular-nums',fontFamily:'monospace'}}>{fmtTime(elapsed)}</span>}
-      {phase==='live'&&<button onClick={togglePtt} style={{fontSize:11,color:ptt?GR:MU,background:ptt?`${GR}18`:S2,border:`1px solid ${ptt?GR:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT,flexShrink:0}}>{ptt?'Hold':'Auto'}</button>}
+      {phase==='live'&&<button onClick={togglePtt} style={{fontSize:11,color:ptt?GR:MU,background:ptt?`${GR}18`:S2,border:`1px solid ${ptt?GR:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT,flexShrink:0}}>{ptt?'Hold to talk':'Auto'}</button>}
+      {phase==='live'&&<button onClick={()=>setShowTextInput(v=>!v)} style={{fontSize:11,color:showTextInput?AC:MU,background:showTextInput?`${AC}18`:S2,border:`1px solid ${showTextInput?AC:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT,flexShrink:0}}>⌨️</button>}
     </div>
 
-    {phase==='live'&&ptt&&<div style={{padding:'6px 20px',flexShrink:0}}>
-      <button onTouchStart={pttOn} onTouchEnd={pttOff} onMouseDown={pttOn} onMouseUp={pttOff} style={{width:'100%',padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>Hold to talk</button>
+    {phase==='live'&&<div style={{padding:'6px 20px',flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
+      {ptt&&<button onTouchStart={pttOn} onTouchEnd={pttOff} onMouseDown={pttOn} onMouseUp={pttOff} style={{width:'100%',padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>Hold to talk</button>}
+      {showTextInput&&<div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <input
+          value={textInput}
+          onChange={e=>setTextInput(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendText()}}}
+          placeholder="Type to Luna…"
+          autoFocus
+          style={{flex:1,background:S,border:`1px solid ${AC}55`,borderRadius:12,padding:'12px 14px',color:TX,fontSize:14,outline:'none',fontFamily:FONT,WebkitUserSelect:'text',userSelect:'text'}}
+        />
+        <button
+          onClick={sendText}
+          disabled={!textInput.trim()||sendingText}
+          onMouseDown={()=>SND.init()}
+          style={{background:AC,color:'#fff',border:'none',borderRadius:12,padding:'12px 16px',fontSize:16,cursor:'pointer',opacity:textInput.trim()&&!sendingText?1:0.4,fontFamily:FONT,flexShrink:0}}
+        >→</button>
+      </div>}
     </div>}
 
     <div style={{padding:'8px 20px 20px',flexShrink:0}}>
