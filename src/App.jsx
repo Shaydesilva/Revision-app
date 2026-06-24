@@ -2376,44 +2376,23 @@ function NGScaffoldMap({isOnline,onBack}){
   const load=async()=>{
     setLoading(true)
     try{
-      // Load scaffolds from Supabase via frontier (which also loads profile)
-      const[frontierData,scaffoldRes]=await Promise.all([
+      // sb is the module-level Supabase client — already initialised
+      const UID='00000000-0000-0000-0000-000000000001'
+      const[frontierData,{data:scaffoldData}]=await Promise.all([
         ngFetch('ng-frontier'),
-        fetch('/.netlify/functions/ng-frontier',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({returnAll:true})}).then(r=>r.json())
+        sb.from('ng_scaffolds')
+          .select('id,base_portuguese,base_english,phase,category,stages,current_stage,context')
+          .eq('user_id',UID)
+          .order('phase')
       ])
-      // Get controlled from profile
-      const ctrl=new Set((frontierData.controlled||[]).map(c=>`${c.scaffold_id}_${c.stage}`))
+      const ctrl=new Set(
+        (frontierData.controlled||[]).map(c=>`${c.scaffold_id}_${c.stage}`)
+      )
       setControlled(ctrl)
-      // We need scaffolds - fetch them directly
-      if(window._ngScaffolds){
-        setScaffolds(window._ngScaffolds)
-      }
-    }catch(e){console.warn(e)}
+      if(scaffoldData?.length)setScaffolds(scaffoldData)
+    }catch(e){console.warn('Map load:',e)}
     setLoading(false)
   }
-
-  // Load scaffolds from Supabase directly via a simple fetch
-  useEffect(()=>{
-    const loadScaffolds=async()=>{
-      try{
-        const{createClient}=await import('https://esm.sh/@supabase/supabase-js@2')
-        const sb=createClient(
-          import.meta?.env?.VITE_SUPABASE_URL||window.__SUPABASE_URL__,
-          import.meta?.env?.VITE_SUPABASE_ANON_KEY||window.__SUPABASE_ANON_KEY__
-        )
-        const{data}=await sb.from('ng_scaffolds')
-          .select('id,base_portuguese,base_english,phase,category,stages,current_stage,context')
-          .eq('user_id','00000000-0000-0000-0000-000000000001')
-          .order('phase')
-        if(data){
-          setScaffolds(data)
-          window._ngScaffolds=data
-        }
-      }catch(e){console.warn('Scaffold load:',e)}
-      setLoading(false)
-    }
-    loadScaffolds()
-  },[])
 
   const categories={
     social_foundation:'Social',
