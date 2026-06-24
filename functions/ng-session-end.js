@@ -90,18 +90,9 @@ Accept all Carioca contractions. Never penalise missing accents.`
         sessionSummary=analysis.summary||''
         newLunaNotes=analysis.lunaNotes||''
 
-        // Log avoidance
+        // Log avoidance directly
         if(analysis.avoidedScaffolds?.length){
-          const avoidanceUpdates=analysis.avoidedScaffolds.map(id=>({
-            scaffold_id:id,
-            times_in_frontier:1,
-            times_produced:0
-          }))
-          await fetch(`${process.env.URL||''}/.netlify/functions/ng-profile-update`,{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({update:{scaffold_avoidance:avoidanceUpdates}})
-          }).catch(()=>{})
+          // Handled in profile update below
         }
       }catch{}
     }
@@ -176,11 +167,27 @@ Accept all Carioca contractions. Never penalise missing accents.`
       profileUpdate.controlled=newlyAcquired
     }
 
-    await fetch(`${process.env.URL||''}/.netlify/functions/ng-profile-update`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({update:profileUpdate})
-    }).catch(()=>{})
+    // Write profile update directly to Supabase
+    const{data:existingProfile}=await sb.from('ng_learner_profile').select('*').eq('user_id',UID).single().catch(()=>({data:null}))
+    if(existingProfile){
+      // Merge controlled additively
+      const existingControlled=existingProfile.controlled||[]
+      const existingIds=new Set(existingControlled.map(c=>`${c.scaffold_id}_${c.stage}`))
+      const mergedControlled=[...existingControlled,...(newlyAcquired.filter(a=>!existingIds.has(`${a.scaffold_id}_${a.stage}`)))]
+      const mergedErrorFP={...(existingProfile.error_fingerprint||{}),...(newErrorPatterns||{})}
+      const mergedNotes=newLunaNotes&&newLunaNotes!==existingProfile.luna_notes
+        ?(existingProfile.luna_notes?`${existingProfile.luna_notes}
+[${new Date().toISOString().slice(0,10)}] ${newLunaNotes}`:newLunaNotes)
+        :existingProfile.luna_notes
+      await sb.from('ng_learner_profile').update({
+        controlled:mergedControlled,
+        error_fingerprint:mergedErrorFP,
+        luna_notes:mergedNotes,
+        session_history:{...(existingProfile.session_history||{}),last_session:now,last_mode:mode,[`last_${mode}`]:now},
+        version:(existingProfile.version||0)+1,
+        last_updated:now
+      }).eq('user_id',UID).catch(()=>{})
+    }
 
     // Trigger self-extension for newly acquired final stages
     for(const acquired of newlyAcquired){
@@ -189,7 +196,7 @@ Accept all Carioca contractions. Never penalise missing accents.`
       const isFinalStage=acquired.stage===scaffold.stages.length
       if(isFinalStage){
         // Fire and forget — generate stage N+1 in background
-        fetch(`${process.env.URL||''}/.netlify/functions/ng-self-extend`,{
+        fetch(`/.netlify/functions/ng-self-extend`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify({scaffold_id:acquired.scaffold_id})
@@ -197,12 +204,7 @@ Accept all Carioca contractions. Never penalise missing accents.`
       }
     }
 
-    // Trigger frontier recompute
-    fetch(`${process.env.URL||''}/.netlify/functions/ng-frontier`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({})
-    }).catch(()=>{})
+    // Frontier recomputes on next NGHome/NGFlashCards load
 
     // Check for milestones
     const totalControlled=(profile?.controlled||[]).length+newlyAcquired.length
