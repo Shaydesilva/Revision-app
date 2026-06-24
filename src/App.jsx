@@ -2021,10 +2021,9 @@ function NGFlashCards({isOnline,onBack}){
     setLoading(true)
     try{
       const data=await ngFetch('ng-frontier')
-      const f=data.frontier||[]
-      // Shuffle slightly — highest urgency first but with some variation
-      setFrontier(f.slice(0,10))
-    }catch(e){console.warn(e)}
+      if(data.error)throw new Error(data.error)
+      setFrontier(data.frontier||[])
+    }catch(e){console.warn('Frontier load failed:',e)}
     setLoading(false)
   }
 
@@ -2188,7 +2187,7 @@ function NGPhrase({isOnline,onBack}){
       const f=data.frontier||[]
       setFrontier(f)
       if(f.length)await generateScenario(f)
-      else setPhase('done')
+      else{setPhase('scenario');setScenario('No frontier loaded yet. Try going back to home and waiting a moment, then return.')}
     }catch{setPhase('done')}
   }
 
@@ -2588,26 +2587,25 @@ function NGHome({isOnline,go}){
 
   useEffect(()=>{
     loadState()
-  },[])
+  },[isOnline])
 
   const loadState=async()=>{
     setLoading(true)
     try{
-      // Load profile
-      const{createClient}=window.supabaseJs||{}
-      // Use fetch to our frontier function — it loads + computes everything
-      if(isOnline){
-        const data=await ngFetch('ng-frontier')
-        setFrontier(data.frontier||[])
-        setProfile({
-          phase:data.phase||1,
-          phase_name:data.phase_name||'Survival → Social',
-          phase_progress:data.phase_progress||0,
-          total_controlled:data.total_controlled||0,
-          fully_controlled:data.fully_controlled_scaffolds||0
-        })
-      }
-    }catch(e){console.warn('NGHome load failed:',e)}
+      const data=await ngFetch('ng-frontier')
+      if(data.error)throw new Error(data.error)
+      setFrontier(data.frontier||[])
+      setProfile({
+        phase:data.phase||1,
+        phase_name:data.phase_name||'Survival → Social',
+        phase_progress:data.phase_progress||0,
+        total_controlled:data.total_controlled||0,
+        fully_controlled:data.fully_controlled_scaffolds||0
+      })
+    }catch(e){
+      console.warn('NGHome load failed:',e)
+      setProfile(p=>p||{phase:1,phase_name:'Survival → Social',phase_progress:0,total_controlled:0,fully_controlled:0})
+    }
     setLoading(false)
   }
 
@@ -2660,7 +2658,12 @@ function NGHome({isOnline,go}){
       <div style={{fontSize:11,fontWeight:700,color:MU,letterSpacing:2,textTransform:'uppercase',marginBottom:14}}>Your frontier</div>
 
       {frontier.length===0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
-        <div style={{fontSize:13,color:MU,lineHeight:1.7}}>Frontier loading…<br/>Start a session to begin.</div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:14}}>
+          {isOnline?'Computing your frontier…':'Needs connection to load frontier.'}
+        </div>
+        <button onClick={loadState} style={{fontSize:12,color:AC,background:`${AC}18`,border:`1px solid ${AC}33`,borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:FONT}}>
+          Retry
+        </button>
       </div>}
 
       {frontier.slice(0,5).map((item,i)=>{
