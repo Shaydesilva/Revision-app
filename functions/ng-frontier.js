@@ -114,16 +114,9 @@ exports.handler=async(event)=>{
       newPhase=currentPhase+1
     }
 
-    // Update profile directly — no internal fetch needed
-    await sb.from('ng_learner_profile').upsert({
-      user_id:UID,
-      frontier:workingFrontier,
-      phase:newPhase,
-      phase_progress:phaseProgress,
-      phase_name:phaseName(newPhase),
-      last_updated:new Date().toISOString()
-    },{onConflict:'user_id',ignoreDuplicates:false}).catch(()=>{})
-
+    // Just return the computed frontier — no writes here
+    // Profile updates happen in ng-session-end
+    console.log('ng-frontier: returning',workingFrontier.length,'frontier items, phase',newPhase)
     return{
       statusCode:200,
       headers:{'Content-Type':'application/json'},
