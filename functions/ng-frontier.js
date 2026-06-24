@@ -112,19 +112,15 @@ exports.handler=async(event)=>{
       newPhase=currentPhase+1
     }
 
-    // Update profile with new frontier and phase
-    await fetch(`${process.env.URL||''}/.netlify/functions/ng-profile-update`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        update:{
-          frontier:workingFrontier,
-          phase:newPhase,
-          phase_progress:phaseProgress,
-          phase_name:phaseName(newPhase)
-        }
-      })
-    }).catch(()=>{})
+    // Update profile directly — no internal fetch needed
+    await sb.from('ng_learner_profile').upsert({
+      user_id:UID,
+      frontier:workingFrontier,
+      phase:newPhase,
+      phase_progress:phaseProgress,
+      phase_name:phaseName(newPhase),
+      last_updated:new Date().toISOString()
+    },{onConflict:'user_id',ignoreDuplicates:false}).catch(()=>{})
 
     return{
       statusCode:200,
