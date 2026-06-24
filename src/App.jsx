@@ -2701,12 +2701,6 @@ function NGHome({isOnline,go}){
       <GBtn label="View scaffold map →" onClick={()=>go('ng-map')}/>
     </div>
 
-    {/* Debug info — temporary */}
-    {debugInfo&&<div style={{margin:'12px 20px 0',padding:'12px',background:S2,borderRadius:12,fontFamily:'monospace',fontSize:10,color:MU,wordBreak:'break-all',lineHeight:1.5}}>
-      <div style={{color:YE,marginBottom:4}}>ng-frontier response:</div>
-      {debugInfo}
-    </div>}
-
     {/* Field report button */}
     <div style={{padding:'12px 20px 0'}}>
       <button onClick={()=>go('ng-field-report')} style={{width:'100%',background:'none',border:`1px dashed ${BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontSize:13,color:MU,fontFamily:FONT}}>
