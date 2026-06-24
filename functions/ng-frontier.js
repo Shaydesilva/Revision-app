@@ -11,9 +11,10 @@ exports.handler=async(event)=>{
     const UID='00000000-0000-0000-0000-000000000001'
 
     // Load profile + scaffolds in parallel
-    const[{data:profile},{data:scaffolds},{data:recentEvents}]=await Promise.all([
+    console.log('ng-frontier: fetching data for',UID)
+    const[{data:profile,error:profileErr},{data:scaffolds,error:scaffoldErr},{data:recentEvents}]=await Promise.all([
       sb.from('ng_learner_profile').select('*').eq('user_id',UID).single(),
-      sb.from('ng_scaffolds').select('*').eq('user_id',UID),
+      sb.from('ng_scaffolds').select('id,base_portuguese,stages,current_stage,phase,category,context,source,last_practiced').eq('user_id',UID),
       sb.from('ng_scaffold_events')
         .select('scaffold_id,stage,mode,quality,created_at')
         .eq('user_id',UID)
@@ -21,6 +22,7 @@ exports.handler=async(event)=>{
         .limit(200)
     ])
 
+    console.log('ng-frontier: profile=',profile?.user_id||'null','scaffolds=',scaffolds?.length||0,'scaffoldErr=',scaffoldErr?.message||'none')
     if(!scaffolds?.length){
       return{statusCode:200,body:JSON.stringify({frontier:[],controlled:[],phase:1})}
     }
