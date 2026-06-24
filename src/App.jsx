@@ -2002,6 +2002,365 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
 
 
 
+
+// ── NGFlashCards ──────────────────────────────────────────────────
+function NGFlashCards({isOnline,onBack}){
+  const[frontier,setFrontier]=useState([])
+  const[idx,setIdx]=useState(0)
+  const[flipped,setFlipped]=useState(false)
+  const[loading,setLoading]=useState(true)
+  const[sessionEvents,setSessionEvents]=useState([])
+  const[done,setDone]=useState(false)
+  const[summary,setSummary]=useState({})
+
+  useEffect(()=>{loadFrontier()},[])
+
+  const loadFrontier=async()=>{
+    setLoading(true)
+    try{
+      const data=await ngFetch('ng-frontier')
+      const f=data.frontier||[]
+      // Shuffle slightly — highest urgency first but with some variation
+      setFrontier(f.slice(0,10))
+    }catch(e){console.warn(e)}
+    setLoading(false)
+  }
+
+  const card=frontier[idx]
+
+  const rate=async(quality)=>{
+    if(!card)return
+    const produced=quality>=4
+    const event={
+      scaffold_id:card.scaffold_id,
+      stage:card.stage,
+      quality,
+      produced,
+      mode:'flashcard'
+    }
+    const newEvents=[...sessionEvents,event]
+    setSessionEvents(newEvents)
+
+    // Move to next or finish
+    if(idx>=frontier.length-1){
+      // Session done — submit events
+      setDone(true)
+      if(isOnline){
+        try{
+          const result=await ngFetch('ng-session-end',{
+            mode:'flashcard',
+            events:newEvents,
+            duration_seconds:Math.round(newEvents.length*15)
+          })
+          const acquired=(result.newly_acquired||[]).length
+          setSummary({acquired,events:newEvents.length})
+        }catch{}
+      }
+    }else{
+      setIdx(i=>i+1)
+      setFlipped(false)
+    }
+  }
+
+  if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
+    <Spinner size={24}/>
+    <div style={{color:MU,fontSize:13,marginTop:16}}>Loading your frontier…</div>
+  </div>
+
+  if(frontier.length===0)return<div style={{padding:'60px 24px',textAlign:'center',animation:'up 0.4s ease'}}>
+    <div style={{fontSize:40,marginBottom:16}}>✓</div>
+    <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:8}}>Frontier empty</div>
+    <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:24}}>All current scaffold stages are controlled.<br/>Use Luna to advance to the next stage.</div>
+    <PBtn label="Back" onClick={onBack}/>
+  </div>
+
+  if(done)return<div style={{padding:'48px 24px 100px',animation:'up 0.4s ease'}}>
+    <div style={{fontSize:52,textAlign:'center',marginBottom:16}}>
+      {summary.acquired>0?'🔥':'✓'}
+    </div>
+    <div style={{fontSize:24,fontWeight:800,color:TX,textAlign:'center',marginBottom:4}}>Session done</div>
+    <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:28}}>
+      {summary.events} scaffolds reviewed{summary.acquired>0?` · ${summary.acquired} stage${summary.acquired!==1?'s':''} acquired`:''}
+    </div>
+    <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:20,fontSize:13,color:MU,lineHeight:1.7}}>
+      Ratings logged. Frontier will update based on your performance.{summary.acquired>0?' New stages entering your frontier.':''}
+    </div>
+    <PBtn label="Study again" onClick={()=>{setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({});loadFrontier()}}/>
+    <div style={{height:12}}/>
+    <GBtn label="Back to home" onClick={onBack}/>
+  </div>
+
+  // Find previous stage for anchor display
+  const prevStage=card.stage>1?{pt:`Stage ${card.stage-1} ✓`}:null
+  const nextPreview=`Stage ${card.stage+1} →`
+
+  return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{display:'flex',alignItems:'center',marginBottom:24}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Home</button>
+      <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{idx+1} of {frontier.length}</div>
+      <div style={{width:40}}/>
+    </div>
+
+    {/* Progress bar */}
+    <div style={{height:2,background:BD,borderRadius:2,marginBottom:28,overflow:'hidden'}}>
+      <div style={{height:'100%',background:AC,borderRadius:2,width:`${((idx)/frontier.length)*100}%`,transition:'width 0.3s ease'}}/>
+    </div>
+
+    {/* Card */}
+    <div
+      onClick={()=>!flipped&&setFlipped(true)}
+      style={{background:S,border:`1px solid ${flipped?AC+'44':BD}`,borderRadius:20,padding:'32px 24px',minHeight:220,cursor:flipped?'default':'pointer',transition:'border 0.2s',animation:'up 0.25s ease',marginBottom:20}}
+    >
+      {/* Stage indicator */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:20}}>
+        <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase'}}>{card.category?.replace(/_/g,' ')}</div>
+        <div style={{marginLeft:'auto',display:'flex',gap:3}}>
+          {[1,2,3,4].map(i=><div key={i} style={{width:10,height:3,borderRadius:2,background:i<=card.stage?AC:BD}}/>)}
+        </div>
+        <div style={{fontSize:11,color:AC}}>Stage {card.stage}</div>
+      </div>
+
+      {/* Front: the scaffold stage */}
+      <div style={{fontSize:28,fontWeight:800,color:TX,lineHeight:1.3,marginBottom:8}}>{card.pt}</div>
+
+      {!flipped&&<>
+        {prevStage&&<div style={{fontSize:12,color:GR,marginTop:16}}>✓ Built on what you know</div>}
+        <div style={{fontSize:13,color:MU,marginTop:8}}>Tap to reveal</div>
+      </>}
+
+      {flipped&&<>
+        <div style={{fontSize:16,color:MU,marginTop:4,marginBottom:20}}>{card.en}</div>
+        <div style={{borderTop:`1px solid ${BD}`,paddingTop:16}}>
+          {prevStage&&<div style={{fontSize:12,color:GR,marginBottom:6}}>✓ Stage {card.stage-1} — controlled</div>}
+          <div style={{fontSize:12,color:MU}}>→ Stage {card.stage+1} will be next</div>
+        </div>
+      </>}
+    </div>
+
+    {/* Rating buttons — only show when flipped */}
+    {flipped&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <button onClick={()=>rate(1)} style={{background:S,border:`1px solid ${RE}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
+        <div style={{fontSize:20,marginBottom:4}}>✗</div>
+        <div style={{fontSize:12,color:RE,fontWeight:600}}>Didn't get it</div>
+      </button>
+      <button onClick={()=>rate(2)} style={{background:S,border:`1px solid ${YE}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
+        <div style={{fontSize:20,marginBottom:4}}>△</div>
+        <div style={{fontSize:12,color:YE,fontWeight:600}}>Base only</div>
+        <div style={{fontSize:10,color:MU}}>said "{card.base}"</div>
+      </button>
+      <button onClick={()=>rate(4)} style={{background:S,border:`1px solid ${GR}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
+        <div style={{fontSize:20,marginBottom:4}}>✓</div>
+        <div style={{fontSize:12,color:GR,fontWeight:600}}>Full stage</div>
+      </button>
+      <button onClick={()=>rate(5)} style={{background:`${AC}08`,border:`1px solid ${AC}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
+        <div style={{fontSize:20,marginBottom:4}}>★</div>
+        <div style={{fontSize:12,color:AC,fontWeight:600}}>Extended it</div>
+        <div style={{fontSize:10,color:MU}}>went further</div>
+      </button>
+    </div>}
+
+    {!flipped&&<div style={{textAlign:'center',marginTop:16}}>
+      <GBtn label="Skip this one" onClick={()=>{setIdx(i=>Math.min(i+1,frontier.length-1));setFlipped(false)}}/>
+    </div>}
+  </div>
+}
+
+// ── NGPhrase ───────────────────────────────────────────────────────
+function NGPhrase({isOnline,onBack}){
+  const[phase,setPhase]=useState('loading') // loading|scenario|answering|result|done
+  const[frontier,setFrontier]=useState([])
+  const[targetScaffold,setTargetScaffold]=useState(null)
+  const[scenario,setScenario]=useState('')
+  const[answer,setAnswer]=useState('')
+  const[result,setResult]=useState(null)
+  const[sessionEvents,setSessionEvents]=useState([])
+  const[roundNum,setRoundNum]=useState(0)
+  const MAX_ROUNDS=4
+
+  useEffect(()=>{loadAndGenerate()},[])
+
+  const loadAndGenerate=async()=>{
+    setPhase('loading')
+    try{
+      const data=await ngFetch('ng-frontier')
+      const f=data.frontier||[]
+      setFrontier(f)
+      if(f.length)await generateScenario(f)
+      else setPhase('done')
+    }catch{setPhase('done')}
+  }
+
+  const generateScenario=async(f)=>{
+    const fList=f||frontier
+    if(!fList.length){setPhase('done');return}
+    // Pick a frontier item — rotate through them
+    const target=fList[roundNum%fList.length]
+    setTargetScaffold(target)
+    setPhase('loading')
+    try{
+      const res=await fetch('/.netlify/functions/claude',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          system:`You generate short Portuguese practice scenarios for Rio de Janeiro learners.
+The scenario must make the target scaffold pattern the NATURAL response.
+Write in English, 2-3 sentences max. Be specific. Set the scene.
+The learner's level: ${target.category} context, Phase ${target.phase}.`,
+          messages:[{role:'user',content:`Target scaffold: "${target.pt}" (${target.en})
+Context: ${target.context}
+
+Write a specific Rio scenario where this phrase is the natural response.
+Make it realistic — bar, beach, date, Uber, meeting someone.
+Do NOT include the target phrase. Do NOT give hints. Just set the scene.`}],
+          max_tokens:150
+        })
+      })
+      const d=await res.json()
+      setScenario(d.content?.[0]?.text||'')
+      setPhase('scenario')
+    }catch{setPhase('done')}
+  }
+
+  const submitAnswer=async()=>{
+    if(!answer.trim()||!targetScaffold)return
+    setPhase('loading')
+    try{
+      const res=await fetch('/.netlify/functions/claude',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          system:`You evaluate Portuguese language responses for a Carioca learner.
+Be generous. Accept contractions, informal spelling, dropped subjects.
+Never penalise missing accents. Judge on meaning and pattern use.
+Return JSON only.`,
+          messages:[{role:'user',content:`Scenario: ${scenario}
+
+Target scaffold: "${targetScaffold.pt}" (${targetScaffold.en})
+
+Learner's response: "${answer}"
+
+Return JSON:
+{
+  "used_target": true/false,
+  "quality": 1-5,
+  "natural": true/false,
+  "feedback": "one short honest sentence in English",
+  "carioca_version": "how a Carioca would naturally say this"
+}`}],
+          max_tokens:200
+        })
+      })
+      const d=await res.json()
+      const text=d.content?.[0]?.text||'{}'
+      const evaluation=JSON.parse(text.replace(/```json|```/g,'').trim())
+
+      const event={
+        scaffold_id:targetScaffold.scaffold_id,
+        stage:targetScaffold.stage,
+        quality:evaluation.quality||2,
+        produced:evaluation.used_target||false,
+        mode:'phrase'
+      }
+      const newEvents=[...sessionEvents,event]
+      setSessionEvents(newEvents)
+      setResult(evaluation)
+      setPhase('result')
+
+      if(roundNum+1>=MAX_ROUNDS){
+        // Submit session events
+        if(isOnline){
+          ngFetch('ng-session-end',{
+            mode:'phrase',
+            events:newEvents,
+            duration_seconds:MAX_ROUNDS*60
+          }).catch(()=>{})
+        }
+      }
+    }catch{setPhase('scenario')}
+  }
+
+  const nextRound=()=>{
+    if(roundNum+1>=MAX_ROUNDS){setPhase('done');return}
+    setRoundNum(r=>r+1)
+    setAnswer('')
+    setResult(null)
+    generateScenario()
+  }
+
+  if(phase==='loading')return<div style={{padding:'60px 24px',textAlign:'center'}}>
+    <Spinner size={24}/>
+    <div style={{color:MU,fontSize:13,marginTop:16}}>
+      {roundNum===0?'Setting the scene…':'Evaluating…'}
+    </div>
+  </div>
+
+  if(phase==='done')return<div style={{padding:'48px 24px',textAlign:'center',animation:'up 0.4s ease'}}>
+    <div style={{fontSize:40,marginBottom:16}}>{sessionEvents.filter(e=>e.produced).length>=2?'🔥':'💪'}</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:4}}>Session done</div>
+    <div style={{fontSize:13,color:MU,marginBottom:24}}>{sessionEvents.length} scenarios · {sessionEvents.filter(e=>e.produced).length} target patterns used</div>
+    <PBtn label="Another session" onClick={()=>{setRoundNum(0);setSessionEvents([]);loadAndGenerate()}}/>
+    <div style={{height:12}}/>
+    <GBtn label="Back to home" onClick={onBack}/>
+  </div>
+
+  return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{display:'flex',alignItems:'center',marginBottom:24}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Home</button>
+      <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{roundNum+1} of {MAX_ROUNDS}</div>
+      <div style={{width:40}}/>
+    </div>
+
+    {/* Scenario */}
+    <div style={{background:S,border:`1px solid ${BD}`,borderRadius:20,padding:'24px',marginBottom:20}}>
+      <div style={{fontSize:11,color:AC,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:12}}>The scene</div>
+      <div style={{fontSize:15,color:TX,lineHeight:1.7}}>{scenario}</div>
+      {!result&&<div style={{marginTop:16,fontSize:12,color:MU}}>
+        Target context: <span style={{color:YE}}>{targetScaffold?.context}</span>
+      </div>}
+    </div>
+
+    {/* Answer input */}
+    {phase==='scenario'&&<>
+      <div style={{fontSize:13,color:MU,marginBottom:10}}>What do you say? (in Portuguese)</div>
+      <textarea
+        value={answer}
+        onChange={e=>setAnswer(e.target.value)}
+        placeholder="Escreve em português…"
+        autoFocus
+        style={{width:'100%',minHeight:100,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',color:TX,fontSize:15,outline:'none',resize:'none',fontFamily:FONT,marginBottom:12}}
+      />
+      <PBtn label="Submit" onClick={submitAnswer} disabled={!answer.trim()||!isOnline}/>
+    </>}
+
+    {/* Result */}
+    {phase==='result'&&result&&<div style={{animation:'up 0.3s ease'}}>
+      <div style={{background:result.used_target?`${GR}12`:S2,border:`1px solid ${result.used_target?GR+'44':BD}`,borderRadius:16,padding:'18px',marginBottom:14}}>
+        <div style={{fontSize:16,fontWeight:700,color:result.used_target?GR:YE,marginBottom:8}}>
+          {result.used_target?'✓ Pattern used':'△ Pattern not used'}
+        </div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.6,marginBottom:result.carioca_version?12:0}}>
+          {result.feedback}
+        </div>
+        {result.carioca_version&&<div style={{borderTop:`1px solid ${BD}`,paddingTop:12,marginTop:4}}>
+          <div style={{fontSize:11,color:MU,marginBottom:4}}>A Carioca would say:</div>
+          <div style={{fontSize:15,fontWeight:600,color:AC}}>{result.carioca_version}</div>
+        </div>}
+      </div>
+
+      {/* Show target scaffold */}
+      <div style={{background:S,border:`1px solid ${AC}22`,borderRadius:14,padding:'14px 16px',marginBottom:16}}>
+        <div style={{fontSize:11,color:MU,marginBottom:4}}>Target scaffold Stage {targetScaffold?.stage}:</div>
+        <div style={{fontSize:16,fontWeight:700,color:TX}}>{targetScaffold?.pt}</div>
+        <div style={{fontSize:13,color:MU}}>{targetScaffold?.en}</div>
+      </div>
+
+      <PBtn label={roundNum+1>=MAX_ROUNDS?'Finish session':'Next scenario'} onClick={nextRound}/>
+    </div>}
+  </div>
+}
+
+
+
 // ── Next Gen Constants ────────────────────────────────────────────
 const NG_MODE_KEY='carioca_ng_mode' // 'original'|'nextgen'
 const NG_ONBOARDED_KEY='carioca_ng_onboarded'
@@ -2525,9 +2884,11 @@ export default function App(){
       {ngScreen==='ng-voice'&&<div style={{paddingTop:0}}><VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true}/></div>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-intelligence'&&<NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-phrase'&&<NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {/* Next Gen Nav */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
-        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-field-report',i:'📝',l:'Report'},{k:'ng-intelligence',i:'◎',l:'Intel'}].map(t=>
+        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'},{k:'ng-phrase',i:'◈',l:'Phrase'},{k:'ng-intelligence',i:'◎',l:'Intel'}].map(t=>
           <button key={t.k} onClick={()=>setNgScreen(t.k)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 16px',WebkitTapHighlightColor:'transparent'}}>
             <span style={{fontSize:18,opacity:ngScreen===t.k?1:0.3,filter:ngScreen===t.k?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
             <span style={{fontSize:10,color:ngScreen===t.k?AC:MU,fontWeight:ngScreen===t.k?700:400}}>{t.l}</span>
