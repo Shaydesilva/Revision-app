@@ -1520,11 +1520,11 @@ function Import({cards,onImport,isOnline=true,active,onBack}){
   const confirmImport=async()=>{
     await onImport(preview)
     // Next Gen: detect scaffolds from Victor's notes
-    if(pastedText&&preview.length){
+    if(pasted&&preview.length){
       fetch('/.netlify/functions/ng-import-scaffolds',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({notes:pastedText,newCards:preview})
+        body:JSON.stringify({notes:pasted,newCards:preview})
       }).then(r=>r.json()).then(result=>{
         if(result.newScaffolds>0||result.extensions>0){
           const msg=[]
@@ -2939,9 +2939,8 @@ function NGIntelligence({isOnline,onBack}){
     setLoading(false)
   }
 
-  return<div style={{display:'flex',flexDirection:'column',height:'100vh'}}>
-    <div style={{padding:'52px 20px 12px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
-      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:8,padding:0}}>← Back</button>
+  return<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 64px)'}}>
+    <div style={{padding:'16px 20px 12px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
       <div style={{fontSize:18,fontWeight:800,color:TX}}>Intelligence</div>
       <div style={{fontSize:12,color:MU,marginTop:2}}>Talk to Luna about your learning</div>
     </div>
@@ -3178,6 +3177,7 @@ export default function App(){
   // Next Gen mode — own screen stack
   if(loaded&&ngMode==='nextgen'){
     return<div style={{background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
+      <ErrorBoundary>
       {/* Mount-all for screens that preserve state between visits */}
       <div style={{display:ngScreen==='ng-home'?'block':'none'}}><NGHome isOnline={isOnline} go={setNgScreen} active={ngScreen==='ng-home'}/></div>
       <div style={{display:ngScreen==='ng-intelligence'?'block':'none'}}><NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
@@ -3187,6 +3187,7 @@ export default function App(){
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      </ErrorBoundary>
       {/* Next Gen Nav */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
         {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'},{k:'ng-phrase',i:'◇',l:'Phrase'},{k:'ng-map',i:'⊞',l:'Map'},{k:'ng-intelligence',i:'◎',l:'Intel'}].map(t=>
