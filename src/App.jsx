@@ -1519,6 +1519,21 @@ function Import({cards,onImport,isOnline=true,active,onBack}){
 
   const confirmImport=async()=>{
     await onImport(preview)
+    // Next Gen: detect scaffolds from Victor's notes
+    if(pastedText&&preview.length){
+      fetch('/.netlify/functions/ng-import-scaffolds',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({notes:pastedText,newCards:preview})
+      }).then(r=>r.json()).then(result=>{
+        if(result.newScaffolds>0||result.extensions>0){
+          const msg=[]
+          if(result.newScaffolds>0)msg.push(`${result.newScaffolds} new scaffold${result.newScaffolds!==1?'s':''}`)
+          if(result.extensions>0)msg.push(`${result.extensions} extension${result.extensions!==1?'s':''}`)
+          console.log('Next Gen import:',msg.join(', '))
+        }
+      }).catch(()=>{})
+    }
     await dbLogImport(`Paste ${new Date().toLocaleDateString()}`,preview.length,cards.length)
     setHistory(await dbLoadImportHistory())
     setStage('done')
@@ -1814,11 +1829,14 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         startTimeRef.current=Date.now()
         timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
         if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
-        // Enable user speech transcription
-        // whisper-1 is what the original Luna used successfully
-        const suMsg={type:'session.update',session:{modalities:['text','audio'],input_audio_transcription:{model:'whisper-1'}}}
+        // Enable transcription + set VAD based on PTT mode
+        const suMsg={type:'session.update',session:{
+          modalities:['text','audio'],
+          input_audio_transcription:{model:'whisper-1'},
+          turn_detection:pttRef.current?{type:'none'}:{type:'server_vad',silence_duration_ms:600,threshold:0.5}
+        }}
         dc.send(JSON.stringify(suMsg))
-        log('Sent session.update: '+JSON.stringify(suMsg.session))
+        log('Sent session.update: PTT='+(pttRef.current?'hold':'auto'))
         // Trigger Luna's opening line after brief delay
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
         // Periodic reinforcement to keep model on track
@@ -1859,9 +1877,36 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   },[isOnline,cleanup,log])
 
   // ── PTT ────────────────────────────────────────────────────────────────
-  const pttOn=e=>{e.preventDefault();if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=true})}
-  const pttOff=e=>{e.preventDefault();if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})}
-  const togglePtt=()=>{const n=!pttRef.current;setPtt(n);if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=!n})}
+  const pttOn=e=>{
+    e.preventDefault()
+    if(!streamRef.current)return
+    streamRef.current.getAudioTracks().forEach(t=>{t.enabled=true})
+  }
+  const pttOff=e=>{
+    e.preventDefault()
+    if(!streamRef.current)return
+    streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})
+    // Manually commit audio and trigger response in PTT mode
+    if(dcRef.current?.readyState==='open'){
+      dcRef.current.send(JSON.stringify({type:'input_audio_buffer.commit'}))
+      setTimeout(()=>{
+        if(dcRef.current?.readyState==='open')
+          dcRef.current.send(JSON.stringify({type:'response.create'}))
+      },80)
+    }
+  }
+  const togglePtt=()=>{
+    const n=!pttRef.current
+    setPtt(n)
+    if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=!n})
+    // Switch VAD mode on the fly
+    if(dcRef.current?.readyState==='open'){
+      dcRef.current.send(JSON.stringify({
+        type:'session.update',
+        session:{turn_detection:n?{type:'none'}:{type:'server_vad',silence_duration_ms:600,threshold:0.5}}
+      }))
+    }
+  }
 
   // ── Translation ────────────────────────────────────────────────────────
   const sendText=useCallback(async()=>{
@@ -2055,13 +2100,18 @@ function NGFlashCards({isOnline,onBack}){
           })
           const acquired=(result.newly_acquired||[]).length
           setSummary({acquired,events:newEvents.length})
-        }catch{}
+          // Reload frontier after session so home shows updated state
+          const freshFrontier=await ngFetch('ng-frontier')
+          if(freshFrontier.frontier)setFrontier(freshFrontier.frontier)
+        }catch(e){console.warn('Session end error:',e)}
       }
     }else{
       setIdx(i=>i+1)
       setFlipped(false)
     }
   }
+
+  if(milestone)return<NGMilestone milestone={milestone} onDismiss={()=>setMilestone(null)}/>
 
   if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
     <Spinner size={24}/>
@@ -2125,16 +2175,13 @@ function NGFlashCards({isOnline,onBack}){
       <div style={{fontSize:28,fontWeight:800,color:TX,lineHeight:1.3,marginBottom:8}}>{card.pt}</div>
 
       {!flipped&&<>
-        {prevStage&&<div style={{fontSize:12,color:GR,marginTop:16}}>✓ Built on what you know</div>}
-        <div style={{fontSize:13,color:MU,marginTop:8}}>Tap to reveal</div>
+        <div style={{fontSize:13,color:MU,marginTop:20}}>Can you say this naturally?</div>
+        <div style={{fontSize:11,color:AC,marginTop:6}}>Tap to check</div>
       </>}
 
       {flipped&&<>
-        <div style={{fontSize:16,color:MU,marginTop:4,marginBottom:20}}>{card.en}</div>
-        <div style={{borderTop:`1px solid ${BD}`,paddingTop:16}}>
-          {prevStage&&<div style={{fontSize:12,color:GR,marginBottom:6}}>✓ Stage {card.stage-1} — controlled</div>}
-          <div style={{fontSize:12,color:MU}}>→ Stage {card.stage+1} will be next</div>
-        </div>
+        <div style={{fontSize:16,color:MU,marginTop:4,marginBottom:16}}>{card.en}</div>
+        <div style={{borderTop:`1px solid ${BD}`,paddingTop:12,fontSize:11,color:MU,marginBottom:4}}>How did you do?</div>
       </>}
     </div>
 
@@ -2142,21 +2189,23 @@ function NGFlashCards({isOnline,onBack}){
     {flipped&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
       <button onClick={()=>rate(1)} style={{background:S,border:`1px solid ${RE}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
         <div style={{fontSize:20,marginBottom:4}}>✗</div>
-        <div style={{fontSize:12,color:RE,fontWeight:600}}>Didn't get it</div>
+        <div style={{fontSize:12,color:RE,fontWeight:600}}>Not yet</div>
+        <div style={{fontSize:10,color:MU}}>couldn't recall it</div>
       </button>
       <button onClick={()=>rate(2)} style={{background:S,border:`1px solid ${YE}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
         <div style={{fontSize:20,marginBottom:4}}>△</div>
-        <div style={{fontSize:12,color:YE,fontWeight:600}}>Base only</div>
-        <div style={{fontSize:10,color:MU}}>said "{card.base}"</div>
+        <div style={{fontSize:12,color:YE,fontWeight:600}}>Recognised it</div>
+        <div style={{fontSize:10,color:MU}}>understood, couldn't say</div>
       </button>
       <button onClick={()=>rate(4)} style={{background:S,border:`1px solid ${GR}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
         <div style={{fontSize:20,marginBottom:4}}>✓</div>
-        <div style={{fontSize:12,color:GR,fontWeight:600}}>Full stage</div>
+        <div style={{fontSize:12,color:GR,fontWeight:600}}>Said it</div>
+        <div style={{fontSize:10,color:MU}}>produced it naturally</div>
       </button>
       <button onClick={()=>rate(5)} style={{background:`${AC}08`,border:`1px solid ${AC}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
         <div style={{fontSize:20,marginBottom:4}}>★</div>
-        <div style={{fontSize:12,color:AC,fontWeight:600}}>Extended it</div>
-        <div style={{fontSize:10,color:MU}}>went further</div>
+        <div style={{fontSize:12,color:AC,fontWeight:600}}>Went beyond</div>
+        <div style={{fontSize:10,color:MU}}>said something richer</div>
       </button>
     </div>}
 
@@ -2514,6 +2563,72 @@ function NGScaffoldMap({isOnline,onBack}){
 
 
 
+
+// ── NGMilestone — full screen moment ────────────────────────────────
+function NGMilestone({milestone,onDismiss}){
+  const configs={
+    first_stage_acquired:{
+      emoji:'🎯',
+      title:'First one acquired.',
+      sub:'You just locked in your first scaffold stage. It\'s in now.',
+      color:AC
+    },
+    ten_stages_controlled:{
+      emoji:'🔥',
+      title:'10 stages controlled.',
+      sub:'You have 10 patterns you can actually produce. That\'s not nothing.',
+      color:GR
+    },
+    first_scaffold_complete:{
+      emoji:'⚡',
+      title:'First scaffold complete.',
+      sub:`All 4 stages of "${milestone?.data?.base||'a scaffold'}" — from base to full Carioca extension. That's a real pattern, fully yours.`,
+      color:YE
+    },
+    twenty_five_stages:{
+      emoji:'💪',
+      title:'25 stages controlled.',
+      sub:'A quarter of Phase 1. You can feel the difference in conversation.',
+      color:AC
+    },
+    phase_complete:{
+      emoji:'🌊',
+      title:'Phase complete.',
+      sub:'You\'ve moved through an entire phase. Rio is starting to make sense.',
+      color:GR
+    }
+  }
+
+  const cfg=configs[milestone?.milestone_type]||{
+    emoji:'✓',
+    title:'Milestone reached.',
+    sub:'Keep going.',
+    color:AC
+  }
+
+  useEffect(()=>{
+    // Auto dismiss after 8s
+    const t=setTimeout(onDismiss,8000)
+    return()=>clearTimeout(t)
+  },[])
+
+  return<div
+    onClick={onDismiss}
+    style={{position:'fixed',inset:0,zIndex:500,background:BG,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 32px',animation:'fadeIn 0.5s ease',textAlign:'center'}}
+  >
+    <div style={{fontSize:72,marginBottom:28,animation:'pop 0.6s ease'}}>{cfg.emoji}</div>
+    <div style={{fontSize:28,fontWeight:800,color:TX,marginBottom:12,lineHeight:1.2}}>{cfg.title}</div>
+    <div style={{fontSize:15,color:MU,lineHeight:1.7,maxWidth:280,marginBottom:40}}>{cfg.sub}</div>
+    {milestone?.data?.pt&&<div style={{background:S,border:`1px solid ${cfg.color}44`,borderRadius:14,padding:'16px 20px',marginBottom:32}}>
+      <div style={{fontSize:18,fontWeight:700,color:TX}}>{milestone.data.pt}</div>
+      <div style={{fontSize:13,color:MU,marginTop:4}}>{milestone.data.en}</div>
+    </div>}
+    <div style={{fontSize:12,color:MU,opacity:0.5}}>Tap anywhere to continue</div>
+  </div>
+}
+
+
+
 // ── Next Gen Constants ────────────────────────────────────────────
 const NG_MODE_KEY='carioca_ng_mode' // 'original'|'nextgen'
 const NG_ONBOARDED_KEY='carioca_ng_onboarded'
@@ -2579,15 +2694,15 @@ function ModeSelect({onSelect}){
 }
 
 // ── NGHome ────────────────────────────────────────────────────────
-function NGHome({isOnline,go}){
+function NGHome({isOnline,go,active=true}){
   const[profile,setProfile]=useState(null)
   const[frontier,setFrontier]=useState([])
   const[loading,setLoading]=useState(true)
-  const[unseen,setUnseen]=useState(null) // milestone to show
+  const[milestone,setMilestone]=useState(null)
 
   useEffect(()=>{
-    loadState()
-  },[isOnline])
+    if(active&&isOnline)loadState()
+  },[active,isOnline])
 
   const loadState=async()=>{
     setLoading(true)
@@ -2602,18 +2717,20 @@ function NGHome({isOnline,go}){
         total_controlled:data.total_controlled||0,
         fully_controlled:data.fully_controlled_scaffolds||0
       })
+      // Check for unseen milestones
+      if(sb){
+        const{data:ms}=await sb.from('ng_milestones')
+          .select('*').eq('user_id','00000000-0000-0000-0000-000000000001')
+          .eq('seen',false).order('created_at').limit(1)
+        if(ms?.[0]){
+          setMilestone(ms[0])
+          sb.from('ng_milestones').update({seen:true}).eq('id',ms[0].id).catch(()=>{})
+        }
+      }
     }catch(e){
       console.error('NGHome load failed:',e?.message||e)
       // Show error in frontier area so we can see what's happening
-      setFrontier([{
-        scaffold_id:'error',
-        base:'Error loading frontier',
-        stage:1,
-        pt:e?.message||String(e),
-        en:'Check Netlify function logs',
-        context:'error',category:'error',phase:1,urgency:0,
-        practice_count:0,modes_used:[],days_since_practice:0
-      }])
+
     }
     setLoading(false)
   }
@@ -2662,55 +2779,70 @@ function NGHome({isOnline,go}){
       </div>
     </div>
 
-    {/* Frontier */}
-    <div style={{padding:'0 20px'}}>
-      <div style={{fontSize:11,fontWeight:700,color:MU,letterSpacing:2,textTransform:'uppercase',marginBottom:14}}>Your frontier</div>
+    {/* Today's focus */}
+    {frontier.length>0?<div style={{padding:'0 20px'}}>
+      <div style={{fontSize:11,fontWeight:700,color:MU,letterSpacing:2,textTransform:'uppercase',marginBottom:12}}>Today's focus</div>
 
-      {frontier.length===0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
-        <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:14}}>
-          {isOnline?'Computing your frontier…':'Needs connection to load frontier.'}
-        </div>
-        <button onClick={loadState} style={{fontSize:12,color:AC,background:`${AC}18`,border:`1px solid ${AC}33`,borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:FONT}}>
-          Retry
-        </button>
-      </div>}
-
-      {frontier.slice(0,5).map((item,i)=>{
-        const urgencyColor=item.urgency>=8?RE:item.urgency>=5?YE:GR
-        const stageBar=(stage,total)=>{
-          const bars=[]
-          for(let j=1;j<=total;j++){
-            bars.push(<div key={j} style={{width:12,height:4,borderRadius:2,background:j<=stage?AC:BD,marginRight:2}}/>)
-          }
-          return<div style={{display:'flex',alignItems:'center'}}>{bars}</div>
-        }
-        return<div key={item.scaffold_id+'_'+item.stage} style={{background:i===0?`${AC}08`:S,border:`1px solid ${i===0?AC+'33':BD}`,borderRadius:14,padding:'14px 16px',marginBottom:10,animation:'up 0.3s ease',animationDelay:`${i*0.05}s`}}>
-          <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:2}}>{item.pt}</div>
-              <div style={{fontSize:12,color:MU,marginBottom:8}}>{item.en}</div>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                {stageBar(item.stage,4)}
-                <span style={{fontSize:11,color:MU}}>Stage {item.stage}</span>
-                <span style={{fontSize:11,color:urgencyColor,marginLeft:'auto'}}>
-                  {item.modes_used?.length>0?`${item.modes_used.length}/2 modes`:'not started'}
-                </span>
-              </div>
-            </div>
-            {i===0&&<div style={{width:6,height:6,borderRadius:'50%',background:AC,marginTop:6,flexShrink:0,animation:'pulse 2s ease-in-out infinite'}}/>}
+      {/* Primary item — biggest, most prominent */}
+      <div style={{background:`${AC}10`,border:`1px solid ${AC}33`,borderRadius:18,padding:'20px',marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div style={{fontSize:11,color:AC,fontWeight:600,textTransform:'uppercase',letterSpacing:1}}>
+            {frontier[0].category?.replace(/_/g,' ')}
+          </div>
+          <div style={{display:'flex',gap:3}}>
+            {[1,2,3,4].map(i=><div key={i} style={{width:12,height:3,borderRadius:2,background:i<=frontier[0].stage?AC:BD}}/>)}
           </div>
         </div>
-      })}
+        <div style={{fontSize:26,fontWeight:800,color:TX,marginBottom:4}}>{frontier[0].pt}</div>
+        <div style={{fontSize:14,color:MU,marginBottom:16}}>{frontier[0].en}</div>
+
+        {/* Progress bar */}
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+          <div style={{flex:1,height:3,background:BD,borderRadius:2,overflow:'hidden'}}>
+            <div style={{height:'100%',background:AC,width:`${Math.min((frontier[0].practice_count||0)/3*100,100)}%`,borderRadius:2,transition:'width 0.6s ease'}}/>
+          </div>
+          <div style={{fontSize:11,color:MU,whiteSpace:'nowrap'}}>{frontier[0].practice_count||0} of 3 sessions</div>
+        </div>
+        <div style={{fontSize:11,color:MU}}>
+          {(frontier[0].modes_used||[]).length===0?'Not started yet — use Study, Phrase or Luna to begin':
+           (frontier[0].modes_used||[]).length===1?`Used in ${frontier[0].modes_used[0]} — practice in one more mode to acquire`:
+           'Almost acquired — one more strong session'}
+        </div>
+      </div>
+
+      {/* Secondary frontier items */}
+      {frontier.slice(1,5).map((item,i)=>
+        <div key={item.scaffold_id+'_'+item.stage} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px',marginBottom:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:600,color:TX}}>{item.pt}</div>
+              <div style={{fontSize:11,color:MU}}>{item.en}</div>
+            </div>
+            <div style={{fontSize:11,color:(item.practice_count||0)>0?GR:BD,fontWeight:600}}>
+              {(item.practice_count||0)>0?`${item.practice_count}/3 done`:'not started'}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
 
-    {/* Quick actions */}
-    <div style={{padding:'20px 20px 0',display:'flex',flexDirection:'column',gap:10}}>
+    :<div style={{padding:'0 20px'}}>
+      <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
+        <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:14}}>
+          {isOnline?'Computing your frontier…':'Needs connection.'}
+        </div>
+        <button onClick={loadState} style={{fontSize:12,color:AC,background:`${AC}18`,border:`1px solid ${AC}33`,borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:FONT}}>Retry</button>
+      </div>
+    </div>}
+
+    {/* Actions */}
+    <div style={{padding:'16px 20px 0',display:'flex',flexDirection:'column',gap:10}}>
       <PBtn label="Talk to Luna" onClick={()=>go('ng-voice')}/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-        <GBtn label="Flashcards" onClick={()=>go('ng-study')}/>
+        <GBtn label="Study" onClick={()=>go('ng-study')}/>
         <GBtn label="Phrase" onClick={()=>go('ng-phrase')}/>
       </div>
-      <GBtn label="View scaffold map →" onClick={()=>go('ng-map')}/>
+      <GBtn label="Scaffold map →" onClick={()=>go('ng-map')}/>
     </div>
 
     {/* Field report button */}
@@ -2830,13 +2962,13 @@ function NGIntelligence({isOnline,onBack}){
       </div>}
     </div>
 
-    <div style={{padding:'8px 16px 32px',borderTop:`1px solid ${BD}`,display:'flex',gap:8,flexShrink:0}}>
+    <div style={{padding:'8px 16px',paddingBottom:'max(16px,env(safe-area-inset-bottom))',borderTop:`1px solid ${BD}`,display:'flex',gap:8,flexShrink:0,background:BG}}>
       <input
         value={input}
         onChange={e=>setInput(e.target.value)}
         onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}}
         placeholder="Ask anything about your progress…"
-        style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px',color:TX,fontSize:14,outline:'none',fontFamily:FONT}}
+        style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px',color:TX,fontSize:14,outline:'none',fontFamily:FONT,minWidth:0}}
       />
       <button
         onClick={send}
@@ -3046,12 +3178,14 @@ export default function App(){
   // Next Gen mode — own screen stack
   if(loaded&&ngMode==='nextgen'){
     return<div style={{background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
-      {ngScreen==='ng-home'&&<NGHome isOnline={isOnline} go={setNgScreen}/>}
+      {/* Mount-all for screens that preserve state between visits */}
+      <div style={{display:ngScreen==='ng-home'?'block':'none'}}><NGHome isOnline={isOnline} go={setNgScreen} active={ngScreen==='ng-home'}/></div>
+      <div style={{display:ngScreen==='ng-intelligence'?'block':'none'}}><NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
+      <div style={{display:ngScreen==='ng-phrase'?'block':'none'}}><NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} active={ngScreen==='ng-phrase'}/></div>
+      {/* Conditional — fresh each visit */}
       {ngScreen==='ng-voice'&&<VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true} ngMode={true}/>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
-      {ngScreen==='ng-intelligence'&&<NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
-      {ngScreen==='ng-phrase'&&<NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {/* Next Gen Nav */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
