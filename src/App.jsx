@@ -2001,12 +2001,335 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
 }
 
 
+
+// ── Next Gen Constants ────────────────────────────────────────────
+const NG_MODE_KEY='carioca_ng_mode' // 'original'|'nextgen'
+const NG_ONBOARDED_KEY='carioca_ng_onboarded'
+
+// ── Helpers ───────────────────────────────────────────────────────
+const ngFetch=async(fn,body={})=>{
+  const r=await fetch(`/.netlify/functions/${fn}`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  })
+  return r.json()
+}
+
+// ── ModeSelect ────────────────────────────────────────────────────
+function ModeSelect({onSelect}){
+  const[hover,setHover]=useState(null)
+  return<div style={{minHeight:'100vh',background:BG,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 24px'}}>
+    <div style={{marginBottom:40,textAlign:'center'}}>
+      <div style={{fontSize:13,letterSpacing:4,color:MU,fontWeight:600,marginBottom:12,textTransform:'uppercase'}}>Carioca</div>
+      <div style={{fontSize:28,fontWeight:800,color:TX,lineHeight:1.2}}>How do you want<br/>to learn today?</div>
+    </div>
+    <div style={{display:'flex',flexDirection:'column',gap:16,width:'100%',maxWidth:360}}>
+
+      {/* Original */}
+      <button
+        onClick={()=>onSelect('original')}
+        onMouseEnter={()=>setHover('original')}
+        onMouseLeave={()=>setHover(null)}
+        style={{background:hover==='original'?S2:S,border:`1px solid ${hover==='original'?BD+'88':BD}`,borderRadius:20,padding:'24px 24px',cursor:'pointer',textAlign:'left',transition:'all 0.15s',WebkitTapHighlightColor:'transparent'}}
+      >
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+          <div style={{fontSize:24}}>▣</div>
+          <div style={{fontSize:17,fontWeight:700,color:TX}}>Original</div>
+          <div style={{marginLeft:'auto',fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:20,padding:'3px 10px'}}>Stable</div>
+        </div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.6}}>Flashcards, phrase practice, voice sessions. Your cards, your progress, all intact.</div>
+      </button>
+
+      {/* Next Gen */}
+      <button
+        onClick={()=>onSelect('nextgen')}
+        onMouseEnter={()=>setHover('nextgen')}
+        onMouseLeave={()=>setHover(null)}
+        style={{background:hover==='nextgen'?`${AC}12`:`${AC}08`,border:`1px solid ${hover==='nextgen'?AC+'66':AC+'33'}`,borderRadius:20,padding:'24px 24px',cursor:'pointer',textAlign:'left',transition:'all 0.15s',WebkitTapHighlightColor:'transparent',position:'relative',overflow:'hidden'}}
+      >
+        <div style={{position:'absolute',top:0,right:0,width:120,height:120,background:`radial-gradient(circle at top right, ${AC}18, transparent)`,pointerEvents:'none'}}/>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+          <div style={{fontSize:24}}>◈</div>
+          <div style={{fontSize:17,fontWeight:700,color:TX}}>Next Gen</div>
+          <div style={{marginLeft:'auto',fontSize:11,color:AC,background:`${AC}18`,border:`1px solid ${AC}44`,borderRadius:20,padding:'3px 10px'}}>New</div>
+        </div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.6,marginBottom:12}}>Scaffold-based engine. Learns what you know and pushes exactly one step beyond it. Evergreen.</div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {['i+1 frontier','Smart Luna','Full Rio coverage'].map(t=><span key={t} style={{fontSize:11,color:AC,background:`${AC}12`,borderRadius:20,padding:'3px 10px'}}>{t}</span>)}
+        </div>
+      </button>
+    </div>
+
+    <div style={{marginTop:28,fontSize:12,color:MU,textAlign:'center',lineHeight:1.6}}>
+      Switch anytime from settings.<br/>Your data is shared between both modes.
+    </div>
+  </div>
+}
+
+// ── NGHome ────────────────────────────────────────────────────────
+function NGHome({isOnline,go}){
+  const[profile,setProfile]=useState(null)
+  const[frontier,setFrontier]=useState([])
+  const[loading,setLoading]=useState(true)
+  const[unseen,setUnseen]=useState(null) // milestone to show
+
+  useEffect(()=>{
+    loadState()
+  },[])
+
+  const loadState=async()=>{
+    setLoading(true)
+    try{
+      // Load profile
+      const{createClient}=window.supabaseJs||{}
+      // Use fetch to our frontier function — it loads + computes everything
+      if(isOnline){
+        const data=await ngFetch('ng-frontier')
+        setFrontier(data.frontier||[])
+        setProfile({
+          phase:data.phase||1,
+          phase_name:data.phase_name||'Survival → Social',
+          phase_progress:data.phase_progress||0,
+          total_controlled:data.total_controlled||0,
+          fully_controlled:data.fully_controlled_scaffolds||0
+        })
+      }
+    }catch(e){console.warn('NGHome load failed:',e)}
+    setLoading(false)
+  }
+
+  const phasePercent=Math.round((profile?.phase_progress||0)*100)
+  const phase=profile?.phase||1
+  const phaseName=profile?.phase_name||'Survival → Social'
+  const phaseNames=['','Survival','Social','Conversational','Fluent','Natural']
+  const phaseNext=phaseNames[Math.min(phase+1,5)]||'Mastery'
+
+  // Phase ring SVG
+  const PhaseRing=()=>{
+    const r=54,cx=70,cy=70
+    const circ=2*Math.PI*r
+    const filled=circ*(phasePercent/100)
+    return<svg width={140} height={140} style={{display:'block'}}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={BD} strokeWidth={6}/>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={AC}
+        strokeWidth={6} strokeDasharray={`${filled} ${circ}`}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cy})`}
+        style={{transition:'stroke-dasharray 1s ease'}}/>
+      <text x={cx} y={cy-8} textAnchor="middle" fill={TX} fontSize={22} fontWeight={800}>{phasePercent}%</text>
+      <text x={cx} y={cy+10} textAnchor="middle" fill={MU} fontSize={10}>Phase {phase}</text>
+    </svg>
+  }
+
+  if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
+    <Spinner size={24}/>
+    <div style={{color:MU,fontSize:13,marginTop:16}}>Loading your frontier…</div>
+  </div>
+
+  return<div style={{padding:'0 0 100px',animation:'up 0.4s ease'}}>
+
+    {/* Phase ring + stats */}
+    <div style={{padding:'32px 24px 24px',display:'flex',alignItems:'center',gap:20}}>
+      <PhaseRing/>
+      <div style={{flex:1}}>
+        <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:6}}>Current phase</div>
+        <div style={{fontSize:18,fontWeight:800,color:TX,lineHeight:1.2,marginBottom:4}}>{phaseName}</div>
+        <div style={{fontSize:12,color:MU}}>Next: {phaseNext}</div>
+        <div style={{marginTop:12,display:'flex',gap:16}}>
+          <div><div style={{fontSize:20,fontWeight:800,color:TX}}>{profile?.total_controlled||0}</div><div style={{fontSize:11,color:MU}}>stages</div></div>
+          <div><div style={{fontSize:20,fontWeight:800,color:GR}}>{profile?.fully_controlled||0}</div><div style={{fontSize:11,color:MU}}>scaffolds</div></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Frontier */}
+    <div style={{padding:'0 20px'}}>
+      <div style={{fontSize:11,fontWeight:700,color:MU,letterSpacing:2,textTransform:'uppercase',marginBottom:14}}>Your frontier</div>
+
+      {frontier.length===0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
+        <div style={{fontSize:13,color:MU,lineHeight:1.7}}>Frontier loading…<br/>Start a session to begin.</div>
+      </div>}
+
+      {frontier.slice(0,5).map((item,i)=>{
+        const urgencyColor=item.urgency>=8?RE:item.urgency>=5?YE:GR
+        const stageBar=(stage,total)=>{
+          const bars=[]
+          for(let j=1;j<=total;j++){
+            bars.push(<div key={j} style={{width:12,height:4,borderRadius:2,background:j<=stage?AC:BD,marginRight:2}}/>)
+          }
+          return<div style={{display:'flex',alignItems:'center'}}>{bars}</div>
+        }
+        return<div key={item.scaffold_id+'_'+item.stage} style={{background:i===0?`${AC}08`:S,border:`1px solid ${i===0?AC+'33':BD}`,borderRadius:14,padding:'14px 16px',marginBottom:10,animation:'up 0.3s ease',animationDelay:`${i*0.05}s`}}>
+          <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:2}}>{item.pt}</div>
+              <div style={{fontSize:12,color:MU,marginBottom:8}}>{item.en}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                {stageBar(item.stage,4)}
+                <span style={{fontSize:11,color:MU}}>Stage {item.stage}</span>
+                <span style={{fontSize:11,color:urgencyColor,marginLeft:'auto'}}>
+                  {item.modes_used?.length>0?`${item.modes_used.length}/2 modes`:'not started'}
+                </span>
+              </div>
+            </div>
+            {i===0&&<div style={{width:6,height:6,borderRadius:'50%',background:AC,marginTop:6,flexShrink:0,animation:'pulse 2s ease-in-out infinite'}}/>}
+          </div>
+        </div>
+      })}
+    </div>
+
+    {/* Quick actions */}
+    <div style={{padding:'20px 20px 0',display:'flex',flexDirection:'column',gap:10}}>
+      <PBtn label="Talk to Luna" onClick={()=>go('ng-voice')}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <GBtn label="Flashcards" onClick={()=>go('ng-study')}/>
+        <GBtn label="Phrase" onClick={()=>go('ng-phrase')}/>
+      </div>
+      <GBtn label="View scaffold map →" onClick={()=>go('ng-map')}/>
+    </div>
+
+    {/* Field report button */}
+    <div style={{padding:'12px 20px 0'}}>
+      <button onClick={()=>go('ng-field-report')} style={{width:'100%',background:'none',border:`1px dashed ${BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontSize:13,color:MU,fontFamily:FONT}}>
+        📝 Field report — something happened in real life
+      </button>
+    </div>
+  </div>
+}
+
+// ── NGFieldReport ─────────────────────────────────────────────────
+function NGFieldReport({isOnline,onBack}){
+  const[text,setText]=useState('')
+  const[saving,setSaving]=useState(false)
+  const[saved,setSaved]=useState(false)
+
+  const submit=async()=>{
+    if(!text.trim()||!isOnline)return
+    setSaving(true)
+    try{
+      await ngFetch('ng-profile-update',{
+        update:{
+          field_reports:[{
+            date:new Date().toISOString().slice(0,10),
+            text:text.trim(),
+            summary:text.trim().slice(0,120)
+          }]
+        }
+      })
+      setSaved(true)
+      setTimeout(()=>onBack(),1500)
+    }catch{}
+    setSaving(false)
+  }
+
+  if(saved)return<div style={{padding:'60px 24px',textAlign:'center',animation:'up 0.3s ease'}}>
+    <div style={{fontSize:40,marginBottom:16}}>✓</div>
+    <div style={{fontSize:18,fontWeight:700,color:TX}}>Saved</div>
+    <div style={{fontSize:13,color:MU,marginTop:8}}>Luna will know about this next session</div>
+  </div>
+
+  return<div style={{padding:'52px 24px 100px',animation:'up 0.35s ease'}}>
+    <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:20,padding:0}}>← Back</button>
+    <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:6}}>Field Report</div>
+    <div style={{fontSize:13,color:MU,marginBottom:24,lineHeight:1.7}}>Had a real conversation in Portuguese? What happened? What did you try to say? What couldn't you say? Luna reads this before your next session.</div>
+    <textarea
+      value={text}
+      onChange={e=>setText(e.target.value)}
+      placeholder="I was at a bar last night and tried to use 'onde você tá indo depois' but forgot the ending... she asked me something I didn't understand..."
+      style={{width:'100%',minHeight:180,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'16px',color:TX,fontSize:14,lineHeight:1.7,outline:'none',resize:'vertical',fontFamily:FONT}}
+    />
+    <div style={{marginTop:12}}>
+      <PBtn
+        label={saving?'Saving…':'Save field report'}
+        onClick={submit}
+        disabled={!text.trim()||saving||!isOnline}
+      />
+    </div>
+    {!isOnline&&<div style={{fontSize:12,color:RE,marginTop:8,textAlign:'center'}}>Needs connection to save</div>}
+  </div>
+}
+
+// ── NGIntelligence ────────────────────────────────────────────────
+function NGIntelligence({isOnline,onBack}){
+  const[messages,setMessages]=useState([
+    {role:'assistant',content:"Hey. I'm Luna — the intelligence layer. Ask me anything about your learning. Where you are, what you're struggling with, what I'm planning. I'll be straight with you."}
+  ])
+  const[input,setInput]=useState('')
+  const[loading,setLoading]=useState(false)
+  const scrollRef=useRef()
+
+  useEffect(()=>{
+    if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight
+  },[messages])
+
+  const send=async()=>{
+    const msg=input.trim()
+    if(!msg||loading||!isOnline)return
+    const userMsg={role:'user',content:msg}
+    const newMessages=[...messages,userMsg]
+    setMessages(newMessages)
+    setInput('')
+    setLoading(true)
+    try{
+      const data=await ngFetch('ng-intelligence',{
+        messages:newMessages.map(m=>({role:m.role,content:m.content})),
+        extractInsights:newMessages.length>=6
+      })
+      setMessages(prev=>[...prev,{role:'assistant',content:data.reply||'Something went wrong.'}])
+    }catch{
+      setMessages(prev=>[...prev,{role:'assistant',content:'Could not reach the server. Try again.'}])
+    }
+    setLoading(false)
+  }
+
+  return<div style={{display:'flex',flexDirection:'column',height:'100vh'}}>
+    <div style={{padding:'52px 20px 12px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:8,padding:0}}>← Back</button>
+      <div style={{fontSize:18,fontWeight:800,color:TX}}>Intelligence</div>
+      <div style={{fontSize:12,color:MU,marginTop:2}}>Talk to Luna about your learning</div>
+    </div>
+
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:12}}>
+      {messages.map((m,i)=>{
+        const isLuna=m.role==='assistant'
+        return<div key={i} style={{display:'flex',flexDirection:'column',alignItems:isLuna?'flex-start':'flex-end'}}>
+          <div style={{maxWidth:'88%',padding:'12px 16px',borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',background:isLuna?S:AC,border:isLuna?`1px solid ${BD}`:'none',fontSize:14,lineHeight:1.65,color:isLuna?TX:'#fff'}}>
+            {m.content}
+          </div>
+        </div>
+      })}
+      {loading&&<div style={{alignSelf:'flex-start'}}>
+        <div style={{padding:'12px 16px',background:S,border:`1px solid ${BD}`,borderRadius:'18px 18px 18px 4px'}}>
+          <Spinner size={14}/>
+        </div>
+      </div>}
+    </div>
+
+    <div style={{padding:'8px 16px 32px',borderTop:`1px solid ${BD}`,display:'flex',gap:8,flexShrink:0}}>
+      <input
+        value={input}
+        onChange={e=>setInput(e.target.value)}
+        onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}}
+        placeholder="Ask anything about your progress…"
+        style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px',color:TX,fontSize:14,outline:'none',fontFamily:FONT}}
+      />
+      <button
+        onClick={send}
+        disabled={!input.trim()||loading||!isOnline}
+        style={{background:AC,color:'#fff',border:'none',borderRadius:12,padding:'12px 16px',fontSize:16,cursor:'pointer',opacity:input.trim()&&!loading&&isOnline?1:0.4,fontFamily:FONT,flexShrink:0}}
+      >→</button>
+    </div>
+  </div>
+}
+
 export default function App(){
   const[cards,setCards]=useState([])
   const[streak,setStreak]=useState(0)
   const[lastDate,setLastDate]=useState(null)
   const[sentenceHistory,setSentenceHistory]=useState([])
   const[screen,setScreen]=useState('home')
+  const[ngMode,setNgMode]=useState(()=>localStorage.getItem(NG_MODE_KEY)||null)
+  const[ngScreen,setNgScreen]=useState('ng-home')
   const[loaded,setLoaded]=useState(false)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
 
@@ -2188,6 +2511,35 @@ export default function App(){
     const t=setTimeout(()=>dbSaveState(streak,lastDate,sentenceHistory),5000)
     return()=>clearTimeout(t)
   },[streak,lastDate,loaded])
+
+  // Mode not chosen yet — show full-screen mode select
+  if(loaded&&!ngMode)return<ModeSelect onSelect={mode=>{
+    localStorage.setItem(NG_MODE_KEY,mode)
+    setNgMode(mode)
+  }}/>
+
+  // Next Gen mode — own screen stack
+  if(loaded&&ngMode==='nextgen'){
+    return<div style={{background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
+      {ngScreen==='ng-home'&&<NGHome isOnline={isOnline} go={setNgScreen}/>}
+      {ngScreen==='ng-voice'&&<div style={{paddingTop:0}}><VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true}/></div>}
+      {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-intelligence'&&<NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {/* Next Gen Nav */}
+      <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
+        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-field-report',i:'📝',l:'Report'},{k:'ng-intelligence',i:'◎',l:'Intel'}].map(t=>
+          <button key={t.k} onClick={()=>setNgScreen(t.k)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 16px',WebkitTapHighlightColor:'transparent'}}>
+            <span style={{fontSize:18,opacity:ngScreen===t.k?1:0.3,filter:ngScreen===t.k?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
+            <span style={{fontSize:10,color:ngScreen===t.k?AC:MU,fontWeight:ngScreen===t.k?700:400}}>{t.l}</span>
+          </button>
+        )}
+        <button onClick={()=>{localStorage.setItem(NG_MODE_KEY,'original');setNgMode('original')}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 16px',WebkitTapHighlightColor:'transparent'}}>
+          <span style={{fontSize:18,opacity:0.25}}>⊙</span>
+          <span style={{fontSize:10,color:MU}}>Classic</span>
+        </button>
+      </div>
+    </div>
+  }
 
   if(!loaded)return<div style={{background:BG,height:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16,fontFamily:FONT}}><Spinner size={28}/><span style={{color:MU,fontSize:14}}>Loading…</span></div>
 
