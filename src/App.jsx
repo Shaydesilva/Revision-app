@@ -2603,8 +2603,17 @@ function NGHome({isOnline,go}){
         fully_controlled:data.fully_controlled_scaffolds||0
       })
     }catch(e){
-      console.warn('NGHome load failed:',e)
-      setProfile(p=>p||{phase:1,phase_name:'Survival → Social',phase_progress:0,total_controlled:0,fully_controlled:0})
+      console.error('NGHome load failed:',e?.message||e)
+      // Show error in frontier area so we can see what's happening
+      setFrontier([{
+        scaffold_id:'error',
+        base:'Error loading frontier',
+        stage:1,
+        pt:e?.message||String(e),
+        en:'Check Netlify function logs',
+        context:'error',category:'error',phase:1,urgency:0,
+        practice_count:0,modes_used:[],days_since_practice:0
+      }])
     }
     setLoading(false)
   }
