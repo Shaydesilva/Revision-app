@@ -2,11 +2,11 @@ import React,{useState,useEffect,useRef,useCallback,useMemo} from 'react'
 import{createClient}from'@supabase/supabase-js'
 
 const USER_ID='00000000-0000-0000-0000-000000000001'
-const BG='#07070f',S='#0d0d1a',S2='#131324',BD='#1a1a32',AC='#4f8ef7',TX='#eeeef5',MU='#55557a',GR='#34d399',RE='#f87171',YE='#fbbf24',GD='#f59e0b'
+const BG='#07070a',S='#0d0d18',S2='#111120',BD='#1c1c30',AC='#7c6ef7',TX='#f0f0f8',MU='#5a5a80',GR='#34d399',RE='#f87171',YE='#fbbf24',GD='#f59e0b',CORAL='#f97066'
 const FONT="-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif"
 const TIERS=[{name:'Turista',min:0},{name:'Comunicador',min:15},{name:'Carioca',min:35},{name:'Carioca Honorario',min:60}]
 const getTier=n=>TIERS.reduce((a,t)=>n>=t.min?t:a,TIERS[0])
-const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}`
+const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
 
 
 function sm2(card,q){
@@ -1599,7 +1599,7 @@ function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
   </div>
 }
 
-function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
+function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   // ── State ──────────────────────────────────────────────────────────────
   const[phase,setPhase]=useState('idle')
   const[spectrum,setSpectrum]=useState(0.35)
@@ -1677,7 +1677,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
     cleanup()
     if(!tr.length){phaseRef.current='idle';setPhase('idle');setElapsed(0);return}
     try{
-      const res=await fetch('/.netlify/functions/luna-session-end',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:tr,duration_seconds:dur})})
+      const endEndpoint=ngMode?'ng-session-end':'luna-session-end'
+      const res=await fetch(`/.netlify/functions/${endEndpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ngMode?{mode:'luna',transcript:tr,duration_seconds:dur}:{transcript:tr,duration_seconds:dur})})
       const result=await res.json()
       if(result.cardUpdates&&Object.keys(result.cardUpdates).length)onRateMultiple(result.cardUpdates,'voice')
       setSummary(result)
@@ -1782,7 +1783,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline}){
     SND.init()
     try{
       log('Requesting session token…')
-      const res=await fetch('/.netlify/functions/luna-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current,speed:speedRef.current})})
+      const endpoint=ngMode?'ng-luna-session':'luna-session'
+      const res=await fetch(`/.netlify/functions/${endpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current,speed:speedRef.current})})
       const data=await res.json()
       if(!res.ok)throw new Error(data.error||`Server ${res.status}`)
       const token=data.value
@@ -2361,6 +2363,179 @@ Return JSON:
 
 
 
+
+// ── NGScaffoldMap ─────────────────────────────────────────────────
+function NGScaffoldMap({isOnline,onBack}){
+  const[scaffolds,setScaffolds]=useState([])
+  const[controlled,setControlled]=useState(new Set())
+  const[loading,setLoading]=useState(true)
+  const[selected,setSelected]=useState(null)
+
+  useEffect(()=>{load()},[])
+
+  const load=async()=>{
+    setLoading(true)
+    try{
+      // Load scaffolds from Supabase via frontier (which also loads profile)
+      const[frontierData,scaffoldRes]=await Promise.all([
+        ngFetch('ng-frontier'),
+        fetch('/.netlify/functions/ng-frontier',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({returnAll:true})}).then(r=>r.json())
+      ])
+      // Get controlled from profile
+      const ctrl=new Set((frontierData.controlled||[]).map(c=>`${c.scaffold_id}_${c.stage}`))
+      setControlled(ctrl)
+      // We need scaffolds - fetch them directly
+      if(window._ngScaffolds){
+        setScaffolds(window._ngScaffolds)
+      }
+    }catch(e){console.warn(e)}
+    setLoading(false)
+  }
+
+  // Load scaffolds from Supabase directly via a simple fetch
+  useEffect(()=>{
+    const loadScaffolds=async()=>{
+      try{
+        const{createClient}=await import('https://esm.sh/@supabase/supabase-js@2')
+        const sb=createClient(
+          import.meta?.env?.VITE_SUPABASE_URL||window.__SUPABASE_URL__,
+          import.meta?.env?.VITE_SUPABASE_ANON_KEY||window.__SUPABASE_ANON_KEY__
+        )
+        const{data}=await sb.from('ng_scaffolds')
+          .select('id,base_portuguese,base_english,phase,category,stages,current_stage,context')
+          .eq('user_id','00000000-0000-0000-0000-000000000001')
+          .order('phase')
+        if(data){
+          setScaffolds(data)
+          window._ngScaffolds=data
+        }
+      }catch(e){console.warn('Scaffold load:',e)}
+      setLoading(false)
+    }
+    loadScaffolds()
+  },[])
+
+  const categories={
+    social_foundation:'Social',
+    dating_register:'Dating',
+    personality_humour:'Personality',
+    deep_fluency:'Fluency'
+  }
+
+  const catColor={
+    social_foundation:GR,
+    dating_register:AC,
+    personality_humour:YE,
+    deep_fluency:GD
+  }
+
+  const getStagesControlled=(sc)=>{
+    return sc.stages.filter(st=>controlled.has(`${sc.id}_${st.stage}`)).length
+  }
+
+  const grouped={}
+  scaffolds.forEach(s=>{
+    const cat=s.category||'social_foundation'
+    if(!grouped[cat])grouped[cat]=[]
+    grouped[cat].push(s)
+  })
+
+  const totalControlled=scaffolds.reduce((sum,s)=>sum+getStagesControlled(s),0)
+  const totalStages=scaffolds.reduce((sum,s)=>sum+(s.stages?.length||4),0)
+
+  if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
+    <Spinner size={24}/>
+    <div style={{color:MU,fontSize:13,marginTop:16}}>Loading scaffold map…</div>
+  </div>
+
+  return<div style={{padding:'52px 0 100px',animation:'up 0.4s ease'}}>
+
+    {/* Header */}
+    <div style={{padding:'0 20px 20px',display:'flex',alignItems:'center',gap:12}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Back</button>
+      <div style={{flex:1}}>
+        <div style={{fontSize:18,fontWeight:800,color:TX}}>Scaffold Map</div>
+        <div style={{fontSize:12,color:MU,marginTop:2}}>{totalControlled} of {totalStages} stages controlled</div>
+      </div>
+    </div>
+
+    {/* Overall progress bar */}
+    <div style={{padding:'0 20px 24px'}}>
+      <div style={{height:4,background:BD,borderRadius:4,overflow:'hidden'}}>
+        <div style={{height:'100%',background:`linear-gradient(to right,${GR},${AC})`,borderRadius:4,width:`${totalStages?totalControlled/totalStages*100:0}%`,transition:'width 1s ease'}}/>
+      </div>
+    </div>
+
+    {/* Selected scaffold detail */}
+    {selected&&<div style={{margin:'0 20px 20px',background:S,border:`1px solid ${AC}44`,borderRadius:16,padding:'16px',animation:'up 0.2s ease'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+        <div>
+          <div style={{fontSize:16,fontWeight:700,color:TX}}>{selected.base_portuguese}</div>
+          <div style={{fontSize:12,color:MU}}>{selected.base_english}</div>
+        </div>
+        <button onClick={()=>setSelected(null)} style={{background:'none',border:'none',color:MU,fontSize:18,cursor:'pointer',padding:'0 4px',fontFamily:FONT}}>×</button>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        {selected.stages.map(st=>{
+          const done=controlled.has(`${selected.id}_${st.stage}`)
+          return<div key={st.stage} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:done?`${GR}12`:S2,borderRadius:10,border:`1px solid ${done?GR+'33':BD}`}}>
+            <div style={{width:6,height:6,borderRadius:'50%',background:done?GR:BD,flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,color:done?TX:MU,fontWeight:done?600:400}}>{st.pt}</div>
+              <div style={{fontSize:11,color:MU}}>{st.en}</div>
+            </div>
+            <div style={{fontSize:11,color:done?GR:MU}}>
+              {done?'✓':`Stage ${st.stage}`}
+            </div>
+          </div>
+        })}
+      </div>
+    </div>}
+
+    {/* Category sections */}
+    {Object.entries(categories).map(([cat,label])=>{
+      const catScaffolds=grouped[cat]||[]
+      if(!catScaffolds.length)return null
+      const color=catColor[cat]||AC
+      const catControlled=catScaffolds.reduce((sum,s)=>sum+getStagesControlled(s),0)
+      const catTotal=catScaffolds.reduce((sum,s)=>sum+(s.stages?.length||4),0)
+
+      return<div key={cat} style={{marginBottom:28}}>
+        <div style={{padding:'0 20px',display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+          <div style={{width:8,height:8,borderRadius:'50%',background:color,flexShrink:0}}/>
+          <div style={{fontSize:13,fontWeight:700,color:TX}}>{label}</div>
+          <div style={{fontSize:11,color:MU,marginLeft:'auto'}}>{catControlled}/{catTotal}</div>
+        </div>
+
+        {/* Grid */}
+        <div style={{padding:'0 16px',display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+          {catScaffolds.map(s=>{
+            const stagesControlled=getStagesControlled(s)
+            const total=s.stages?.length||4
+            const pct=stagesControlled/total
+
+            return<button
+              key={s.id}
+              onClick={()=>setSelected(s)}
+              style={{background:pct===1?`${color}22`:pct>0?`${color}10`:S,border:`1px solid ${pct===1?color+'55':pct>0?color+'22':BD}`,borderRadius:12,padding:'10px 8px',cursor:'pointer',textAlign:'center',WebkitTapHighlightColor:'transparent',transition:'all 0.15s'}}
+            >
+              {/* Stage bars */}
+              <div style={{display:'flex',gap:2,justifyContent:'center',marginBottom:6}}>
+                {[...Array(total)].map((_,i)=><div key={i} style={{width:8,height:3,borderRadius:2,background:i<stagesControlled?color:BD}}/>)}
+              </div>
+              <div style={{fontSize:9,color:pct>0?color:MU,fontWeight:600,lineHeight:1.3,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>
+                {s.base_portuguese}
+              </div>
+            </button>
+          })}
+        </div>
+      </div>
+    })}
+  </div>
+}
+
+
+
 // ── Next Gen Constants ────────────────────────────────────────────
 const NG_MODE_KEY='carioca_ng_mode' // 'original'|'nextgen'
 const NG_ONBOARDED_KEY='carioca_ng_onboarded'
@@ -2488,7 +2663,7 @@ function NGHome({isOnline,go}){
   return<div style={{padding:'0 0 100px',animation:'up 0.4s ease'}}>
 
     {/* Phase ring + stats */}
-    <div style={{padding:'32px 24px 24px',display:'flex',alignItems:'center',gap:20}}>
+    <div style={{padding:'32px 24px 24px',display:'flex',alignItems:'center',gap:20,background:`linear-gradient(180deg,${AC}06 0%,transparent 100%)`}}>
       <PhaseRing/>
       <div style={{flex:1}}>
         <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:6}}>Current phase</div>
@@ -2881,14 +3056,15 @@ export default function App(){
   if(loaded&&ngMode==='nextgen'){
     return<div style={{background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
       {ngScreen==='ng-home'&&<NGHome isOnline={isOnline} go={setNgScreen}/>}
-      {ngScreen==='ng-voice'&&<div style={{paddingTop:0}}><VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true}/></div>}
+      {ngScreen==='ng-voice'&&<VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true} ngMode={true}/>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-intelligence'&&<NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-phrase'&&<NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {/* Next Gen Nav */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
-        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'},{k:'ng-phrase',i:'◈',l:'Phrase'},{k:'ng-intelligence',i:'◎',l:'Intel'}].map(t=>
+        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'},{k:'ng-phrase',i:'◇',l:'Phrase'},{k:'ng-map',i:'⊞',l:'Map'},{k:'ng-intelligence',i:'◎',l:'Intel'}].map(t=>
           <button key={t.k} onClick={()=>setNgScreen(t.k)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 16px',WebkitTapHighlightColor:'transparent'}}>
             <span style={{fontSize:18,opacity:ngScreen===t.k?1:0.3,filter:ngScreen===t.k?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
             <span style={{fontSize:10,color:ngScreen===t.k?AC:MU,fontWeight:ngScreen===t.k?700:400}}>{t.l}</span>
