@@ -2111,8 +2111,6 @@ function NGFlashCards({isOnline,onBack}){
     }
   }
 
-  if(milestone)return<NGMilestone milestone={milestone} onDismiss={()=>setMilestone(null)}/>
-
   if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
     <Spinner size={24}/>
     <div style={{color:MU,fontSize:13,marginTop:16}}>Loading your frontier…</div>
@@ -2740,6 +2738,8 @@ function NGHome({isOnline,go,active=true}){
   const phaseName=profile?.phase_name||'Survival → Social'
   const phaseNames=['','Survival','Social','Conversational','Fluent','Natural']
   const phaseNext=phaseNames[Math.min(phase+1,5)]||'Mastery'
+
+  if(milestone)return<NGMilestone milestone={milestone} onDismiss={()=>setMilestone(null)}/>
 
   // Phase ring SVG
   const PhaseRing=()=>{
