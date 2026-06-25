@@ -2082,43 +2082,36 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
 
   const card=frontier[idx]
 
+  // Fire each rating immediately — pick up and put down anytime
   const rate=async(quality)=>{
     if(!card)return
     const produced=quality>=4
-    const event={
-      scaffold_id:card.scaffold_id,
-      stage:card.stage,
-      quality,
-      produced,
-      mode:'flashcard',
-      isReview:card.isReview||false
-    }
+    const event={scaffold_id:card.scaffold_id,stage:card.stage,quality,produced,mode:'flashcard',isReview:card.isReview||false}
     const newEvents=[...sessionEvents,event]
     setSessionEvents(newEvents)
 
-    // Move to next or finish
+    // Log immediately, don't batch
+    if(isOnline){
+      ngFetch('ng-session-end',{mode:'flashcard',events:[event],duration_seconds:15})
+        .then(r=>{
+          if(r.newly_acquired?.length)setSummary(s=>({...s,acquired:(s.acquired||0)+r.newly_acquired.length,total_controlled:r.total_controlled||0}))
+          setSummary(s=>({...s,inserted:(s.inserted||0)+(r.events_inserted||0),events:newEvents.length}))
+        }).catch(()=>{})
+    }
+
     if(idx>=frontier.length-1){
-      // Session done — submit events
       setDone(true)
-      if(isOnline){
-        try{
-          const result=await ngFetch('ng-session-end',{
-            mode:'flashcard',
-            events:newEvents,
-            duration_seconds:Math.round(newEvents.length*15)
-          })
-          const acquired=(result.newly_acquired||[]).length
-          const inserted=result.events_inserted||0
-          setSummary({acquired,events:newEvents.length,inserted,total_controlled:result.total_controlled||0})
-          // Reload frontier
-          const freshFrontier=await ngFetch('ng-frontier')
-          if(freshFrontier.frontier)setFrontier(freshFrontier.frontier)
-        }catch(e){console.warn('Session end error:',e)}
-      }
+      if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
     }else{
       setIdx(i=>i+1)
       setFlipped(false)
     }
+  }
+
+  const endEarly=()=>{
+    if(sessionEvents.length===0){onBack();return}
+    setDone(true)
+    if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
   }
 
   if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
@@ -2173,7 +2166,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     <div style={{display:'flex',alignItems:'center',marginBottom:24}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Home</button>
       <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{idx+1} of {frontier.length}</div>
-      <div style={{width:40}}/>
+      <button onClick={endEarly} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0,opacity:0.6}}>Done</button>
     </div>
 
     {/* Progress bar */}
@@ -2355,15 +2348,13 @@ Return JSON:
       setResult(evaluation)
       setPhase('result')
 
-      if(roundNum+1>=MAX_ROUNDS){
-        // Submit session events
-        if(isOnline){
-          ngFetch('ng-session-end',{
-            mode:'phrase',
-            events:newEvents,
-            duration_seconds:MAX_ROUNDS*60
-          }).catch(()=>{})
-        }
+      // Fire immediately — no session minimum
+      if(isOnline){
+        ngFetch('ng-session-end',{
+          mode:'phrase',
+          events:[event],
+          duration_seconds:60
+        }).catch(()=>{})
       }
     }catch{setPhase('scenario')}
   }
@@ -2463,6 +2454,7 @@ Return JSON:
 function NGScaffoldMap({isOnline,onBack}){
   const[scaffolds,setScaffolds]=useState([])
   const[controlled,setControlled]=useState(new Set())
+  const[hybridEligible,setHybridEligible]=useState(new Set())
   const[loading,setLoading]=useState(true)
   const[selected,setSelected]=useState(null)
 
@@ -2484,6 +2476,7 @@ function NGScaffoldMap({isOnline,onBack}){
         (frontierData.controlled_list||[]).map(c=>`${c.scaffold_id}|${c.stage}`)
       )
       setControlled(ctrl)
+      setHybridEligible(new Set(frontierData.hybrid_eligible_ids||[]))
       if(scaffoldData?.length)setScaffolds(scaffoldData)
     }catch(e){console.warn('Map load:',e)}
     setLoading(false)
@@ -2591,8 +2584,9 @@ function NGScaffoldMap({isOnline,onBack}){
             return<button
               key={s.id}
               onClick={()=>setSelected(s)}
-              style={{background:pct===1?`${color}22`:pct>0?`${color}10`:S,border:`1px solid ${pct===1?color+'55':pct>0?color+'22':BD}`,borderRadius:12,padding:'10px 8px',cursor:'pointer',textAlign:'center',WebkitTapHighlightColor:'transparent',transition:'all 0.15s'}}
+              style={{background:pct===1?`${color}22`:pct>0?`${color}10`:S,border:`1px solid ${pct===1?color+'55':pct>0?color+'22':BD}`,borderRadius:12,padding:'10px 8px',cursor:'pointer',textAlign:'center',WebkitTapHighlightColor:'transparent',transition:'all 0.15s',position:'relative'}}
             >
+              {hybridEligible.has(s.id)&&<div style={{position:'absolute',top:3,right:3,fontSize:7,color:color,opacity:0.8}}>◈</div>}
               {/* Stage bars */}
               <div style={{display:'flex',gap:2,justifyContent:'center',marginBottom:6}}>
                 {[...Array(total)].map((_,i)=><div key={i} style={{width:8,height:3,borderRadius:2,background:i<stagesControlled?color:BD}}/>)}
@@ -3019,10 +3013,77 @@ function NGIntelligence({isOnline,onBack}){
     setLoading(false)
   }
 
+  const[showHealth,setShowHealth]=useState(false)
+  const[health,setHealth]=useState(null)
+  const[healthLoading,setHealthLoading]=useState(false)
+  const[showReset,setShowReset]=useState(false)
+  const[resetting,setResetting]=useState(false)
+
+  const loadHealth=async()=>{
+    setHealthLoading(true)
+    setShowHealth(true)
+    try{
+      const data=await ngFetch('ng-sync-health')
+      setHealth(data)
+    }catch(e){setHealth({error:e.message})}
+    setHealthLoading(false)
+  }
+
+  const doReset=async()=>{
+    setResetting(true)
+    try{
+      const result=await ngFetch('ng-reset',{confirmed:true})
+      if(result.ok){
+        setShowReset(false)
+        setMessages([{role:'assistant',content:'Progress cleared. '+result.scaffolds_reset+' scaffolds reset. Refresh the app to start fresh.'}])
+      }
+    }catch(e){console.warn('Reset error:',e)}
+    setResetting(false)
+  }
+
   return<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 64px)'}}>
-    <div style={{padding:'16px 20px 12px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
-      <div style={{fontSize:18,fontWeight:800,color:TX}}>Intelligence</div>
-      <div style={{fontSize:12,color:MU,marginTop:2}}>Talk to Luna about your learning</div>
+    <div style={{padding:'12px 20px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:800,color:TX}}>Intelligence</div>
+          <div style={{fontSize:11,color:MU,marginTop:1}}>Talk to Luna about your learning</div>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={loadHealth} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>⚡ Health</button>
+          <button onClick={()=>setShowReset(true)} style={{fontSize:11,color:RE,background:`${RE}12`,border:`1px solid ${RE}33`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>↺ Reset</button>
+        </div>
+      </div>
+
+      {/* Sync Health Panel */}
+      {showHealth&&<div style={{marginTop:10,background:S2,borderRadius:10,padding:'12px',fontSize:11,color:MU,lineHeight:1.8,maxHeight:200,overflowY:'auto'}}>
+        {healthLoading&&<div>Loading health data…</div>}
+        {health&&!health.error&&<>
+          <div style={{color:TX,fontWeight:700,marginBottom:4}}>System Health</div>
+          <div>Phase: {health.phase} — {health.phase_name} ({health.phase_progress_pct}%)</div>
+          <div>Stages controlled: {health.stages_controlled} | Scaffolds complete: {health.scaffolds_fully_controlled}</div>
+          <div>Total events: {health.total_events} | By mode: {JSON.stringify(health.events_by_mode)}</div>
+          <div>Frontier: {health.frontier_size} items | Review queue: {health.review?.length||0}</div>
+          <div>Last session: {health.last_session?new Date(health.last_session).toLocaleString():'never'}</div>
+          <div>Luna notes: {health.luna_notes?health.luna_notes.slice(0,80)+'…':'none'}</div>
+          <div>Error fingerprint: {JSON.stringify(health.error_fingerprint)}</div>
+          <div>Write errors: {health.write_errors||0}</div>
+          <div style={{color:health.write_errors>0?RE:GR}}>Status: {health.write_errors>0?'⚠ Write errors detected':'✓ Clean'}</div>
+        </>}
+        {health?.error&&<div style={{color:RE}}>Error: {health.error}</div>}
+        <button onClick={()=>setShowHealth(false)} style={{marginTop:6,fontSize:10,color:MU,background:'none',border:'none',cursor:'pointer',fontFamily:FONT}}>Close</button>
+      </div>}
+
+      {/* Reset Confirm */}
+      {showReset&&<div style={{marginTop:10,background:`${RE}12`,border:`1px solid ${RE}33`,borderRadius:10,padding:'12px'}}>
+        <div style={{fontSize:13,color:TX,fontWeight:600,marginBottom:4}}>Reset all Next Gen progress?</div>
+        <div style={{fontSize:11,color:MU,marginBottom:10}}>Clears all events, controlled stages, Luna notes, milestones. Scaffold bank stays intact.</div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={doReset} disabled={resetting} style={{fontSize:12,color:'#fff',background:RE,border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',fontFamily:FONT,opacity:resetting?0.5:1}}>
+            {resetting?'Resetting…':'Yes, reset everything'}
+          </button>
+          <button onClick={()=>setShowReset(false)} style={{fontSize:12,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'6px 14px',cursor:'pointer',fontFamily:FONT}}>Cancel</button>
+        </div>
+      </div>}
     </div>
 
     <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:12}}>
