@@ -2090,7 +2090,8 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
       stage:card.stage,
       quality,
       produced,
-      mode:'flashcard'
+      mode:'flashcard',
+      isReview:card.isReview||false
     }
     const newEvents=[...sessionEvents,event]
     setSessionEvents(newEvents)
@@ -2107,8 +2108,9 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
             duration_seconds:Math.round(newEvents.length*15)
           })
           const acquired=(result.newly_acquired||[]).length
-          setSummary({acquired,events:newEvents.length})
-          // Reload frontier after session so home shows updated state
+          const inserted=result.events_inserted||0
+          setSummary({acquired,events:newEvents.length,inserted,total_controlled:result.total_controlled||0})
+          // Reload frontier
           const freshFrontier=await ngFetch('ng-frontier')
           if(freshFrontier.frontier)setFrontier(freshFrontier.frontier)
         }catch(e){console.warn('Session end error:',e)}
@@ -2139,7 +2141,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
       {summary.acquired>0?`${summary.acquired} stage${summary.acquired!==1?'s':''} acquired!`:'Session logged'}
     </div>
     <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:24}}>
-      {summary.events||0} patterns practiced
+      {summary.events||0} patterns practiced · {summary.inserted||0} logged · {summary.total_controlled||0} controlled
     </div>
 
     {summary.acquired===0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:20}}>
@@ -2272,15 +2274,16 @@ function NGPhrase({isOnline,onBack}){
       const f=data.frontier||[]
       setFrontier(f)
       if(f.length)await generateScenario(f)
-      else{setPhase('scenario');setScenario('No frontier loaded yet. Try going back to home and waiting a moment, then return.')}
+      else setPhase('empty')
     }catch{setPhase('done')}
   }
 
-  const generateScenario=async(f)=>{
+  const generateScenario=async(f,forRound)=>{
     const fList=f||frontier
     if(!fList.length){setPhase('done');return}
-    // Pick a frontier item — rotate through them
-    const target=fList[roundNum%fList.length]
+    // Pick a frontier item — rotate through them using explicit round number
+    const round=forRound!==undefined?forRound:roundNum
+    const target=fList[round%fList.length]
     setTargetScaffold(target)
     setPhase('loading')
     try{
@@ -2366,11 +2369,12 @@ Return JSON:
   }
 
   const nextRound=()=>{
-    if(roundNum+1>=MAX_ROUNDS){setPhase('done');return}
-    setRoundNum(r=>r+1)
+    const nextRound=roundNum+1
+    if(nextRound>=MAX_ROUNDS){setPhase('done');return}
+    setRoundNum(nextRound)
     setAnswer('')
     setResult(null)
-    generateScenario()
+    generateScenario(frontier,nextRound)
   }
 
   if(phase==='loading')return<div style={{padding:'60px 24px',textAlign:'center'}}>
@@ -2378,6 +2382,13 @@ Return JSON:
     <div style={{color:MU,fontSize:13,marginTop:16}}>
       {roundNum===0?'Setting the scene…':'Evaluating…'}
     </div>
+  </div>
+
+  if(phase==='empty')return<div style={{padding:'60px 24px',textAlign:'center'}}>
+    <div style={{fontSize:40,marginBottom:16}}>◈</div>
+    <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:8}}>Frontier not loaded</div>
+    <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:20}}>Go to Home first to load your frontier, then come back to Phrase.</div>
+    <GBtn label="Retry" onClick={loadAndGenerate}/>
   </div>
 
   if(phase==='done')return<div style={{padding:'48px 24px',textAlign:'center',animation:'up 0.4s ease'}}>
@@ -2460,7 +2471,6 @@ function NGScaffoldMap({isOnline,onBack}){
   const load=async()=>{
     setLoading(true)
     try{
-      // sb is the module-level Supabase client — already initialised
       const UID='00000000-0000-0000-0000-000000000001'
       const[frontierData,{data:scaffoldData}]=await Promise.all([
         ngFetch('ng-frontier'),
@@ -2469,8 +2479,9 @@ function NGScaffoldMap({isOnline,onBack}){
           .eq('user_id',UID)
           .order('phase')
       ])
+      // Use controlled_list from frontier response — pipe separator
       const ctrl=new Set(
-        (frontierData.controlled||[]).map(c=>`${c.scaffold_id}_${c.stage}`)
+        (frontierData.controlled_list||[]).map(c=>`${c.scaffold_id}|${c.stage}`)
       )
       setControlled(ctrl)
       if(scaffoldData?.length)setScaffolds(scaffoldData)
@@ -2493,7 +2504,7 @@ function NGScaffoldMap({isOnline,onBack}){
   }
 
   const getStagesControlled=(sc)=>{
-    return sc.stages.filter(st=>controlled.has(`${sc.id}_${st.stage}`)).length
+    return sc.stages.filter(st=>controlled.has(`${sc.id}|${st.stage}`)).length
   }
 
   const grouped={}
@@ -2540,7 +2551,7 @@ function NGScaffoldMap({isOnline,onBack}){
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:6}}>
         {selected.stages.map(st=>{
-          const done=controlled.has(`${selected.id}_${st.stage}`)
+          const done=controlled.has(`${selected.id}|${st.stage}`)
           return<div key={st.stage} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:done?`${GR}12`:S2,borderRadius:10,border:`1px solid ${done?GR+'33':BD}`}}>
             <div style={{width:6,height:6,borderRadius:'50%',background:done?GR:BD,flexShrink:0}}/>
             <div style={{flex:1}}>
