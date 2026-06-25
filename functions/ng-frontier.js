@@ -40,7 +40,8 @@ exports.handler=async(event)=>{
     }
 
     const now=Date.now()
-    const controlled=new Set((profile?.controlled||[]).map(c=>`${c.scaffold_id}_${c.stage}`))
+    // Use pipe separator — scaffold IDs contain underscores
+    const controlled=new Set((profile?.controlled||[]).map(c=>`${c.scaffold_id}|${c.stage}`))
 
     // ── Build event map ────────────────────────────────────────────────
     const eventMap={}
@@ -73,13 +74,14 @@ exports.handler=async(event)=>{
 
       for(let i=0;i<stages.length;i++){
         const stage=stages[i]
-        const key=`${scaffold.id}_${stage.stage}`
+        const key=`${scaffold.id}_${stage.stage}`  // for eventMap
+        const controlledKey=`${scaffold.id}|${stage.stage}`  // pipe for controlled set
         const events=eventMap[key]||{total:0,modes:{},qualities:[],lastPracticed:null}
-        const isControlled=controlled.has(key)
+        const isControlled=controlled.has(controlledKey)
 
         if(isControlled){
           // Stage acquired — check if due for spaced repetition review
-          const controlledEntry=(profile?.controlled||[]).find(c=>c.scaffold_id===scaffold.id&&c.stage===stage.stage)
+          const controlledEntry=(profile?.controlled||[]).find(c=>c.scaffold_id===scaffold.id&&c.stage===Number(stage.stage))
           if(controlledEntry){
             const acquiredAt=controlledEntry.acquired_at?new Date(controlledEntry.acquired_at):null
             const reviewCount=controlledEntry.review_count||0
@@ -103,7 +105,8 @@ exports.handler=async(event)=>{
               })
             }
           }
-          // Only add to frontier if it's the last controlled stage and next exists
+          // Stage is controlled — check if this is the last stage
+          if(i===stages.length-1)fullyControlled.push(scaffold.id)
           continue
         }
 
@@ -163,7 +166,7 @@ exports.handler=async(event)=>{
     const currentPhase=profile?.phase||1
     const phaseScaffolds=scaffolds.filter(s=>s.phase===currentPhase)
     const phaseControlledCount=phaseScaffolds.reduce((sum,s)=>{
-      const allControlled=s.stages.every(st=>controlled.has(`${s.id}_${st.stage}`))
+      const allControlled=s.stages.every(st=>controlled.has(`${s.id}|${st.stage}`))
       return sum+(allControlled?1:0)
     },0)
     const phaseProgress=phaseScaffolds.length?phaseControlledCount/phaseScaffolds.length:0
@@ -177,6 +180,17 @@ exports.handler=async(event)=>{
       lastMode,
       phase:currentPhase
     })
+
+    // Write frontier to profile — upsert so row is created if missing
+    await sb.from('ng_learner_profile')
+      .upsert({
+        user_id:UID,
+        frontier:workingFrontier,
+        phase:newPhase,
+        phase_progress:phaseProgress,
+        phase_name:phaseName(newPhase)
+      },{onConflict:'user_id',ignoreDuplicates:false})
+      .catch(err=>console.log('Profile frontier write err:',err?.message))
 
     console.log('ng-frontier: returning',workingFrontier.length,'frontier,',reviewQueue.length,'review,recommendation:',recommendation?.action)
 
@@ -192,7 +206,8 @@ exports.handler=async(event)=>{
         phase_name:phaseName(newPhase),
         phase_progress:phaseProgress,
         total_controlled:controlled.size,
-        fully_controlled_scaffolds:fullyControlled.length
+        fully_controlled_scaffolds:fullyControlled.length,
+        controlled_list:Array.from(profile?.controlled||[])
       })
     }
 
@@ -249,14 +264,14 @@ function computeRecommendation({frontier,reviewQueue,daysSinceSession,lastMode,p
     }
   }
 
-  // Priority 4: Unseen patterns — Study first
+  // Priority 4: Unseen patterns — always Study first on fresh install
   if(unseenFrontier.length>=3){
     return{
       action:'study',
       mode:'study',
       priority:'medium',
       title:'New patterns waiting',
-      reason:`${unseenFrontier.length} frontier patterns haven't been studied yet. Start here.`,
+      reason:`${unseenFrontier.length} patterns in your frontier haven't been practiced yet. Start here — Study first.`,
       cta:'Open Study',
       items:unseenFrontier.slice(0,3).map(f=>f.base)
     }
@@ -275,8 +290,8 @@ function computeRecommendation({frontier,reviewQueue,daysSinceSession,lastMode,p
     }
   }
 
-  // Priority 6: Long gap since session
-  if(daysSinceSession>=1){
+  // Priority 6: Gap since last session (only if frontier is being worked)
+  if(daysSinceSession>=1&&unseenFrontier.length<3){
     return{
       action:'luna',
       mode:'luna',
