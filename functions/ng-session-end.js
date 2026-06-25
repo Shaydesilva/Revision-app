@@ -142,7 +142,10 @@ Accept all Carioca contractions. Never penalise missing accents.`
     Object.entries(stageEvents).forEach(([key,data])=>{
       if(existingControlled.has(key))return // already controlled
       const avgQuality=data.qualities.reduce((a,b)=>a+b,0)/data.qualities.length
-      if(data.modes.size>=2&&data.total>=3&&avgQuality>=3.5){
+      // Acquisition: 3+ sessions avg quality ≥ 3 (any modes)
+      //           OR: 2+ modes + 2+ sessions + avg quality ≥ 3.5
+      const acquired=(data.total>=3&&avgQuality>=3)||(data.modes.size>=2&&data.total>=2&&avgQuality>=3.5)
+      if(acquired){
         const[scaffoldId,stage]=key.split('_')
         newlyAcquired.push({
           scaffold_id:scaffoldId,
@@ -152,6 +155,38 @@ Accept all Carioca contractions. Never penalise missing accents.`
       }
     })
 
+    // Handle review outcomes — update spaced repetition intervals
+    const reviewEvents=analysedEvents.filter(ev=>ev.isReview)
+    const SR_INTERVALS=[1,3,7,21,60,180]
+    let updatedControlled=(profile?.controlled||[]).slice()
+
+    for(const rev of reviewEvents){
+      const idx=updatedControlled.findIndex(c=>c.scaffold_id===rev.scaffold_id&&c.stage===rev.stage)
+      if(idx>=0){
+        const entry=updatedControlled[idx]
+        const remembered=rev.quality>=4
+        const currentCount=entry.review_count||0
+        if(remembered){
+          // Interval doubles — advance review count
+          updatedControlled[idx]={
+            ...entry,
+            review_count:Math.min(currentCount+1,SR_INTERVALS.length-1),
+            last_review:now
+          }
+        }else{
+          // Forgot — remove from controlled, back to frontier
+          updatedControlled.splice(idx,1)
+        }
+      }
+    }
+
+    // Add newly acquired stages to controlled
+    for(const acq of newlyAcquired){
+      if(!updatedControlled.find(c=>c.scaffold_id===acq.scaffold_id&&c.stage===acq.stage)){
+        updatedControlled.push({...acq,review_count:0,last_review:null})
+      }
+    }
+
     // Update profile
     const profileUpdate={
       session_history:{
@@ -160,11 +195,8 @@ Accept all Carioca contractions. Never penalise missing accents.`
         [`last_${mode}`]:now
       },
       luna_notes:newLunaNotes,
-      error_fingerprint:newErrorPatterns
-    }
-
-    if(newlyAcquired.length){
-      profileUpdate.controlled=newlyAcquired
+      error_fingerprint:newErrorPatterns,
+      controlled:updatedControlled
     }
 
     // Write profile update directly to Supabase
@@ -210,6 +242,18 @@ Accept all Carioca contractions. Never penalise missing accents.`
     const totalControlled=(profile?.controlled||[]).length+newlyAcquired.length
     await checkMilestones(sb,UID,totalControlled,newlyAcquired,profile?.phase||1)
 
+    // Build progress summary for each scaffold practiced this session
+    const progressByScaffold={}
+    analysedEvents.forEach(ev=>{
+      if(!progressByScaffold[ev.scaffold_id]){
+        progressByScaffold[ev.scaffold_id]={
+          scaffold_id:ev.scaffold_id,
+          sessions_total:(stageEvents[`${ev.scaffold_id}_${ev.stage}`]||{}).total||1,
+          sessions_needed:3
+        }
+      }
+    })
+
     return{
       statusCode:200,
       headers:{'Content-Type':'application/json'},
@@ -217,6 +261,7 @@ Accept all Carioca contractions. Never penalise missing accents.`
         ok:true,
         events_processed:analysedEvents.length,
         newly_acquired:newlyAcquired,
+        progress:Object.values(progressByScaffold),
         summary:sessionSummary
       })
     }
