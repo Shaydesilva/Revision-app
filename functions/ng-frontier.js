@@ -181,16 +181,17 @@ exports.handler=async(event)=>{
       phase:currentPhase
     })
 
-    // Write frontier to profile — upsert so row is created if missing
-    await sb.from('ng_learner_profile')
+    // Write frontier to profile (fire-and-forget, never blocks the response)
+    sb.from('ng_learner_profile')
       .upsert({
         user_id:UID,
         frontier:workingFrontier,
         phase:newPhase,
         phase_progress:phaseProgress,
         phase_name:phaseName(newPhase)
-      },{onConflict:'user_id',ignoreDuplicates:false})
-      .catch(err=>console.log('Profile frontier write err:',err?.message))
+      },{onConflict:'user_id'})
+      .then(({error})=>{if(error)console.log('Profile write err:',error.message)})
+      .catch(e=>console.log('Profile write catch:',e?.message))
 
     console.log('ng-frontier: returning',workingFrontier.length,'frontier,',reviewQueue.length,'review,recommendation:',recommendation?.action)
 
