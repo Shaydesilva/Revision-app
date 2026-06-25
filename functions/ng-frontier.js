@@ -121,14 +121,26 @@ exports.handler=async(event)=>{
           // Still show in frontier until confirmed by server
         }
 
-        // Urgency scoring
+        // Urgency scoring — in-progress items must outrank never-touched
         const daysSincePractice=events.lastPracticed
-          ?(now-new Date(events.lastPracticed).getTime())/(1000*60*60*24):99
+          ?(now-new Date(events.lastPracticed).getTime())/(1000*60*60*24):0
         let urgency=0
-        if(scaffold.source==='victor')urgency+=3
-        if(events.total>0&&events.total<3)urgency+=2
-        if(['dating','social','bar','beach'].includes(scaffold.context))urgency+=2
-        urgency+=Math.min(daysSincePractice,7)
+
+        if(events.total===0){
+          // Never touched — needs first contact but not highest priority
+          urgency+=3
+          if(scaffold.source==='victor')urgency+=3
+          if(['dating','social','bar','beach'].includes(scaffold.context))urgency+=2
+        }else{
+          // In progress — this is the HIGHEST priority group
+          // Must reach acquisition before moving on
+          urgency+=10
+          if(scaffold.source==='victor')urgency+=3
+          if(['dating','social','bar','beach'].includes(scaffold.context))urgency+=2
+          // Slipping bonus — hasn't been practiced recently
+          if(daysSincePractice>=1)urgency+=Math.min(daysSincePractice,5)
+        }
+
         const avoidance=(profile?.scaffold_avoidance||[]).find(a=>a.scaffold_id===scaffold.id)
         if(avoidance?.times_in_frontier>=3)urgency+=4
 
