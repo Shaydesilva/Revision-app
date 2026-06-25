@@ -2748,6 +2748,7 @@ function NGHome({isOnline,go,active=true}){
   const[recommendation,setRecommendation]=useState(null)
   const[loading,setLoading]=useState(true)
   const[milestone,setMilestone]=useState(null)
+  const[loadError,setLoadError]=useState(null)
 
   useEffect(()=>{
     if(active&&isOnline)loadState()
@@ -2759,6 +2760,7 @@ function NGHome({isOnline,go,active=true}){
       const data=await ngFetch('ng-frontier')
       if(data.error)throw new Error(data.error)
       setFrontier(data.frontier||[])
+      setLoadError(null)
       setReview(data.review||[])
       setRecommendation(data.recommendation||null)
       setProfile({
@@ -2853,10 +2855,11 @@ function NGHome({isOnline,go,active=true}){
         </div>
       </div>
       :<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
-        <div style={{fontSize:13,color:MU,marginBottom:12}}>
+        <div style={{fontSize:13,color:MU,marginBottom:8}}>
           {isOnline?'Computing your frontier…':'Needs connection.'}
         </div>
-        <button onClick={loadState} style={{fontSize:12,color:AC,background:`${AC}18`,border:`1px solid ${AC}33`,borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:FONT}}>Retry</button>
+        {loadError&&<div style={{fontSize:11,color:RE,marginBottom:8,wordBreak:'break-all'}}>{loadError}</div>}
+        <button onClick={()=>{setLoadError(null);loadState()}} style={{fontSize:12,color:AC,background:`${AC}18`,border:`1px solid ${AC}33`,borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:FONT}}>Retry</button>
       </div>}
     </div>
 
