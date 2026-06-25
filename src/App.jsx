@@ -6,7 +6,7 @@ const BG='#07070a',S='#0d0d18',S2='#111120',BD='#1c1c30',AC='#7c6ef7',TX='#f0f0f
 const FONT="-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif"
 const TIERS=[{name:'Turista',min:0},{name:'Comunicador',min:15},{name:'Carioca',min:35},{name:'Carioca Honorario',min:60}]
 const getTier=n=>TIERS.reduce((a,t)=>n>=t.min?t:a,TIERS[0])
-const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
+const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
 
 
 function sm2(card,q){
@@ -2670,6 +2670,300 @@ function NGMilestone({milestone,onDismiss}){
 
 
 
+
+// ── NGShuffle ─────────────────────────────────────────────────────
+function NGShuffle({isOnline,onBack}){
+  const[phase,setPhase]=useState('setup') // setup|loading|challenge|result|done
+  const[count,setCount]=useState(5)
+  const[difficulty,setDifficulty]=useState('easy')
+  const[words,setWords]=useState([])
+  const[challenge,setChallenge]=useState(null)
+  const[answer,setAnswer]=useState('')
+  const[result,setResult]=useState(null)
+  const[sessionResults,setSessionResults]=useState([])
+
+  const start=async()=>{
+    if(!isOnline)return
+    setPhase('loading')
+    try{
+      const data=await ngFetch('ng-shuffle',{count,difficulty,action:'generate'})
+      if(!data.ok){setPhase('setup');alert(data.error||'Could not load patterns');return}
+      setWords(data.words||[])
+      setChallenge(data.challenge||{})
+      setAnswer('')
+      setResult(null)
+      setPhase('challenge')
+    }catch{setPhase('setup')}
+  }
+
+  const submit=async()=>{
+    if(!answer.trim()||!isOnline)return
+    setPhase('loading')
+    try{
+      const data=await ngFetch('ng-shuffle',{action:'evaluate',answer,words})
+      setResult(data)
+      setSessionResults(r=>[...r,{score:data.score,used:data.patterns_used?.length||0,total:words.length}])
+      setPhase('result')
+    }catch{setPhase('challenge')}
+  }
+
+  const next=()=>{setPhase('setup');setWords([]);setChallenge(null);setAnswer('');setResult(null)}
+
+  const difficultyLabel={easy:'Easy — base form',med:'Med — extended form',hard:'Hard — full Carioca'}
+
+  if(phase==='setup')return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{marginBottom:28}}>
+      <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:4}}>Shuffle</div>
+      <div style={{fontSize:13,color:MU,lineHeight:1.6}}>Pick patterns from everything you've practiced. Combine them all in one response.</div>
+    </div>
+
+    {/* Count selector */}
+    <div style={{marginBottom:24}}>
+      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>How many patterns?</div>
+      <div style={{display:'flex',gap:10}}>
+        {[3,5,7].map(n=><button key={n} onClick={()=>setCount(n)}
+          style={{flex:1,padding:'14px 0',background:count===n?AC:S,border:`1px solid ${count===n?AC:BD}`,borderRadius:12,color:count===n?'#fff':TX,fontFamily:FONT,fontSize:16,fontWeight:700,cursor:'pointer'}}>
+          {n}
+        </button>)}
+      </div>
+    </div>
+
+    {/* Difficulty selector */}
+    <div style={{marginBottom:32}}>
+      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>Difficulty</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {['easy','med','hard'].map(d=><button key={d} onClick={()=>setDifficulty(d)}
+          style={{padding:'14px 16px',background:difficulty===d?`${AC}15`:S,border:`1px solid ${difficulty===d?AC+'44':BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,textAlign:'left'}}>
+          <span style={{fontSize:13,fontWeight:700,color:difficulty===d?AC:TX,textTransform:'capitalize'}}>{d}</span>
+          <span style={{fontSize:12,color:MU,marginLeft:8}}>{difficultyLabel[d]}</span>
+        </button>)}
+      </div>
+    </div>
+
+    <PBtn label={isOnline?"Let's go →":'Needs connection'} onClick={start} disabled={!isOnline}/>
+
+    {sessionResults.length>0&&<div style={{marginTop:20,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px'}}>
+      <div style={{fontSize:11,color:MU,marginBottom:6}}>This session</div>
+      {sessionResults.map((r,i)=><div key={i} style={{fontSize:13,color:TX,marginBottom:2}}>
+        Round {i+1}: {r.score}/10 — {r.used}/{r.total} patterns used
+      </div>)}
+    </div>}
+  </div>
+
+  if(phase==='loading')return<div style={{padding:'60px 24px',textAlign:'center'}}>
+    <Spinner size={24}/>
+    <div style={{color:MU,fontSize:13,marginTop:16}}>{words.length?'Evaluating…':'Building your challenge…'}</div>
+  </div>
+
+  if(phase==='challenge')return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+    {/* Scenario */}
+    <div style={{background:`${AC}10`,border:`1px solid ${AC}33`,borderRadius:18,padding:'18px 20px',marginBottom:16}}>
+      <div style={{fontSize:10,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>The challenge</div>
+      <div style={{fontSize:14,color:TX,lineHeight:1.7,marginBottom:8}}>{challenge?.scenario}</div>
+      {challenge?.hint&&<div style={{fontSize:11,color:MU}}>💡 {challenge.hint}</div>}
+    </div>
+
+    {/* Patterns to use */}
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>Use all of these</div>
+      {words.map((w,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:S,border:`1px solid ${BD}`,borderRadius:10,marginBottom:6}}>
+        <div style={{width:20,height:20,borderRadius:'50%',background:AC,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <span style={{fontSize:10,color:'#fff',fontWeight:700}}>{i+1}</span>
+        </div>
+        <div>
+          <div style={{fontSize:14,fontWeight:600,color:TX}}>{w.pt}</div>
+          <div style={{fontSize:11,color:MU}}>{w.en}</div>
+        </div>
+      </div>)}
+    </div>
+
+    {/* Answer */}
+    <textarea
+      value={answer}
+      onChange={e=>setAnswer(e.target.value)}
+      placeholder="Escreve em português…"
+      autoFocus
+      style={{width:'100%',minHeight:120,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',color:TX,fontSize:15,outline:'none',resize:'none',fontFamily:FONT,marginBottom:12}}
+    />
+    <PBtn label="Submit" onClick={submit} disabled={!answer.trim()||!isOnline}/>
+  </div>
+
+  if(phase==='result'&&result)return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+    {/* Score */}
+    <div style={{textAlign:'center',marginBottom:20}}>
+      <div style={{fontSize:52,fontWeight:900,color:result.score>=7?GR:result.score>=5?YE:RE}}>{result.score}/10</div>
+      <div style={{fontSize:14,color:MU}}>
+        {result.patterns_used?.length||0} of {words.length} patterns used correctly
+      </div>
+    </div>
+
+    {/* Feedback */}
+    <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'16px',marginBottom:12}}>
+      <div style={{fontSize:13,color:TX,lineHeight:1.7,marginBottom:result.carioca_version?12:0}}>{result.feedback}</div>
+      {result.carioca_version&&<>
+        <div style={{height:1,background:BD,margin:'10px 0'}}/>
+        <div style={{fontSize:11,color:MU,marginBottom:4}}>How a Carioca would write it:</div>
+        <div style={{fontSize:14,fontWeight:600,color:AC,lineHeight:1.6}}>{result.carioca_version}</div>
+      </>}
+    </div>
+
+    {/* Missed patterns */}
+    {result.patterns_missed?.length>0&&<div style={{background:S,border:`1px solid ${RE}33`,borderRadius:14,padding:'14px',marginBottom:12}}>
+      <div style={{fontSize:11,color:RE,fontWeight:600,marginBottom:6}}>Patterns missed</div>
+      {result.patterns_missed.map((p,i)=><div key={i} style={{fontSize:13,color:MU,marginBottom:2}}>· {p}</div>)}
+    </div>}
+
+    <div style={{display:'flex',gap:10}}>
+      <button onClick={next} style={{flex:1,padding:'14px',background:AC,border:'none',borderRadius:14,color:'#fff',fontFamily:FONT,fontSize:14,fontWeight:700,cursor:'pointer'}}>Another round</button>
+      <button onClick={onBack} style={{flex:1,padding:'14px',background:S,border:`1px solid ${BD}`,borderRadius:14,color:TX,fontFamily:FONT,fontSize:14,cursor:'pointer'}}>Done</button>
+    </div>
+  </div>
+
+  return null
+}
+
+// ── NGSayIt ───────────────────────────────────────────────────────
+function NGSayIt({isOnline,onBack}){
+  const[input,setInput]=useState('')
+  const[loading,setLoading]=useState(false)
+  const[result,setResult]=useState(null)
+  const[audioEl,setAudioEl]=useState(null)
+  const[playing,setPlaying]=useState(false)
+  const[addedToBank,setAddedToBank]=useState(false)
+  const[scaffoldDecisions,setScaffoldDecisions]=useState({}) // {idx: true/false}
+  const[scaffoldsSubmitted,setScaffoldsSubmitted]=useState(false)
+
+  const translate=async()=>{
+    if(!input.trim()||!isOnline)return
+    setLoading(true)
+    setResult(null)
+    setAddedToBank(false)
+    setScaffoldDecisions({})
+    setScaffoldsSubmitted(false)
+    try{
+      const data=await ngFetch('ng-say-it',{text:input.trim()})
+      if(data.carioca){
+        setResult(data)
+        if(data.audio){
+          const audio=new Audio('data:audio/mp3;base64,'+data.audio)
+          audio.onended=()=>setPlaying(false)
+          setAudioEl(audio)
+        }
+      }
+    }catch(e){console.warn('Say It error:',e)}
+    setLoading(false)
+  }
+
+  const playAudio=()=>{
+    if(!audioEl)return
+    if(playing){audioEl.pause();audioEl.currentTime=0;setPlaying(false);return}
+    audioEl.play()
+    setPlaying(true)
+  }
+
+  const addToBank=async()=>{
+    if(!result||!isOnline)return
+    await ngFetch('ng-say-it',{
+      addToBank:true,
+      cardData:{portuguese:result.carioca,english:result.original}
+    })
+    setAddedToBank(true)
+  }
+
+  const submitScaffolds=async()=>{
+    if(!result?.suggestions)return
+    const approved=result.suggestions.filter((_,i)=>scaffoldDecisions[i]===true)
+    if(approved.length){
+      await ngFetch('ng-say-it',{approvedScaffolds:approved})
+    }
+    setScaffoldsSubmitted(true)
+  }
+
+  const allDecided=result?.suggestions?.length>0&&
+    result.suggestions.every((_,i)=>scaffoldDecisions[i]!==undefined)
+
+  return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{marginBottom:20}}>
+      <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:4}}>Say It</div>
+      <div style={{fontSize:13,color:MU}}>Type anything. Get the Carioca version.</div>
+    </div>
+
+    {/* Input */}
+    <textarea
+      value={input}
+      onChange={e=>setInput(e.target.value)}
+      onKeyDown={e=>{if(e.key==='Enter'&&e.metaKey)translate()}}
+      placeholder="How do I say 'I've been waiting for you for 20 minutes'…"
+      style={{width:'100%',minHeight:90,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',color:TX,fontSize:15,outline:'none',resize:'none',fontFamily:FONT,marginBottom:10}}
+    />
+    <PBtn label={loading?'Translating…':'Translate →'} onClick={translate} disabled={!input.trim()||loading||!isOnline}/>
+
+    {loading&&<div style={{padding:'20px 0',textAlign:'center'}}><Spinner size={20}/></div>}
+
+    {/* Result */}
+    {result&&!loading&&<div style={{marginTop:20,animation:'up 0.3s ease'}}>
+      {/* Translation */}
+      <div style={{background:`${AC}10`,border:`1px solid ${AC}33`,borderRadius:16,padding:'18px 20px',marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:AC,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>Carioca</div>
+            <div style={{fontSize:20,fontWeight:800,color:TX,lineHeight:1.4,marginBottom:6}}>{result.carioca}</div>
+            {result.back_translation&&<div style={{fontSize:12,color:MU}}>{result.back_translation}</div>}
+          </div>
+          {audioEl&&<button onClick={playAudio} style={{flexShrink:0,width:44,height:44,borderRadius:'50%',background:playing?AC:S,border:`1px solid ${playing?AC:BD}`,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>
+            {playing?'⏸':'▶'}
+          </button>}
+        </div>
+      </div>
+
+      {/* Add to bank */}
+      <div style={{display:'flex',gap:10,marginBottom:16}}>
+        <button onClick={addToBank} disabled={addedToBank} style={{flex:1,padding:'12px',background:addedToBank?`${GR}20`:S,border:`1px solid ${addedToBank?GR+'44':BD}`,borderRadius:12,cursor:addedToBank?'default':'pointer',fontFamily:FONT,fontSize:13,color:addedToBank?GR:TX,fontWeight:600}}>
+          {addedToBank?'✓ Added to card bank':'+ Add to card bank'}
+        </button>
+        <button onClick={()=>{setInput(result.carioca||'');setResult(null)}} style={{padding:'12px 16px',background:S,border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,color:MU}}>
+          Edit
+        </button>
+      </div>
+
+      {/* Scaffold suggestions — user must approve */}
+      {result.suggestions?.length>0&&!scaffoldsSubmitted&&<div style={{background:S,border:`1px solid ${YE}33`,borderRadius:16,padding:'16px',marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:YE,marginBottom:4}}>New patterns detected</div>
+        <div style={{fontSize:11,color:MU,lineHeight:1.6,marginBottom:12}}>Add these to your scaffold bank? You can reject any you don't want.</div>
+        {result.suggestions.map((sc,i)=><div key={i} style={{background:S2,border:`1px solid ${BD}`,borderRadius:12,padding:'12px',marginBottom:8}}>
+          <div style={{fontSize:14,fontWeight:700,color:TX,marginBottom:2}}>{sc.base_portuguese}</div>
+          <div style={{fontSize:12,color:MU,marginBottom:6}}>{sc.base_english}</div>
+          <div style={{fontSize:11,color:MU,marginBottom:10,fontStyle:'italic'}}>{sc.reason}</div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setScaffoldDecisions(d=>({...d,[i]:true}))}
+              style={{flex:1,padding:'8px',background:scaffoldDecisions[i]===true?`${GR}20`:S,border:`1px solid ${scaffoldDecisions[i]===true?GR+'44':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:12,color:scaffoldDecisions[i]===true?GR:TX,fontWeight:600}}>
+              {scaffoldDecisions[i]===true?'✓ Approved':'Approve'}
+            </button>
+            <button onClick={()=>setScaffoldDecisions(d=>({...d,[i]:false}))}
+              style={{flex:1,padding:'8px',background:scaffoldDecisions[i]===false?`${RE}12`:S,border:`1px solid ${scaffoldDecisions[i]===false?RE+'33':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:12,color:scaffoldDecisions[i]===false?RE:MU}}>
+              {scaffoldDecisions[i]===false?'✗ Rejected':'Reject'}
+            </button>
+          </div>
+        </div>)}
+        {allDecided&&<button onClick={submitScaffolds} style={{width:'100%',padding:'12px',background:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:13,fontWeight:700,cursor:'pointer',marginTop:4}}>
+          Confirm decisions
+        </button>}
+      </div>}
+
+      {scaffoldsSubmitted&&<div style={{background:`${GR}12`,border:`1px solid ${GR}33`,borderRadius:12,padding:'12px',fontSize:13,color:GR,marginBottom:12}}>
+        ✓ Scaffold decisions saved
+      </div>}
+
+      {/* Translate again */}
+      <button onClick={()=>{setInput('');setResult(null);setAddedToBank(false);setScaffoldDecisions({});setScaffoldsSubmitted(false)}}
+        style={{width:'100%',padding:'12px',background:'none',border:`1px dashed ${BD}`,borderRadius:12,cursor:'pointer',fontSize:13,color:MU,fontFamily:FONT,marginTop:4}}>
+        Translate something else
+      </button>
+    </div>}
+  </div>
+}
+
+
 // ── Next Gen Constants ────────────────────────────────────────────
 const NG_MODE_KEY='carioca_ng_mode' // 'original'|'nextgen'
 const NG_ONBOARDED_KEY='carioca_ng_onboarded'
@@ -3127,6 +3421,7 @@ export default function App(){
   const[screen,setScreen]=useState('home')
   const[ngMode,setNgMode]=useState(()=>localStorage.getItem(NG_MODE_KEY)||null)
   const[ngScreen,setNgScreen]=useState('ng-home')
+  const[showMore,setShowMore]=useState(false)
   const[loaded,setLoaded]=useState(false)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
 
@@ -3328,20 +3623,42 @@ export default function App(){
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-shuffle'&&<NGShuffle isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       </ErrorBoundary>
-      {/* Next Gen Nav */}
+      {/* Next Gen Nav — 5 primary + More sheet */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
-        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'},{k:'ng-phrase',i:'◇',l:'Phrase'},{k:'ng-map',i:'⊞',l:'Map'},{k:'ng-intelligence',i:'◎',l:'Intel'}].map(t=>
-          <button key={t.k} onClick={()=>setNgScreen(t.k)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 16px',WebkitTapHighlightColor:'transparent'}}>
-            <span style={{fontSize:18,opacity:ngScreen===t.k?1:0.3,filter:ngScreen===t.k?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
-            <span style={{fontSize:10,color:ngScreen===t.k?AC:MU,fontWeight:ngScreen===t.k?700:400}}>{t.l}</span>
+        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'},{k:'ng-phrase',i:'◇',l:'Phrase'}].map(t=>
+          <button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
+            <span style={{fontSize:20,opacity:ngScreen===t.k&&!showMore?1:0.3,filter:ngScreen===t.k&&!showMore?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
+            <span style={{fontSize:10,color:ngScreen===t.k&&!showMore?AC:MU,fontWeight:ngScreen===t.k&&!showMore?700:400}}>{t.l}</span>
           </button>
         )}
-        <button onClick={()=>{localStorage.setItem(NG_MODE_KEY,'original');setNgMode('original')}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 16px',WebkitTapHighlightColor:'transparent'}}>
-          <span style={{fontSize:18,opacity:0.25}}>⊙</span>
-          <span style={{fontSize:10,color:MU}}>Classic</span>
+        <button onClick={()=>setShowMore(m=>!m)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
+          <span style={{fontSize:20,opacity:showMore?1:0.3,filter:showMore?`drop-shadow(0 0 8px ${AC})`:'none'}}>⋯</span>
+          <span style={{fontSize:10,color:showMore?AC:MU,fontWeight:showMore?700:400}}>More</span>
         </button>
       </div>
+
+      {/* More sheet */}
+      {showMore&&<div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:S,border:`1px solid ${BD}`,borderRadius:'20px 20px 0 0',padding:'12px 20px 80px',zIndex:99,animation:'slideUp 0.2s ease'}}>
+        <div style={{width:36,height:4,background:BD,borderRadius:2,margin:'0 auto 16px'}}/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {[
+            {k:'ng-shuffle',i:'◈',l:'Shuffle',d:'Combine patterns'},
+            {k:'ng-say-it',i:'💬',l:'Say It',d:'Carioca translator'},
+            {k:'ng-map',i:'⊞',l:'Map',d:'Scaffold progress'},
+            {k:'ng-intelligence',i:'◎',l:'Intel',d:'Talk to Luna'},
+          ].map(t=><button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
+            <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
+            <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
+            <div style={{fontSize:11,color:MU}}>{t.d}</div>
+          </button>)}
+        </div>
+        <button onClick={()=>{localStorage.setItem(NG_MODE_KEY,'original');setNgMode('original');setShowMore(false)}} style={{width:'100%',marginTop:10,padding:'12px',background:'none',border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,color:MU}}>
+          ⊙ Switch to Classic mode
+        </button>
+      </div>}
     </div>
   }
 
