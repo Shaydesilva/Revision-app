@@ -73,6 +73,26 @@ One attempt = done. Change topic or continue. This rule has no exceptions.`
       ?`LANGUAGE LEVEL: B1. Natural sentences. Full tense range. Colloquial register.`
       :`LANGUAGE LEVEL: B2+. Full natural Carioca. Idioms, humour, cultural references.`
 
+    // ── Error fingerprint — active pressure on known weaknesses ───
+    const topErrors=Object.entries(errorFingerprint||{})
+      .sort(([,a],[,b])=>b-a)
+      .slice(0,3)
+      .map(([k,v])=>`${k.replace(/_/g,' ')} (${v}x)`)
+      .join(', ')
+
+    const errorPressureRule=topErrors
+      ?('ERROR PATTERNS — create natural situations that address these: '+topErrors)
+      :''
+
+    // ── Avoidance pressure ─────────────────────────────────────────
+    const avoidedScaffolds=(scaffoldAvoidance||[])
+      .filter(a=>a.times_in_frontier>=3&&(!a.times_produced||a.times_produced===0))
+      .slice(0,2)
+
+    const avoidancePressureRule=avoidedScaffolds.length
+      ?('AVOIDANCE — Shay avoids these despite knowing them. Engineer a natural opening: '+avoidedScaffolds.map(a=>a.scaffold_id).join(', '))
+      :''
+
     // ── Build controlled list (what she can use freely) ────────
     const controlledPatterns=controlled
       .slice(0,30)
@@ -105,6 +125,9 @@ One attempt = done. Change topic or continue. This rule has no exceptions.`
 
     // ── Personality notes ───────────────────────────────────────
     const personalityBlock=personalityProfile.notes||''
+
+    // ── Active error + avoidance pressure ───────────────────────
+    const activePressure=[errorPressureRule,avoidancePressureRule].filter(Boolean).join('\n\n')
 
     // ── Pick scenario from session history ──────────────────────
     const usedScenarios=Object.keys(profile?.session_history||{})
@@ -147,6 +170,8 @@ ${lunaNotes?`## YOUR NOTES ON SHAY:\n${lunaNotes}`:''}
 
 ## TODAY'S SCENARIO
 ${scenario}
+
+${activePressure?'\n## ACTIVE FOCUS\n'+activePressure:''}
 
 ## NEVER
 - "Great job", "well done", "excellent", "nice try"
