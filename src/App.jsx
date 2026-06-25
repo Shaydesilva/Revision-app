@@ -1811,6 +1811,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       log('Getting microphone…')
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})
       streamRef.current=stream
+      // Immediately disable mic if in PTT mode — prevents audio leaking before DC opens
+      if(pttRef.current) stream.getAudioTracks().forEach(t=>{t.enabled=false})
       log('Mic OK')
 
       const pc=new RTCPeerConnection()
@@ -1880,6 +1882,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const pttOn=e=>{
     e.preventDefault()
     if(!streamRef.current)return
+    // Clear any audio that accumulated before button press
+    if(dcRef.current?.readyState==='open'){
+      dcRef.current.send(JSON.stringify({type:'input_audio_buffer.clear'}))
+    }
     streamRef.current.getAudioTracks().forEach(t=>{t.enabled=true})
   }
   const pttOff=e=>{
@@ -2051,7 +2057,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
 
 // ── NGFlashCards ──────────────────────────────────────────────────
-function NGFlashCards({isOnline,onBack}){
+function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   const[frontier,setFrontier]=useState([])
   const[idx,setIdx]=useState(0)
   const[flipped,setFlipped]=useState(false)
@@ -2067,7 +2073,9 @@ function NGFlashCards({isOnline,onBack}){
     try{
       const data=await ngFetch('ng-frontier')
       if(data.error)throw new Error(data.error)
-      setFrontier(data.frontier||[])
+      // Frontier first, then review cards marked distinctly
+      const reviewCards=(data.review||[]).map(r=>({...r,isReview:true}))
+      setFrontier([...(data.frontier||[]),...reviewCards])
     }catch(e){console.warn('Frontier load failed:',e)}
     setLoading(false)
   }
@@ -2127,16 +2135,32 @@ function NGFlashCards({isOnline,onBack}){
     <div style={{fontSize:52,textAlign:'center',marginBottom:16}}>
       {summary.acquired>0?'🔥':'✓'}
     </div>
-    <div style={{fontSize:24,fontWeight:800,color:TX,textAlign:'center',marginBottom:4}}>Session done</div>
-    <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:28}}>
-      {summary.events} scaffolds reviewed{summary.acquired>0?` · ${summary.acquired} stage${summary.acquired!==1?'s':''} acquired`:''}
+    <div style={{fontSize:24,fontWeight:800,color:TX,textAlign:'center',marginBottom:4}}>
+      {summary.acquired>0?`${summary.acquired} stage${summary.acquired!==1?'s':''} acquired!`:'Session logged'}
     </div>
-    <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:20,fontSize:13,color:MU,lineHeight:1.7}}>
-      Ratings logged. Frontier will update based on your performance.{summary.acquired>0?' New stages entering your frontier.':''}
+    <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:24}}>
+      {summary.events||0} patterns practiced
     </div>
-    <PBtn label="Study again" onClick={()=>{setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({});loadFrontier()}}/>
-    <div style={{height:12}}/>
-    <GBtn label="Back to home" onClick={onBack}/>
+
+    {summary.acquired===0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:20}}>
+      <div style={{fontSize:13,fontWeight:600,color:TX,marginBottom:8}}>Progress recorded ✓</div>
+      <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:12}}>
+        A stage is acquired after 3 sessions with quality ≥ 3. You're building up.
+      </div>
+      <div style={{fontSize:13,color:AC,lineHeight:1.7}}>
+        → Practice these same patterns in Luna or Phrase to acquire them faster.
+      </div>
+    </div>}
+
+    {summary.acquired>0&&<div style={{background:`${GR}12`,border:`1px solid ${GR}33`,borderRadius:16,padding:'18px',marginBottom:20}}>
+      <div style={{fontSize:13,color:GR,lineHeight:1.7}}>
+        {summary.acquired} scaffold stage{summary.acquired!==1?'s':''} acquired and moved to the next level. Your frontier has updated.
+      </div>
+    </div>}
+
+    <PBtn label="Back to home" onClick={onBack}/>
+    <div style={{height:10}}/>
+    <GBtn label="Study again" onClick={()=>{setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({});loadFrontier()}}/>
   </div>
 
   // Find previous stage for anchor display
@@ -2162,11 +2186,13 @@ function NGFlashCards({isOnline,onBack}){
     >
       {/* Stage indicator */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:20}}>
-        <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase'}}>{card.category?.replace(/_/g,' ')}</div>
-        <div style={{marginLeft:'auto',display:'flex',gap:3}}>
-          {[1,2,3,4].map(i=><div key={i} style={{width:10,height:3,borderRadius:2,background:i<=card.stage?AC:BD}}/>)}
+        <div style={{fontSize:11,color:card.isReview?YE:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase'}}>
+          {card.isReview?'Review — '+card.category?.replace(/_/g,' '):card.category?.replace(/_/g,' ')}
         </div>
-        <div style={{fontSize:11,color:AC}}>Stage {card.stage}</div>
+        <div style={{marginLeft:'auto',display:'flex',gap:3}}>
+          {[1,2,3,4].map(i=><div key={i} style={{width:10,height:3,borderRadius:2,background:i<=card.stage?(card.isReview?YE:AC):BD}}/>)}
+        </div>
+        <div style={{fontSize:11,color:card.isReview?YE:AC}}>{card.isReview?'Acquired':'Stage '+card.stage}</div>
       </div>
 
       {/* Front: the scaffold stage */}
@@ -2183,8 +2209,20 @@ function NGFlashCards({isOnline,onBack}){
       </>}
     </div>
 
-    {/* Rating buttons — only show when flipped */}
-    {flipped&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+    {/* Rating buttons */}
+    {flipped&&card.isReview&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <button onClick={()=>rate(1)} style={{background:S,border:`1px solid ${RE}44`,borderRadius:14,padding:'20px',cursor:'pointer',fontFamily:FONT}}>
+        <div style={{fontSize:20,marginBottom:4}}>✗</div>
+        <div style={{fontSize:13,color:RE,fontWeight:600}}>Forgot it</div>
+        <div style={{fontSize:10,color:MU}}>goes back to frontier</div>
+      </button>
+      <button onClick={()=>rate(5)} style={{background:`${GR}08`,border:`1px solid ${GR}44`,borderRadius:14,padding:'20px',cursor:'pointer',fontFamily:FONT}}>
+        <div style={{fontSize:20,marginBottom:4}}>✓</div>
+        <div style={{fontSize:13,color:GR,fontWeight:600}}>Remembered</div>
+        <div style={{fontSize:10,color:MU}}>interval doubles</div>
+      </button>
+    </div>}
+    {flipped&&!card.isReview&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
       <button onClick={()=>rate(1)} style={{background:S,border:`1px solid ${RE}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
         <div style={{fontSize:20,marginBottom:4}}>✗</div>
         <div style={{fontSize:12,color:RE,fontWeight:600}}>Not yet</div>
@@ -2695,6 +2733,8 @@ function ModeSelect({onSelect}){
 function NGHome({isOnline,go,active=true}){
   const[profile,setProfile]=useState(null)
   const[frontier,setFrontier]=useState([])
+  const[review,setReview]=useState([])
+  const[recommendation,setRecommendation]=useState(null)
   const[loading,setLoading]=useState(true)
   const[milestone,setMilestone]=useState(null)
 
@@ -2708,6 +2748,8 @@ function NGHome({isOnline,go,active=true}){
       const data=await ngFetch('ng-frontier')
       if(data.error)throw new Error(data.error)
       setFrontier(data.frontier||[])
+      setReview(data.review||[])
+      setRecommendation(data.recommendation||null)
       setProfile({
         phase:data.phase||1,
         phase_name:data.phase_name||'Survival → Social',
@@ -2779,70 +2821,94 @@ function NGHome({isOnline,go,active=true}){
       </div>
     </div>
 
-    {/* Today's focus */}
-    {frontier.length>0?<div style={{padding:'0 20px'}}>
-      <div style={{fontSize:11,fontWeight:700,color:MU,letterSpacing:2,textTransform:'uppercase',marginBottom:12}}>Today's focus</div>
-
-      {/* Primary item — biggest, most prominent */}
-      <div style={{background:`${AC}10`,border:`1px solid ${AC}33`,borderRadius:18,padding:'20px',marginBottom:12}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div style={{fontSize:11,color:AC,fontWeight:600,textTransform:'uppercase',letterSpacing:1}}>
-            {frontier[0].category?.replace(/_/g,' ')}
-          </div>
-          <div style={{display:'flex',gap:3}}>
-            {[1,2,3,4].map(i=><div key={i} style={{width:12,height:3,borderRadius:2,background:i<=frontier[0].stage?AC:BD}}/>)}
-          </div>
-        </div>
-        <div style={{fontSize:26,fontWeight:800,color:TX,marginBottom:4}}>{frontier[0].pt}</div>
-        <div style={{fontSize:14,color:MU,marginBottom:16}}>{frontier[0].en}</div>
-
-        {/* Progress bar */}
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
-          <div style={{flex:1,height:3,background:BD,borderRadius:2,overflow:'hidden'}}>
-            <div style={{height:'100%',background:AC,width:`${Math.min((frontier[0].practice_count||0)/3*100,100)}%`,borderRadius:2,transition:'width 0.6s ease'}}/>
-          </div>
-          <div style={{fontSize:11,color:MU,whiteSpace:'nowrap'}}>{frontier[0].practice_count||0} of 3 sessions</div>
-        </div>
-        <div style={{fontSize:11,color:MU}}>
-          {(frontier[0].modes_used||[]).length===0?'Not started yet — use Study, Phrase or Luna to begin':
-           (frontier[0].modes_used||[]).length===1?`Used in ${frontier[0].modes_used[0]} — practice in one more mode to acquire`:
-           'Almost acquired — one more strong session'}
+    {/* ── DO THIS NOW — recommendation card ── */}
+    <div style={{padding:'0 20px 16px'}}>
+      {recommendation?<div style={{
+        background:recommendation.priority==='high'?`${AC}12`:`${AC}08`,
+        border:`1px solid ${recommendation.priority==='high'?AC+'44':AC+'22'}`,
+        borderRadius:18,padding:'18px 20px',cursor:'pointer'
+      }} onClick={()=>go(
+        recommendation.action==='luna'?'ng-voice':
+        recommendation.action==='phrase'?'ng-phrase':'ng-study'
+      )}>
+        <div style={{fontSize:10,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>Do this now</div>
+        <div style={{fontSize:18,fontWeight:800,color:TX,marginBottom:6}}>{recommendation.title}</div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.6,marginBottom:14}}>{recommendation.reason}</div>
+        {recommendation.items?.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}}>
+          {recommendation.items.map(item=><span key={item} style={{fontSize:11,color:TX,background:S2,borderRadius:20,padding:'3px 10px',border:`1px solid ${BD}`}}>{item}</span>)}
+        </div>}
+        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:AC,borderRadius:10,padding:'10px 16px'}}>
+          <span style={{fontSize:13,fontWeight:700,color:'#fff'}}>{recommendation.cta} →</span>
         </div>
       </div>
-
-      {/* Secondary frontier items */}
-      {frontier.slice(1,5).map((item,i)=>
-        <div key={item.scaffold_id+'_'+item.stage} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px',marginBottom:8}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:600,color:TX}}>{item.pt}</div>
-              <div style={{fontSize:11,color:MU}}>{item.en}</div>
-            </div>
-            <div style={{fontSize:11,color:(item.practice_count||0)>0?GR:BD,fontWeight:600}}>
-              {(item.practice_count||0)>0?`${item.practice_count}/3 done`:'not started'}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-
-    :<div style={{padding:'0 20px'}}>
-      <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
-        <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:14}}>
+      :<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
+        <div style={{fontSize:13,color:MU,marginBottom:12}}>
           {isOnline?'Computing your frontier…':'Needs connection.'}
         </div>
         <button onClick={loadState} style={{fontSize:12,color:AC,background:`${AC}18`,border:`1px solid ${AC}33`,borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:FONT}}>Retry</button>
+      </div>}
+    </div>
+
+    {/* ── REVIEW DUE — if any ── */}
+    {review.length>0&&<div style={{padding:'0 20px 16px'}}>
+      <div style={{background:S,border:`1px solid ${YE}33`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}
+        onClick={()=>go('ng-study')}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:YE,marginBottom:2}}>Review due — {review.length} stage{review.length!==1?'s':''}</div>
+          <div style={{fontSize:11,color:MU}}>Acquired patterns that need a refresh to stick</div>
+        </div>
+        <div style={{fontSize:20,color:YE}}>→</div>
       </div>
     </div>}
 
-    {/* Actions */}
-    <div style={{padding:'16px 20px 0',display:'flex',flexDirection:'column',gap:10}}>
-      <PBtn label="Talk to Luna" onClick={()=>go('ng-voice')}/>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-        <GBtn label="Study" onClick={()=>go('ng-study')}/>
-        <GBtn label="Phrase" onClick={()=>go('ng-phrase')}/>
-      </div>
-      <GBtn label="Scaffold map →" onClick={()=>go('ng-map')}/>
+    {/* ── FRONTIER LIST ── */}
+    {frontier.length>0&&<div style={{padding:'0 20px'}}>
+      <div style={{fontSize:11,fontWeight:700,color:MU,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>Your frontier</div>
+      {frontier.slice(0,6).map((item,i)=>{
+        const pct=Math.min((item.practice_count||0)/3*100,100)
+        const modeIcons=(item.modes_used||[]).map(m=>m==='flashcard'?'▣':m==='phrase'?'◇':m==='luna'?'◉':'·').join(' ')
+        return<div key={item.scaffold_id+'_'+item.stage}
+          style={{background:i===0?`${AC}08`:S,border:`1px solid ${i===0?AC+'22':BD}`,borderRadius:12,padding:'12px 14px',marginBottom:8,cursor:'pointer'}}
+          onClick={()=>go(
+            !item.has_study?'ng-study':
+            item.has_study&&!item.has_phrase?'ng-phrase':'ng-voice'
+          )}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:6}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:700,color:TX}}>{item.pt}</div>
+              <div style={{fontSize:11,color:MU}}>{item.en}</div>
+            </div>
+            <div style={{fontSize:10,color:MU,marginLeft:8,textAlign:'right'}}>
+              <div>{modeIcons||'not started'}</div>
+              <div style={{marginTop:2}}>{item.practice_count||0}/3</div>
+            </div>
+          </div>
+          <div style={{height:2,background:BD,borderRadius:2,overflow:'hidden'}}>
+            <div style={{height:'100%',background:pct>=100?GR:AC,borderRadius:2,width:`${pct}%`,transition:'width 0.4s ease'}}/>
+          </div>
+        </div>
+      })}
+    </div>}
+
+    {/* ── QUICK NAV ── */}
+    <div style={{padding:'16px 20px 0',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+      <button onClick={()=>go('ng-study')} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 8px',cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
+        <div style={{fontSize:18,marginBottom:4}}>▣</div>
+        <div style={{fontSize:11,color:MU}}>Study</div>
+      </button>
+      <button onClick={()=>go('ng-phrase')} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 8px',cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
+        <div style={{fontSize:18,marginBottom:4}}>◇</div>
+        <div style={{fontSize:11,color:MU}}>Phrase</div>
+      </button>
+      <button onClick={()=>go('ng-map')} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 8px',cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
+        <div style={{fontSize:18,marginBottom:4}}>⊞</div>
+        <div style={{fontSize:11,color:MU}}>Map</div>
+      </button>
+    </div>
+    <div style={{padding:'10px 20px 0'}}>
+      <button onClick={()=>go('ng-field-report')} style={{width:'100%',background:'none',border:`1px dashed ${BD}`,borderRadius:12,padding:'12px',cursor:'pointer',fontSize:12,color:MU,fontFamily:FONT}}>
+        📝 Something happened in real life — file a field report
+      </button>
     </div>
 
     {/* Field report button */}
