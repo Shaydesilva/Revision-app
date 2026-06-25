@@ -78,12 +78,14 @@ Never invent progress. Never give empty encouragement. Be honest.
 == COMPLETE LEARNER STATE ==
 
 Phase: ${profile?.phase||1} — ${profile?.phase_name||'Survival → Social'}
+Total stages controlled: ${(profile?.controlled||[]).length}
+Total events in system: ${(recentScaffoldEvents||[]).length} (last 30 shown)
 Phase progress: ${Math.round((profile?.phase_progress||0)*100)}%
 Total stages controlled: ${controlled.length}
-Total scaffolds with any progress: ${(recentScaffoldEvents||[]).length>0?'active':'not yet started'}
+Sessions logged: ${(recentScaffoldEvents||[]).length} recent events in DB
 
-Current frontier (what he's working on):
-${frontier.map(f=>`- "${f.pt}" (Stage ${f.stage}, urgency ${f.urgency})`).join('\n')||'Not yet computed'}
+Current frontier (what he's actively working on — loaded from profile):
+${frontier.length>0?frontier.map(f=>`- "${f.pt}" [Stage ${f.stage}] — ${f.practice_count||0}/3 sessions, modes: ${(f.modes_used||[]).join(',')||'none'}`).join('\n'):'Frontier not yet computed — user needs to visit Home first'}
 
 Recent session activity:
 ${recentEventsSummary||'No recent events'}
@@ -167,11 +169,11 @@ ${prevIntelSummary||'This is the first intelligence session'}
       }).catch(()=>{})
 
       if(insights){
-        await fetch(`${process.env.URL||''}/.netlify/functions/ng-profile-update`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({update:{last_intelligence_insights:insights,luna_notes:insights}})
-        }).catch(()=>{})
+        // Write insights directly to Supabase — no internal HTTP
+        await sb.from('ng_learner_profile').update({
+          last_intelligence_insights:insights,
+          luna_notes:insights
+        }).eq('user_id',UID).catch(()=>{})
       }
     }
 
