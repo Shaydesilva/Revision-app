@@ -1,6 +1,6 @@
 // ng-session-end.js
-// Runs after every Next Gen session (any mode)
-// Analyses what happened, updates scaffold acquisition, rewrites learner profile
+// Runs after every study/phrase/luna session
+// Logs scaffold events, checks acquisition, updates profile
 
 exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
@@ -10,281 +10,214 @@ exports.handler=async(event)=>{
     const UID='00000000-0000-0000-0000-000000000001'
 
     const body=JSON.parse(event.body||'{}')
-    const{
-      mode,           // flashcard|phrase|luna|shuffle|chat
-      transcript=[],  // [{role,text}] for luna/chat modes
-      events=[],      // [{scaffold_id,stage,quality,produced}] from any mode
-      duration_seconds=0
-    }=body
+    const{mode,transcript=[],events=[],duration_seconds=0}=body
+
+    console.log('ng-session-end: mode=',mode,'events=',events.length,'transcript=',transcript.length)
 
     if(!events.length&&!transcript.length){
-      return{statusCode:200,body:JSON.stringify({ok:true,message:'No events to process'})}
+      return{statusCode:200,body:JSON.stringify({ok:true,message:'No events'})}
     }
 
-    // Load current profile and scaffolds
-    const[{data:profile},{data:scaffolds}]=await Promise.all([
-      sb.from('ng_learner_profile').select('*').eq('user_id',UID).single(),
-      sb.from('ng_scaffolds').select('id,stages,current_stage,base_portuguese,source,context').eq('user_id',UID)
-    ])
+    const now=new Date().toISOString()
 
-    // For Luna/chat modes — analyse transcript with GPT-4o-mini to extract scaffold events
+    // ── Load profile ──────────────────────────────────────────────────
+    const{data:profile}=await sb
+      .from('ng_learner_profile').select('*').eq('user_id',UID).single()
+
+    // ── For Luna sessions — analyse transcript ────────────────────────
     let analysedEvents=[...events]
     let sessionSummary=''
-    let newErrorPatterns={}
     let newLunaNotes=''
+    let newErrorPatterns={}
 
     if(transcript.length&&mode==='luna'){
       const frontier=profile?.frontier||[]
-      const controlled=profile?.controlled||[]
-
-      const frontierList=frontier.map(f=>`${f.scaffold_id}|${f.pt}`).join('\n')
-      const controlledList=controlled.slice(0,20).map(c=>c.scaffold_id).join(', ')
       const transcriptText=transcript.map(t=>`${t.role==='assistant'?'Luna':'Shay'}: ${t.text}`).join('\n')
-
-      const gptRes=await fetch('https://api.openai.com/v1/chat/completions',{
-        method:'POST',
-        headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({
-          model:'gpt-4o-mini',
-          max_tokens:800,
-          temperature:0.1,
-          response_format:{type:'json_object'},
-          messages:[{
-            role:'system',
-            content:`Analyse a Portuguese learning conversation. Return JSON only.
-Frontier scaffolds (what student is working on):
-${frontierList}
-
-Judge production ONLY on whether the pattern appeared naturally and correctly.
-Accept all Carioca contractions. Never penalise missing accents.`
-          },{
-            role:'user',
-            content:`Transcript:\n${transcriptText}\n\nReturn JSON:
-{
-  "scaffoldEvents": [
-    {
-      "scaffold_id": "id from frontier list",
-      "stage": 1,
-      "quality": 1-5,
-      "produced": true/false
-    }
-  ],
-  "errorPatterns": {
-    "ser_estar_confusion": 0,
-    "formal_register": 0,
-    "avoided_conditional": 0
-  },
-  "avoidedScaffolds": ["scaffold_id that was in frontier but never used"],
-  "summary": "2 honest sentences about this session",
-  "lunaNotes": "1 sentence for Luna to remember about this learner"
-}`
-          }]
-        })
-      })
-
-      const gptData=await gptRes.json()
+      const frontierList=frontier.map(f=>`${f.scaffold_id}|${f.pt}`).join('\n')
       try{
+        const gptRes=await fetch('https://api.openai.com/v1/chat/completions',{
+          method:'POST',
+          headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
+          body:JSON.stringify({
+            model:'gpt-4o-mini',max_tokens:600,temperature:0.1,
+            response_format:{type:'json_object'},
+            messages:[
+              {role:'system',content:`Analyse a Portuguese learning conversation. Return JSON only.\nFrontier: ${frontierList}`},
+              {role:'user',content:`Transcript:\n${transcriptText}\n\nReturn JSON:{\"scaffoldEvents\":[{\"scaffold_id\":\"string\",\"stage\":1,\"quality\":1-5,\"produced\":true}],\"errorPatterns\":{},\"summary\":\"string\",\"lunaNotes\":\"string\"}`}
+            ]
+          })
+        })
+        const gptData=await gptRes.json()
         const analysis=JSON.parse(gptData.choices?.[0]?.message?.content||'{}')
-        analysedEvents=[...events,...(analysis.scaffoldEvents||[])]
+        // Combine: validate GPT events against real scaffold IDs to prevent phantoms
+      const gptEvents=analysis.scaffoldEvents||[]
+      const manualKeys=new Set(events.map(e=>`${e.scaffold_id}|${e.stage}`))
+      const{data:realScaffolds}=await sb.from('ng_scaffolds').select('id').eq('user_id',UID)
+      const realIds=new Set((realScaffolds||[]).map(s=>s.id))
+      const uniqueGpt=gptEvents.filter(e=>
+        !manualKeys.has(`${e.scaffold_id}|${e.stage}`)&&realIds.has(e.scaffold_id)
+      )
+      analysedEvents=[...events,...uniqueGpt]
         newErrorPatterns=analysis.errorPatterns||{}
         sessionSummary=analysis.summary||''
         newLunaNotes=analysis.lunaNotes||''
-
-        // Log avoidance directly
-        if(analysis.avoidedScaffolds?.length){
-          // Handled in profile update below
-        }
-      }catch{}
+      }catch(e){console.log('Luna analysis failed:',e.message)}
     }
 
-    // Write all scaffold events to DB
-    const now=new Date().toISOString()
-    if(analysedEvents.length){
-      const eventRows=analysedEvents.map(ev=>({
+    // ── Insert scaffold events ────────────────────────────────────────
+    const eventRows=analysedEvents
+      .filter(ev=>ev.scaffold_id&&ev.stage)
+      .map(ev=>({
         user_id:UID,
         scaffold_id:ev.scaffold_id,
-        stage:ev.stage,
+        stage:Number(ev.stage),
         mode,
-        quality:ev.quality||3,
-        produced:ev.produced||false,
+        quality:Number(ev.quality)||3,
+        produced:Boolean(ev.produced),
         created_at:now
       }))
-      await sb.from('ng_scaffold_events').insert(eventRows).catch(()=>{})
+
+    let eventsInserted=0
+    if(eventRows.length){
+      const{error:insertErr}=await sb.from('ng_scaffold_events').insert(eventRows)
+      if(insertErr){
+        console.log('Insert error:',insertErr.message)
+      }else{
+        eventsInserted=eventRows.length
+        console.log('Inserted',eventsInserted,'events')
+      }
     }
 
-    // Check acquisition — did any stage cross the threshold this session?
-    const newlyAcquired=[]
-    const scaffoldMap={}
-    ;(scaffolds||[]).forEach(s=>{scaffoldMap[s.id]=s})
-
-    // Load recent events for acquisition check
-    const{data:recentEvents}=await sb
+    // ── Load all events for acquisition check ─────────────────────────
+    const{data:allEvents}=await sb
       .from('ng_scaffold_events')
       .select('scaffold_id,stage,mode,quality')
       .eq('user_id',UID)
       .order('created_at',{ascending:false})
-      .limit(500)
+      .limit(1000)
 
-    // Group events by scaffold+stage
-    const stageEvents={}
-    ;(recentEvents||[]).forEach(ev=>{
-      const key=`${ev.scaffold_id}_${ev.stage}`
-      if(!stageEvents[key])stageEvents[key]={total:0,modes:new Set(),qualities:[]}
-      stageEvents[key].total++
-      stageEvents[key].modes.add(ev.mode)
-      stageEvents[key].qualities.push(ev.quality)
+    console.log('Total events in DB:',allEvents?.length||0)
+
+    // ── Group by scaffold+stage ───────────────────────────────────────
+    const stageMap={}
+    ;(allEvents||[]).forEach(ev=>{
+      // Use pipe separator to avoid splitting on underscores in scaffold IDs
+      const key=`${ev.scaffold_id}|${ev.stage}`
+      if(!stageMap[key])stageMap[key]={total:0,modes:new Set(),qualities:[]}
+      stageMap[key].total++
+      stageMap[key].modes.add(ev.mode)
+      stageMap[key].qualities.push(Number(ev.quality))
     })
 
+    // ── Check acquisition ─────────────────────────────────────────────
     const existingControlled=new Set(
-      (profile?.controlled||[]).map(c=>`${c.scaffold_id}_${c.stage}`)
+      (profile?.controlled||[]).map(c=>`${c.scaffold_id}|${c.stage}`)
     )
 
-    Object.entries(stageEvents).forEach(([key,data])=>{
-      if(existingControlled.has(key))return // already controlled
+    const newlyAcquired=[]
+    Object.entries(stageMap).forEach(([key,data])=>{
+      if(existingControlled.has(key))return
       const avgQuality=data.qualities.reduce((a,b)=>a+b,0)/data.qualities.length
-      // Acquisition: 3+ sessions avg quality ≥ 3 (any modes)
-      //           OR: 2+ modes + 2+ sessions + avg quality ≥ 3.5
+      // Acquire after: 3 sessions avgQ≥3, OR 2 modes+2 sessions avgQ≥3.5
       const acquired=(data.total>=3&&avgQuality>=3)||(data.modes.size>=2&&data.total>=2&&avgQuality>=3.5)
       if(acquired){
-        const[scaffoldId,stage]=key.split('_')
-        newlyAcquired.push({
-          scaffold_id:scaffoldId,
-          stage:parseInt(stage),
-          acquired_at:now
-        })
+        // CORRECT split: scaffold_id uses pipe separator
+        const pipeIdx=key.indexOf('|')
+        const scaffoldId=key.substring(0,pipeIdx)
+        const stage=parseInt(key.substring(pipeIdx+1))
+        if(scaffoldId&&!isNaN(stage)){
+          newlyAcquired.push({scaffold_id:scaffoldId,stage,acquired_at:now,review_count:0,last_review:null})
+          console.log('Acquired:',scaffoldId,'stage',stage)
+        }
       }
     })
 
-    // Handle review outcomes — update spaced repetition intervals
-    const reviewEvents=analysedEvents.filter(ev=>ev.isReview)
+    // ── Handle review outcomes ────────────────────────────────────────
     const SR_INTERVALS=[1,3,7,21,60,180]
-    let updatedControlled=(profile?.controlled||[]).slice()
+    let updatedControlled=[...(profile?.controlled||[])]
 
+    // Process review card outcomes
+    const reviewEvents=analysedEvents.filter(ev=>ev.isReview)
     for(const rev of reviewEvents){
-      const idx=updatedControlled.findIndex(c=>c.scaffold_id===rev.scaffold_id&&c.stage===rev.stage)
+      const idx=updatedControlled.findIndex(c=>c.scaffold_id===rev.scaffold_id&&c.stage===Number(rev.stage))
       if(idx>=0){
-        const entry=updatedControlled[idx]
-        const remembered=rev.quality>=4
-        const currentCount=entry.review_count||0
+        const remembered=Number(rev.quality)>=4
         if(remembered){
-          // Interval doubles — advance review count
-          updatedControlled[idx]={
-            ...entry,
-            review_count:Math.min(currentCount+1,SR_INTERVALS.length-1),
-            last_review:now
-          }
+          const count=updatedControlled[idx].review_count||0
+          updatedControlled[idx]={...updatedControlled[idx],review_count:Math.min(count+1,5),last_review:now}
         }else{
-          // Forgot — remove from controlled, back to frontier
-          updatedControlled.splice(idx,1)
+          updatedControlled.splice(idx,1) // back to frontier
         }
       }
     }
 
-    // Add newly acquired stages to controlled
+    // Add newly acquired (avoid duplicates)
+    const controlledKeys=new Set(updatedControlled.map(c=>`${c.scaffold_id}|${c.stage}`))
     for(const acq of newlyAcquired){
-      if(!updatedControlled.find(c=>c.scaffold_id===acq.scaffold_id&&c.stage===acq.stage)){
-        updatedControlled.push({...acq,review_count:0,last_review:null})
+      const k=`${acq.scaffold_id}|${acq.stage}`
+      if(!controlledKeys.has(k)){
+        updatedControlled.push(acq)
+        controlledKeys.add(k)
       }
     }
 
-    // Update profile
-    const profileUpdate={
-      session_history:{
-        last_session:now,
-        last_mode:mode,
-        [`last_${mode}`]:now
-      },
-      luna_notes:newLunaNotes,
-      error_fingerprint:newErrorPatterns,
-      controlled:updatedControlled
+    // ── Write profile ─────────────────────────────────────────────────
+    const currentSession=profile?.session_history||{}
+    const{error:profileErr}=await sb.from('ng_learner_profile').upsert({
+      user_id:UID,
+      controlled:updatedControlled,
+      session_history:{...currentSession,last_session:now,last_mode:mode,[`last_${mode}`]:now},
+      ...(newLunaNotes?{luna_notes:newLunaNotes}:{}),
+      ...(Object.keys(newErrorPatterns).length?{error_fingerprint:{...(profile?.error_fingerprint||{}),...newErrorPatterns}}:{}),
+      version:(profile?.version||0)+1,
+      last_updated:now
+    },{onConflict:'user_id',ignoreDuplicates:false})
+
+    if(profileErr)console.log('Profile write error:',profileErr.message)
+    else console.log('Profile updated, controlled count:',updatedControlled.length)
+
+    // ── Milestones ────────────────────────────────────────────────────
+    const totalControlled=updatedControlled.length
+    if(newlyAcquired.length){
+      const milestones=[]
+      if(totalControlled===1)milestones.push({user_id:UID,milestone_type:'first_stage_acquired',milestone_data:{stage:newlyAcquired[0]},seen:false})
+      if(totalControlled===10)milestones.push({user_id:UID,milestone_type:'ten_stages_controlled',milestone_data:{count:10},seen:false})
+      if(totalControlled===25)milestones.push({user_id:UID,milestone_type:'twenty_five_stages',milestone_data:{count:25},seen:false})
+      if(milestones.length)await sb.from('ng_milestones').insert(milestones).catch(()=>{})
     }
 
-    // Write profile update directly to Supabase
-    const{data:existingProfile}=await sb.from('ng_learner_profile').select('*').eq('user_id',UID).single().catch(()=>({data:null}))
-    if(existingProfile){
-      // Merge controlled additively
-      const existingControlled=existingProfile.controlled||[]
-      const existingIds=new Set(existingControlled.map(c=>`${c.scaffold_id}_${c.stage}`))
-      const mergedControlled=[...existingControlled,...(newlyAcquired.filter(a=>!existingIds.has(`${a.scaffold_id}_${a.stage}`)))]
-      const mergedErrorFP={...(existingProfile.error_fingerprint||{}),...(newErrorPatterns||{})}
-      const mergedNotes=newLunaNotes&&newLunaNotes!==existingProfile.luna_notes
-        ?(existingProfile.luna_notes?`${existingProfile.luna_notes}
-[${new Date().toISOString().slice(0,10)}] ${newLunaNotes}`:newLunaNotes)
-        :existingProfile.luna_notes
-      await sb.from('ng_learner_profile').update({
-        controlled:mergedControlled,
-        error_fingerprint:mergedErrorFP,
-        luna_notes:mergedNotes,
-        session_history:{...(existingProfile.session_history||{}),last_session:now,last_mode:mode,[`last_${mode}`]:now},
-        version:(existingProfile.version||0)+1,
-        last_updated:now
-      }).eq('user_id',UID).catch(()=>{})
-    }
-
-    // Trigger self-extension for newly acquired final stages
-    for(const acquired of newlyAcquired){
-      const scaffold=scaffoldMap[acquired.scaffold_id]
-      if(!scaffold)continue
-      const isFinalStage=acquired.stage===scaffold.stages.length
-      if(isFinalStage){
-        // Fire and forget — generate stage N+1 in background
-        fetch(`/.netlify/functions/ng-self-extend`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({scaffold_id:acquired.scaffold_id})
-        }).catch(()=>{})
-      }
-    }
-
-    // Frontier recomputes on next NGHome/NGFlashCards load
-
-    // Check for milestones
-    const totalControlled=(profile?.controlled||[]).length+newlyAcquired.length
-    await checkMilestones(sb,UID,totalControlled,newlyAcquired,profile?.phase||1)
-
-    // Build progress summary for each scaffold practiced this session
-    const progressByScaffold={}
-    analysedEvents.forEach(ev=>{
-      if(!progressByScaffold[ev.scaffold_id]){
-        progressByScaffold[ev.scaffold_id]={
-          scaffold_id:ev.scaffold_id,
-          sessions_total:(stageEvents[`${ev.scaffold_id}_${ev.stage}`]||{}).total||1,
-          sessions_needed:3
+    // ── Self-extend for final stage acquisitions ──────────────────────
+    if(newlyAcquired.length){
+      const{data:scaffolds}=await sb
+        .from('ng_scaffolds').select('id,stages').eq('user_id',UID)
+        .in('id',newlyAcquired.map(a=>a.scaffold_id))
+      const scaffoldMap={}
+      ;(scaffolds||[]).forEach(s=>{scaffoldMap[s.id]=s})
+      for(const acq of newlyAcquired){
+        const sc=scaffoldMap[acq.scaffold_id]
+        if(sc&&acq.stage===sc.stages?.length){
+          fetch(`/.netlify/functions/ng-self-extend`,{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({scaffold_id:acq.scaffold_id})
+          }).catch(()=>{})
         }
       }
-    })
+    }
 
     return{
       statusCode:200,
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         ok:true,
-        events_processed:analysedEvents.length,
+        events_inserted:eventsInserted,
         newly_acquired:newlyAcquired,
-        progress:Object.values(progressByScaffold),
+        total_controlled:updatedControlled.length,
         summary:sessionSummary
       })
     }
 
   }catch(e){
+    console.error('ng-session-end crash:',e.message)
     return{statusCode:500,body:JSON.stringify({error:e.message})}
-  }
-}
-
-async function checkMilestones(sb,userId,totalControlled,newlyAcquired,phase){
-  const milestones=[]
-  if(newlyAcquired.length>0&&totalControlled===1){
-    milestones.push({type:'first_stage_acquired',data:{stage:newlyAcquired[0]}})
-  }
-  if(totalControlled===10){
-    milestones.push({type:'ten_stages_controlled',data:{count:10}})
-  }
-  if(totalControlled===50){
-    milestones.push({type:'fifty_stages_controlled',data:{count:50}})
-  }
-  if(milestones.length){
-    await sb.from('ng_milestones').insert(
-      milestones.map(m=>({user_id:userId,...m,seen:false}))
-    ).catch(()=>{})
   }
 }
