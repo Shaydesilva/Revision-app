@@ -5,7 +5,29 @@
 exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
-    const{notes='',newCards=[]}=JSON.parse(event.body||'{}')
+    const{notes='',newCards=[],previewOnly=false,approvedScaffolds=[]}=JSON.parse(event.body||'{}')
+
+    // Handle writing pre-approved scaffolds
+    if(approvedScaffolds.length){
+      const{createClient}=require('@supabase/supabase-js')
+      const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
+      const UID='00000000-0000-0000-0000-000000000001'
+      let added=0
+      for(const sc of approvedScaffolds.slice(0,10)){
+        if(!sc.base_portuguese||!sc.stages?.length){continue}
+        const{error}=await sb.from('ng_scaffolds').insert({
+          id:'sc_victor_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+          user_id:UID,
+          base_portuguese:sc.base_portuguese,
+          base_english:sc.base_english||'',
+          stages:sc.stages.map((s,i)=>({stage:i+1,pt:s.pt,en:s.en,acquired:false,acquired_at:null,practice_count:0,modes_used:[]})),
+          current_stage:1,phase:sc.phase||1,category:sc.category||'social_foundation',
+          context:sc.context||'general',cluster:'victor',source:'victor',last_practiced:null
+        })
+        if(!error)added++
+      }
+      return{statusCode:200,body:JSON.stringify({ok:true,added})}
+    }
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
@@ -84,6 +106,15 @@ Return JSON:
     }
 
     const results={newScaffolds:0,extensions:0,summary:analysis.summary||''}
+
+    // If previewOnly, return suggestions without writing
+    if(previewOnly){
+      return{statusCode:200,body:JSON.stringify({
+        ok:true,
+        suggestions:[...(analysis.newScaffolds||[])],
+        summary:analysis.summary||''
+      })}
+    }
 
     // Add new scaffolds
     for(const sc of(analysis.newScaffolds||[]).slice(0,10)){

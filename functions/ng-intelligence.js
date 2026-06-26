@@ -80,6 +80,19 @@ Never invent progress. Never give empty encouragement. Be honest.
 Phase: ${profile?.phase||1} — ${profile?.phase_name||'Survival → Social'}
 Total stages controlled: ${(profile?.controlled||[]).length}
 Total events in system: ${(recentScaffoldEvents||[]).length} (last 30 shown)
+
+COMPUTED METRICS (from metrics snapshot — these are facts, not estimates):
+${profile?.metrics_snapshot?`
+  Stages acquired last 7 days: ${profile.metrics_snapshot.velocity?.stages_7d||0}
+  Stages acquired last 30 days: ${profile.metrics_snapshot.velocity?.stages_30d||0}
+  Velocity trend: ${profile.metrics_snapshot.velocity?.trend||'unknown'}
+  Best mode: ${profile.metrics_snapshot.mode_breakdown?.best_mode||'unknown'}
+  Streak: ${profile.metrics_snapshot.consistency?.streak_days||0} days
+  Sessions last 7 days: ${profile.metrics_snapshot.consistency?.sessions_7d||0}
+  Weakest category: ${profile.metrics_snapshot.weakest_category||'unknown'}
+  This week: ${profile.metrics_snapshot.weekly_narrative||'no data yet'}
+  Top struggles: ${(profile.metrics_snapshot.dont_know?.top_struggles||[]).map(s=>s.base).join(', ')||'none recorded'}
+`:'No metrics snapshot yet — user needs more sessions'}
 Phase progress: ${Math.round((profile?.phase_progress||0)*100)}%
 Total stages controlled: ${controlled.length}
 Sessions logged: ${(recentScaffoldEvents||[]).length} recent events in DB

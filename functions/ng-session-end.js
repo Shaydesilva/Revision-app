@@ -132,6 +132,20 @@ exports.handler=async(event)=>{
       }
     })
 
+    // ── Track struggle patterns + auto failure boost ───────────────────
+    const dontKnowEvents=analysedEvents.filter(ev=>Number(ev.quality)<=1&&ev.mode==='write')
+    if(dontKnowEvents.length){
+      const existingStruggles=profile?.struggle_patterns||{by_scaffold:{},by_category:{},total:0}
+      const byScaffold={...(existingStruggles.by_scaffold||{})}
+      dontKnowEvents.forEach(ev=>{byScaffold[ev.scaffold_id]=(byScaffold[ev.scaffold_id]||0)+1})
+      const currentBoosts={...(profile?.priority_boosts||{})}
+      dontKnowEvents.forEach(ev=>{currentBoosts[ev.scaffold_id]=Math.min((currentBoosts[ev.scaffold_id]||0)+4,20)})
+      await sb.from('ng_learner_profile').update({
+        struggle_patterns:{by_scaffold:byScaffold,total:(existingStruggles.total||0)+dontKnowEvents.length},
+        priority_boosts:currentBoosts
+      }).eq('user_id',UID).catch(e=>console.log('Struggle update:',e.message))
+    }
+
     // ── Handle review outcomes ────────────────────────────────────────
     const SR_INTERVALS=[1,3,7,21,60,180]
     let updatedControlled=[...(profile?.controlled||[])]

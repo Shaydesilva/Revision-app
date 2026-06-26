@@ -10,7 +10,7 @@ exports.handler=async(event)=>{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
 
-    const{spectrum=0.35,speed='normal'}=JSON.parse(event.body||'{}')
+    const{spectrum=0.35,speed='normal',pttMode=true,voice='shimmer'}=JSON.parse(event.body||'{}')
 
     // Load everything Luna needs — one query each
     const[
@@ -28,6 +28,9 @@ exports.handler=async(event)=>{
     ])
 
     const frontier=profile?.frontier||[]
+    const metrics=profile?.metrics_snapshot||null
+    const weeklyNarrative=metrics?.weekly_narrative||''
+    const struggleInfo=metrics?.dont_know?.top_struggles?.slice(0,2).map(s=>s.base).join(', ')||''
     const controlled=profile?.controlled||[]
     const errorFingerprint=profile?.error_fingerprint||{}
     const avoidedPatterns=profile?.avoided_patterns||[]
@@ -127,7 +130,8 @@ One attempt = done. Change topic or continue. This rule has no exceptions.`
     const personalityBlock=personalityProfile.notes||''
 
     // ── Active error + avoidance pressure ───────────────────────
-    const activePressure=[errorPressureRule,avoidancePressureRule].filter(Boolean).join('\n\n')
+    // activePressure: only error patterns — avoidance already covered by avoidanceBlock above
+    const activePressure=[errorPressureRule].filter(Boolean).join('\n\n')
 
     // ── Pick scenario from session history ──────────────────────
     const usedScenarios=Object.keys(profile?.session_history||{})
@@ -185,7 +189,12 @@ ${activePressure?'\n## ACTIVE FOCUS\n'+activePressure:''}
       method:'POST',
       headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
       body:JSON.stringify({
-        session:{type:'realtime',model,instructions,audio:{output:{voice:'shimmer'}}}
+        session:{
+          type:'realtime',model,instructions,
+          audio:{output:{voice:voice||'shimmer'}},
+          // Bake PTT mode in at session creation — prevents mid-hold responses
+          turn_detection:pttMode?{type:'none'}:{type:'server_vad',silence_duration_ms:600,threshold:0.5}
+        }
       })
     })
 
@@ -205,7 +214,8 @@ ${activePressure?'\n## ACTIVE FOCUS\n'+activePressure:''}
         cardMap,
         frontier,
         phase,
-        scenario
+        scenario,
+        ptt_mode_set:pttMode
       })
     }
 

@@ -126,6 +126,14 @@ exports.handler=async(event)=>{
         const avoidance=(profile?.scaffold_avoidance||[]).find(a=>a.scaffold_id===scaffold.id)
         if(avoidance?.times_in_frontier>=3)urgency+=4
 
+        // Priority boost — star or failure-driven
+        const boost=(profile?.priority_boosts||{})[scaffold.id]||0
+        urgency+=boost
+
+        // Struggle penalty — "I don't know" presses
+        const struggles=(profile?.struggle_patterns?.by_scaffold||{})[scaffold.id]||0
+        if(struggles>=2)urgency+=Math.min(struggles*2,8)
+
         frontier.push({
           scaffold_id:scaffold.id,
           base:scaffold.base_portuguese,
@@ -214,6 +222,11 @@ exports.handler=async(event)=>{
       },{onConflict:'user_id'})
       .then(({error})=>{if(error)console.log('Profile write err:',error.message)})
       .catch(e=>console.log('Profile write catch:',e?.message))
+
+    // Fire metrics if stale (> 5 min) or never computed
+    const lastMetrics=profile?.metrics_snapshot?.computed_at
+    const metricsAge=lastMetrics?(Date.now()-new Date(lastMetrics).getTime())/60000:999
+    if(metricsAge>5)fetch('/.netlify/functions/ng-progress-metrics',{method:'POST'}).catch(()=>{})
 
     console.log('ng-frontier: returning',workingFrontier.length,'items, phase',newPhase,'hybrid_eligible',hybridEligibleIds.length)
 
