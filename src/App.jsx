@@ -2158,16 +2158,21 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
           const TEST_TYPES=['retrieval','comprehension','correction','which-is-right']
           const chosenType=TEST_TYPES[Math.floor(Math.random()*TEST_TYPES.length)]
           const targetList=targets.map(t=>`"${t.pt}" (${t.en})`).join(', ')
+          const profile=profileRef.current||{}
+          const errorFP=profile.error_fingerprint?Object.keys(profile.error_fingerprint).slice(0,3).join(', '):'none recorded'
+          const lunaNotesStr=profile.luna_notes?profile.luna_notes.slice(0,120):''
           const injection={
             type:'conversation.item.create',
             item:{role:'system',content:[{type:'input_text',text:`ACTIVATE TEST MODE NOW.
 Test type: ${chosenType}
 Priority targets: ${targetList||'any frontier pattern'}
+Known error patterns: ${errorFP}
+${lunaNotesStr?`Luna notes: ${lunaNotesStr}`:''}
 
 TEST TYPE RULES:
 - retrieval: Ask "Como se diz [X] em português?" using the English of a target
 - comprehension: Ask "O que significa [X]?" or "Se alguém fala [X], o que querem dizer?" using a target
-- correction: Present a sentence with an error and ask "Tem algo errado aqui?" — use the learner's known error patterns
+- correction: Present a sentence with an error and ask "Tem algo errado aqui?" — use the learner's known error patterns (errors: ${errorFP})
 - which-is-right: "Nessa situação, qual é mais natural: [A] ou [B]?" — A is correct Carioca, B is formal/wrong
 
 After their answer: give 1-2 sentence feedback. Be direct. If correct say something like "Isso!" or "Exato!" — if wrong say "Quase" or "Não foi bem" then correct them naturally.
