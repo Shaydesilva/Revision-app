@@ -215,7 +215,8 @@ ${activePressure?'\n## ACTIVE FOCUS\n'+activePressure:''}
         frontier,
         phase,
         scenario,
-        ptt_mode_set:pttMode
+        ptt_mode_set:pttMode,
+        chat_history:profile?.luna_chat_history||[]
       })
     }
 
