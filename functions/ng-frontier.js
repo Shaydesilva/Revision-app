@@ -228,6 +228,18 @@ exports.handler=async(event)=>{
     const metricsAge=lastMetrics?(Date.now()-new Date(lastMetrics).getTime())/60000:999
     if(metricsAge>5)fetch('/.netlify/functions/ng-progress-metrics',{method:'POST'}).catch(()=>{})
 
+    // Daily hybrid generation — fires after 7am Rio time (UTC-3)
+    const nowRio=new Date(Date.now()-3*3600000) // UTC-3
+    const todayRio=nowRio.toISOString().slice(0,10)
+    const lastHybrid=profile?.last_hybrid_date||'2000-01-01'
+    const rioHour=nowRio.getUTCHours()
+    if(rioHour>=7&&lastHybrid<todayRio){
+      fetch('/.netlify/functions/ng-hybrid-generate',{method:'POST'}).catch(()=>{})
+    }
+
+    // Pending hybrids count for map badge
+    const pendingHybrids=profile?.pending_hybrids||[]
+
     console.log('ng-frontier: returning',workingFrontier.length,'items, phase',newPhase,'hybrid_eligible',hybridEligibleIds.length)
 
     return{
@@ -245,7 +257,9 @@ exports.handler=async(event)=>{
         fully_controlled_scaffolds:fullyControlled.length,
         controlled_list:Array.from(profile?.controlled||[]),
         hybrid_eligible_count:hybridEligibleIds.length,
-        hybrid_eligible_ids:hybridEligibleIds
+        hybrid_eligible_ids:hybridEligibleIds,
+        pending_hybrids_count:pendingHybrids.length,
+        pending_hybrids:pendingHybrids
       })
     }
 
