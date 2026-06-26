@@ -1691,7 +1691,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
   // ── Refs — mutable values that don't cause re-renders ──────────────────
   const scrollRef=useRef()
-  const chatEndRef=useRef(null)  const pcRef=useRef(null)
+  const chatEndRef=useRef(null)
+  const pcRef=useRef(null)
   const dcRef=useRef(null)
   const streamRef=useRef(null)
   const audioRef=useRef(null)
@@ -2141,12 +2142,16 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       
     </div>
 
-    {phase==='live'&&<div style={{padding:'6px 20px',flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
+    {(phase==='live'||phase==='idle'&&ngMode)&&<div style={{padding:'6px 20px',flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
 
       {ptt&&<div style={{display:'flex',gap:8}}>
-        <button onTouchStart={pttOn} onTouchEnd={pttOff} onMouseDown={pttOn} onMouseUp={pttOff}
-          style={{flex:3,padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>
-          Hold to talk
+        <button
+          onTouchStart={phase==='idle'&&ngMode?(e=>{e.preventDefault();connect()}):pttOn}
+          onTouchEnd={phase==='idle'&&ngMode?undefined:pttOff}
+          onMouseDown={phase==='idle'&&ngMode?(e=>{e.preventDefault();connect()}):pttOn}
+          onMouseUp={phase==='idle'&&ngMode?undefined:pttOff}
+          style={{flex:3,padding:'14px',border:`1.5px dashed ${phase==='idle'?AC+'44':BD}`,borderRadius:14,background:'transparent',color:phase==='idle'?AC:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>
+          {phase==='idle'?'Tap to start':'Hold to talk'}
         </button>
         {ngMode&&<button onClick={()=>{
           if(!dcRef.current||dcRef.current.readyState!=='open')return
@@ -2203,12 +2208,12 @@ Then return to normal conversation.`}]}
       </div>}
     </div>}
 
-    <div style={{padding:'8px 20px 20px',flexShrink:0}}>
+    {/* Classic mode only: Start talking button */}
+    {!ngMode&&<div style={{padding:'8px 20px 20px',flexShrink:0}}>
       {phase==='idle'&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline}/>}
       {phase==='connecting'&&<PBtn label="Connecting…" disabled/>}
-      
       {phase==='ending'&&<PBtn label="Saving…" disabled/>}
-    </div>
+    </div>}
   </div>
 }
 
