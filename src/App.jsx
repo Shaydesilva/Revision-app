@@ -3188,7 +3188,8 @@ function NGShuffle({isOnline,onBack}){
 }
 
 // ── NGSayIt ───────────────────────────────────────────────────────
-function NGSayIt({isOnline,onBack,onUnlock}){
+function NGSayIt({isOnline,onBack}){
+  const[unlockScaffold,setUnlockScaffold]=useState(null)
   const[input,setInput]=useState('')
   const[loading,setLoading]=useState(false)
   const[result,setResult]=useState(null)
@@ -3255,7 +3256,9 @@ function NGSayIt({isOnline,onBack,onUnlock}){
   const allDecided=result?.suggestions?.length>0&&
     result.suggestions.every((_,i)=>scaffoldDecisions[i]!==undefined)
 
-  return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+  return<>
+  {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
+  <div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
     <div style={{marginBottom:20}}>
       <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:4}}>Say It</div>
       <div style={{fontSize:13,color:MU}}>Type anything. Get the Carioca version.</div>
@@ -3334,7 +3337,7 @@ function NGSayIt({isOnline,onBack,onUnlock}){
       </button>
     </div>}
   </div>
-}
+</>
 
 
 
@@ -4229,7 +4232,7 @@ export default function App(){
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-shuffle'&&<NGShuffle isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-import'&&<NGImport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
-      <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} onUnlock={setUnlockScaffold}/></div>
+      <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       </ErrorBoundary>
       {/* Next Gen Nav — 5 primary + More sheet */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
