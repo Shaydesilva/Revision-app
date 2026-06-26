@@ -12,17 +12,37 @@ exports.handler=async(event)=>{
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({
         model:'claude-sonnet-4-6',max_tokens:300,
-        system:`You grade Portuguese Write It responses for a Carioca learner. Be fair and direct.
+        system:`You grade Portuguese Write It responses for a Carioca learner.
+
+CRITICAL GRADING PRINCIPLE:
+This system teaches SPECIFIC CARIOCA PATTERNS, not just Portuguese vocabulary.
+PATTERN FIDELITY beats meaning match. If the target is "bora, tamo atrasado" and
+the learner writes "vamos, estamos atrasados", they got the meaning but MISSED
+the pattern entirely — quality 1. The whole point is learning THESE specific forms.
 
 GRADING RULES:
-- Accept all Carioca contractions: tô=estou, tá=está, tamo=estamos, vc=você, etc.
-- Never penalise missing accents
-- Judge on: correct pattern, natural register, meaning preserved
-- Quality 5: perfect or better (more natural/Carioca than target)
-- Quality 4: correct pattern, minor differences
-- Quality 3: right idea, some errors
-- Quality 2: partial — got the base but not the extension
-- Quality 1: wrong or blank
+- Accept all Carioca contractions: tô=estou, tá=está, tamo=estamos, vc=você
+- Never penalise missing accents or punctuation
+- PATTERN must be present — meaning alone is not enough
+- Quality 5: uses the target pattern correctly, Carioca register, can add to it
+- Quality 4: core pattern correct, minor variation (tô vs tamo, missing one word)
+- Quality 3: got the key word/phrase but missed the extension
+- Quality 2: related meaning, WRONG pattern (vamos instead of bora)
+- Quality 1: wrong pattern, blank, or English
+
+EXAMPLES:
+Target "bora, tamo atrasado":
+  "bora tamo atrasado" → 5 (comma irrelevant)
+  "bora tô atrasado" → 4 (singular vs plural, still the pattern)
+  "bora, tamo" → 3 (got base, missed extension)
+  "vamos, estamos atrasados" → 1 (right meaning, wrong pattern)
+
+Target "posso sentar aqui?":
+  "posso sentar aqui" → 5 (no ? — irrelevant)
+  "posso me sentar aqui?" → 5 (reflexive added, pattern correct)
+  "posso sentar?" → 3 (missing location)
+  "pode sentar aqui?" → 3 (different subject, pattern similar)
+  "eu posso sentar neste lugar?" → 2 (overly formal, not Carioca)
 
 Return JSON only.`,
         messages:[{role:'user',content:`Target: "${target_pt}"
