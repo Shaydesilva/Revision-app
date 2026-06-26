@@ -10,7 +10,7 @@ exports.handler=async(event)=>{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
     const body=JSON.parse(event.body||'{}')
-    const{count=5,difficulty='easy',action='generate',answer='',words=[]}=body
+    const{count=5,difficulty='easy',coherent=true,action='generate',answer='',words=[]}=body
 
     const stageIndex={easy:0,med:1,hard:2}[difficulty]||0
 
@@ -27,6 +27,7 @@ exports.handler=async(event)=>{
 
       // Build pool: scaffolds with any practiced stage OR controlled OR in frontier
       const practicedScaffolds=new Set((allEvents||[]).map(e=>e.scaffold_id))
+      const controlledSet=controlled // already defined above
       const eligiblePool=(scaffolds||[]).filter(s=>
         practicedScaffolds.has(s.id)||frontierIds.has(s.id)||
         (profile?.controlled||[]).some(c=>c.scaffold_id===s.id)
@@ -39,17 +40,47 @@ exports.handler=async(event)=>{
         })}
       }
 
-      // Shuffle the pool and pick [count] with category diversity
+      // Easy fallback: if no controlled stages, use frontier Stage 1
+      const hasControlled=Object.keys(scaffoldControlledCount||{}).length>0
+
+      // Shuffle pool and pick based on coherent/random mode
       const shuffled=[...eligiblePool].sort(()=>Math.random()-0.5)
       const picked=[]
       const usedCats=new Set()
+      // For coherent mode: pick a dominant category first, then filter
+      const dominantCat=coherent
+        ?(eligiblePool.sort((a,b)=>
+            Object.values(byCat||{}).find(g=>g.some(s=>s.id===b.id))?.length||0 -
+            Object.values(byCat||{}).find(g=>g.some(s=>s.id===a.id))?.length||0
+          )[0]?.category||null)
+        :null
+
       for(const sc of shuffled){
         if(picked.length>=count)break
+        if(coherent&&dominantCat&&sc.category!==dominantCat&&picked.length<Math.ceil(count*0.7))continue
         if(!usedCats.has(sc.category)||picked.length<count){
-          // Get stage text based on difficulty
+          // Stage selection based on difficulty + actual progress
+          // Easy: controlled stages (mastered — warm-up)
+          // Med: in-progress frontier stages (learning edge)
+          // Hard: recently acquired, at risk of fading
           const stages=sc.stages||[]
-          const targetIdx=Math.min(stageIndex,stages.length-1)
-          const targetStage=stages[targetIdx]||stages[0]
+          let targetIdx
+          if(difficulty==='easy'){
+            // Pick lowest controlled stage — comfortable recall
+            const controlledStages=stages.filter((_,i)=>
+              controlledSet.has(sc.id+'|'+(i+1))
+            )
+            targetIdx=controlledStages.length?stages.indexOf(controlledStages[controlledStages.length-1]):0
+          }else if(difficulty==='med'){
+            // Pick first uncontrolled stage — learning edge
+            const firstUncontrolled=stages.findIndex((_,i)=>!controlledSet.has(sc.id+'|'+(i+1)))
+            targetIdx=firstUncontrolled>=0?firstUncontrolled:stages.length-1
+          }else{
+            // Hard: highest controlled stage — recently acquired, needs reinforcement
+            const lastControlled=stages.map((_,i)=>controlled.has(sc.id+'|'+(i+1))?i:-1).filter(i=>i>=0)
+            targetIdx=lastControlled.length?lastControlled[lastControlled.length-1]:Math.min(2,stages.length-1)
+          }
+          const targetStage=stages[Math.max(0,Math.min(targetIdx,stages.length-1))]||stages[0]
           if(!targetStage)continue
           picked.push({
             scaffold_id:sc.id,
@@ -121,6 +152,14 @@ Return JSON only.`,
         created_at:now
       })).filter(r=>r.scaffold_id)
       if(rows.length)await sb.from('ng_scaffold_events').insert(rows).catch(e=>console.log('Events:',e.message))
+
+      // Run acquisition check via ng-session-end (events already inserted)
+      if(rows.length){
+        fetch(`${process.env.URL||''}/.netlify/functions/ng-session-end`,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({mode:'shuffle',events:rows,skip_insert:true,duration_seconds:rows.length*30})
+        }).catch(()=>{})
+      }
 
       return{statusCode:200,headers:{'Content-Type':'application/json'},body:JSON.stringify({ok:true,...ev,events_logged:rows.length})}
     }
