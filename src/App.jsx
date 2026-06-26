@@ -3178,7 +3178,7 @@ function NGShuffle({isOnline,onBack}){
 }
 
 // ── NGSayIt ───────────────────────────────────────────────────────
-function NGSayIt({isOnline,onBack}){
+function NGSayIt({isOnline,onBack,onUnlock}){
   const[input,setInput]=useState('')
   const[loading,setLoading]=useState(false)
   const[result,setResult]=useState(null)
@@ -3237,6 +3237,7 @@ function NGSayIt({isOnline,onBack}){
     const approved=result.suggestions.filter((_,i)=>scaffoldDecisions[i]===true)
     if(approved.length){
       await ngFetch('ng-say-it',{approvedScaffolds:approved})
+      if(onUnlock&&approved[0])onUnlock(approved[0])
     }
     setScaffoldsSubmitted(true)
   }
@@ -4218,7 +4219,7 @@ export default function App(){
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-shuffle'&&<NGShuffle isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-import'&&<NGImport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
-      <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
+      <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} onUnlock={setUnlockScaffold}/></div>
       </ErrorBoundary>
       {/* Next Gen Nav — 5 primary + More sheet */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
