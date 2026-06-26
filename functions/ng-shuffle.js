@@ -41,7 +41,7 @@ exports.handler=async(event)=>{
       }
 
       // Easy fallback: if no controlled stages, use frontier Stage 1
-      const hasControlled=Object.keys(scaffoldControlledCount||{}).length>0
+      const hasControlled=Object.keys(scaffoldControlled||{}).length>0
 
       // Shuffle pool and pick based on coherent/random mode
       const shuffled=[...eligiblePool].sort(()=>Math.random()-0.5)
