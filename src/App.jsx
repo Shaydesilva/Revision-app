@@ -2577,15 +2577,15 @@ function NGPhrase({isOnline,onBack}){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           system:`You generate short Portuguese practice scenarios for Rio de Janeiro learners.
-The scenario must make the target scaffold pattern the NATURAL response.
-Write in English, 2-3 sentences max. Be specific. Set the scene.
-The learner's level: ${target.category} context, Phase ${target.phase}.`,
-          messages:[{role:'user',content:`Target scaffold: "${target.pt}" (${target.en})
-Context: ${target.context}
+The scenario must make BOTH target scaffold patterns the NATURAL response — the learner needs to use both.
+Write in English, 2-3 sentences max. Be specific. Set the scene vividly.
+Context: ${targets.map(t=>t.context).join('/')}, Phase ${target.phase}.`,
+          messages:[{role:'user',content:`Target patterns (learner must use both):
+1. "${target.pt}" (${target.en})
+${targets[1]?`2. "${targets[1].pt}" (${targets[1].en})`:''}
 
-Write a specific Rio scenario where this phrase is the natural response.
-Make it realistic — bar, beach, date, Uber, meeting someone.
-Do NOT include the target phrase. Do NOT give hints. Just set the scene.`}],
+Write a specific Rio scenario (bar, beach, date, Uber, party) where using BOTH phrases feels completely natural.
+Do NOT include the phrases. Do NOT give hints. Just set the scene.`}],
           max_tokens:150
         })
       })
