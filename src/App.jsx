@@ -1715,6 +1715,17 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   useEffect(()=>{phaseRef.current=phase},[phase])
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:'smooth'})},[messages.length])
 
+  // NG mode: auto-connect when navigating to Luna — no button needed
+  useEffect(()=>{
+    if(ngMode&&isOnline&&phaseRef.current==='idle'){
+      // Small delay so component is fully mounted
+      const t=setTimeout(()=>{
+        if(phaseRef.current==='idle')connect()
+      },400)
+      return()=>clearTimeout(t)
+    }
+  },[ngMode,isOnline])
+
   // End session cleanly when user switches tabs / app goes to background
   useEffect(()=>{
     const handleVisibility=()=>{
@@ -1942,7 +1953,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         // Enable transcription (turn_detection already set at session creation)
         const suMsg={type:'session.update',session:{
           modalities:['text','audio'],
-          input_audio_transcription:{model:'whisper-1'}
+          input_audio_transcription:{model:'whisper-1'},
+          turn_detection:sesDataRef.current?.pttMode
+            ?{type:'none'}
+            :{type:'server_vad',silence_duration_ms:600,threshold:0.5}
         }}
         dc.send(JSON.stringify(suMsg))
         log('Sent session.update: transcription enabled')
@@ -2151,7 +2165,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
           onMouseDown={phase==='idle'&&ngMode?(e=>{e.preventDefault();connect()}):pttOn}
           onMouseUp={phase==='idle'&&ngMode?undefined:pttOff}
           style={{flex:3,padding:'14px',border:`1.5px dashed ${phase==='idle'?AC+'44':BD}`,borderRadius:14,background:'transparent',color:phase==='idle'?AC:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>
-          {phase==='idle'?'Tap to start':'Hold to talk'}
+          {phase==='connecting'?'Connecting…':phase==='idle'?'Starting…':'Hold to talk'}
         </button>
         {ngMode&&<button onClick={()=>{
           if(!dcRef.current||dcRef.current.readyState!=='open')return
