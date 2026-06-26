@@ -1678,6 +1678,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const testInProgress=useRef(false)
   const frontierRef=useRef([])
   const profileRef=useRef(null)
+  const sesDataRef=useRef(null)
   const[summary,setSummary]=useState(null)
   const[wordMenu,setWordMenu]=useState(null)
   const[textInput,setTextInput]=useState('')
@@ -1881,6 +1882,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const connect=useCallback(async()=>{
     if(!isOnline||phaseRef.current!=='idle')return
     phaseRef.current='connecting'
+    testInProgress.current=false // reset from any previous session
     setPhase('connecting');setStatus('Connecting…')
     setMessages([]);setLiveText('')
     transcriptRef.current=[];lunaLiveRef.current='';shouldEndRef.current=false
@@ -1894,6 +1896,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       const res=await fetch(`/.netlify/functions/${endpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessionBody)})
       const data=await res.json()
       if(!res.ok)throw new Error(data.error||`Server ${res.status}`)
+      sesDataRef.current=data // store for dc.onopen (frontier, chat_history, phase etc)
       const token=data.value
       const model=data.model||'gpt-realtime-mini'
       log(`Token: ${token?'OK':'MISSING'} | Model: ${model}`)
@@ -2089,29 +2092,35 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       </div>
     </div>}
 
-    {/* Spectrum bar */}
-    <div style={{padding:'12px 20px 8px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
+    {/* Luna header — minimal in NG mode, full controls in Classic */}
+    {!ngMode&&<div style={{padding:'12px 20px 8px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👋 Amigo</span>
         <input type="range" min={0} max={1} step={0.01} value={spectrum} onChange={e=>setSpectrum(parseFloat(e.target.value))} style={{flex:1,height:3,WebkitAppearance:'none',appearance:'none',borderRadius:2,background:`linear-gradient(to right,${GR} 0%,${AC} ${spectrum*100}%,${BD} ${spectrum*100}%)`,outline:'none',cursor:'pointer'}}/>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👩‍🏫 Tutor</span>
         <button onClick={()=>setShowDebug(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,opacity:0.3,padding:'2px',lineHeight:1,flexShrink:0}}>⚙️</button>
       </div>
-      <div style={{textAlign:'center',fontSize:10,color:MU,marginTop:4}}>{spectrum<0.25?'Flowing — corrections minimal':spectrum<0.6?'Balanced — gentle nudges':'Active correction mode'}</div>
-      <div style={{display:'flex',gap:8,marginTop:10,justifyContent:'center'}}>
-        {[['slow','🐢 Slow'],['normal','⚡ Normal']].map(([k,l])=><button key={k} onClick={()=>setSpeed(k)} style={{padding:'6px 18px',borderRadius:20,background:speed===k?AC:S2,color:speed===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:FONT}}>{l}</button>)}
+      <div style={{display:'flex',gap:8,marginTop:8,justifyContent:'center'}}>
+        {[['slow','🐢 Slow'],['normal','⚡ Normal']].map(([k,l])=><button key={k} onClick={()=>setSpeed(k)} style={{padding:'6px 14px',borderRadius:20,background:speed===k?AC:S2,color:speed===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:FONT}}>{l}</button>)}
       </div>
-      {ngMode&&<div style={{display:'flex',gap:6,marginTop:8,justifyContent:'center'}}>
-        {['shimmer','echo','nova','onyx'].map(v=><button key={v} onClick={()=>{setLunaVoice(v);localStorage.setItem('luna_voice',v)}} style={{padding:'5px 12px',background:lunaVoice===v?AC:S2,border:`1px solid ${lunaVoice===v?AC:BD}`,borderRadius:20,color:lunaVoice===v?'#fff':MU,fontFamily:FONT,fontSize:10,fontWeight:lunaVoice===v?700:400,cursor:'pointer',textTransform:'capitalize'}}>{v}</button>)}
-      </div>}
-    </div>
+    </div>}
+    {ngMode&&<div style={{padding:'8px 16px',borderBottom:`1px solid ${BD}`,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <div style={{fontSize:12,color:MU}}>Luna</div>
+      <div style={{display:'flex',gap:6,alignItems:'center'}}>
+        {['shimmer','echo','nova','onyx'].map(v=><button key={v} onClick={()=>{setLunaVoice(v);localStorage.setItem('luna_voice',v)}}
+          style={{padding:'4px 10px',background:lunaVoice===v?AC:S2,border:`1px solid ${lunaVoice===v?AC:BD}`,borderRadius:20,color:lunaVoice===v?'#fff':MU,fontFamily:FONT,fontSize:10,cursor:'pointer'}}>
+          {v}
+        </button>)}
+        <button onClick={()=>setShowDebug(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,opacity:0.3,padding:'2px',lineHeight:1}}>⚙️</button>
+      </div>
+    </div>}
 
     {/* Chat feed */}
     <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8}}>
-      {messages.length===0&&phase==='idle'&&<div style={{textAlign:'center',padding:'60px 20px 0'}}>
-        <div style={{fontSize:40,marginBottom:16}}>🎙️</div>
-        <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:8}}>Talk to Luna</div>
-        <div style={{fontSize:13,color:MU,lineHeight:1.7}}>Your Carioca conversation partner.<br/>Tap any word to translate or add to your deck.</div>
+      {messages.length===0&&phase==='idle'&&<div style={{textAlign:'center',padding:'80px 20px 0'}}>
+        <div style={{fontSize:40,marginBottom:16,opacity:0.4}}>◉</div>
+        <div style={{fontSize:16,fontWeight:700,color:TX,marginBottom:6}}>{ngMode?'Luna':'Talk to Luna'}</div>
+        <div style={{fontSize:13,color:MU,lineHeight:1.7}}>{ngMode?'Your Carioca friend. Tap PTT to start talking.':'Your Carioca conversation partner.'}</div>
       </div>}
       {messages.length>20&&<button onClick={()=>{}} style={{background:'none',border:`1px solid ${BD}`,borderRadius:8,color:MU,fontSize:11,cursor:'pointer',fontFamily:FONT,padding:'6px 12px',margin:'0 auto 8px',display:'block'}}>↑ Load older</button>}
       {messages.map(msg=><VoiceBubble key={msg.id} msg={msg} cardMap={cardMap} translateWord={translateWord} onWordPress={(w,t,s,x,y)=>setWordMenu({word:w,translation:t,sentence:s,x,y})}/>)}
@@ -2290,9 +2299,25 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
 
   const confirmWriteResult=()=>{
     if(!writeResult)return
-    rate(writeResult.quality||2)
-    setWriteAnswer('')
-    setWriteResult(null)
+    // Don't re-log if this was a reveal (dontKnow already logged quality=1)
+    if(!writeResult.revealed){
+      rate(writeResult.quality||2)
+    }else{
+      // Just advance to next card without logging again
+      setWriteAnswer('')
+      setWriteResult(null)
+      if(idx>=frontier.length-1){
+        setDone(true)
+        if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
+      }else{
+        setIdx(i=>i+1)
+        setFlipped(false)
+        setWriteAnswer('')
+        setWriteResult(null)
+        if(cardAudio){cardAudio.pause();cardAudio.currentTime=0}
+        setCardPlaying(false)
+      }
+    }
   }
 
   const dontKnow=()=>{
@@ -2345,6 +2370,8 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   }
 
   const endEarly=()=>{
+    setWriteAnswer('')
+    setWriteResult(null)
     if(sessionEvents.length===0){onBack();return}
     setDone(true)
     if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
@@ -2495,31 +2522,15 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
         <div style={{fontSize:10,color:MU}}>interval doubles</div>
       </button>
     </div>}
-    {flipped&&!card.isReview&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-      <button onClick={()=>rate(1)} style={{background:S,border:`1px solid ${RE}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
-        <div style={{fontSize:20,marginBottom:4}}>✗</div>
-        <div style={{fontSize:12,color:RE,fontWeight:600}}>Not yet</div>
-        <div style={{fontSize:10,color:MU}}>couldn't recall it</div>
+    {flipped&&!card.isReview&&<div style={{display:'flex',gap:10}}>
+      <button onClick={()=>rate(1)} style={{flex:1,padding:'16px',background:S,border:`1px solid ${RE}33`,borderRadius:14,cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
+        <div style={{fontSize:22,marginBottom:4}}>✗</div>
+        <div style={{fontSize:13,color:RE,fontWeight:700}}>Not yet</div>
       </button>
-      <button onClick={()=>rate(2)} style={{background:S,border:`1px solid ${YE}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
-        <div style={{fontSize:20,marginBottom:4}}>△</div>
-        <div style={{fontSize:12,color:YE,fontWeight:600}}>Recognised it</div>
-        <div style={{fontSize:10,color:MU}}>understood, couldn't say</div>
+      <button onClick={()=>rate(4)} style={{flex:1,padding:'16px',background:`${GR}10`,border:`1px solid ${GR}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
+        <div style={{fontSize:22,marginBottom:4}}>✓</div>
+        <div style={{fontSize:13,color:GR,fontWeight:700}}>Got it</div>
       </button>
-      <button onClick={()=>rate(4)} style={{background:S,border:`1px solid ${GR}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
-        <div style={{fontSize:20,marginBottom:4}}>✓</div>
-        <div style={{fontSize:12,color:GR,fontWeight:600}}>Said it</div>
-        <div style={{fontSize:10,color:MU}}>produced it naturally</div>
-      </button>
-      <button onClick={()=>rate(5)} style={{background:`${AC}08`,border:`1px solid ${AC}44`,borderRadius:14,padding:'16px',cursor:'pointer',fontFamily:FONT}}>
-        <div style={{fontSize:20,marginBottom:4}}>★</div>
-        <div style={{fontSize:12,color:AC,fontWeight:600}}>Went beyond</div>
-        <div style={{fontSize:10,color:MU}}>said something richer</div>
-      </button>
-    </div>}
-
-    {!flipped&&<div style={{textAlign:'center',marginTop:16}}>
-      <GBtn label="Skip this one" onClick={()=>{setIdx(i=>Math.min(i+1,frontier.length-1));setFlipped(false)}}/>
     </div>}
   </div>
 }
