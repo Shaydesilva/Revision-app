@@ -497,7 +497,7 @@ function CardStatPopup({card,onClose}){
   </div>
 }
 
-function Nav({screen,go,due}){
+function Nav({screen,go,due,onSwitchNG}){
   const tabs=[{k:'home',i:'⊙',l:'Home'},{k:'study',i:'▣',l:'Study',b:due},{k:'phrase',i:'◈',l:'Phrase'},{k:'voice',i:'◉',l:'Voice'},{k:'bank',i:'☰',l:'Bank'}]
   return<div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${S}f0`,borderTop:`1px solid ${BD}`,display:'flex',padding:'8px 0 22px',backdropFilter:'blur(16px)',zIndex:100}}>
     {tabs.map(t=><button key={t.k} onClick={()=>go(t.k)} style={{flex:1,background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'4px 0',position:'relative',fontFamily:FONT}} onMouseDown={()=>SND.init()}>
@@ -505,6 +505,10 @@ function Nav({screen,go,due}){
       <span style={{fontSize:10,color:screen===t.k?AC:MU,fontWeight:screen===t.k?700:400}}>{t.l}</span>
       {t.b>0&&<div style={{position:'absolute',top:2,right:'15%',width:7,height:7,background:RE,borderRadius:'50%'}}/>}
     </button>)}
+    {onSwitchNG&&<button onClick={onSwitchNG} style={{flex:0.8,background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'4px 0',fontFamily:FONT}}>
+      <span style={{fontSize:20,opacity:0.5}}>◈</span>
+      <span style={{fontSize:9,color:MU}}>Next Gen</span>
+    </button>}
   </div>
 }
 
@@ -1617,30 +1621,46 @@ function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
   const[showTl,setShowTl]=useState(false)
   const[tl,setTl]=useState(null)
   const[loading,setLoading]=useState(false)
-  const isLuna=msg.role==='luna'
+  const isLuna=msg.role==='assistant'||msg.role==='luna'
+  const evalBorder=msg.testEval==='pass'?GR:msg.testEval==='fail'?RE:null
+
   const tap=async()=>{
+    if(!isLuna)return
     if(showTl){setShowTl(false);return}
     setShowTl(true)
     if(!tl){setLoading(true);const r=await translateWord(msg.text);setTl(r?.translation||'—');setLoading(false)}
   }
+
   const words=txt=>txt.split(/(\s+)/).map((tok,i)=>{
-    if(/^\s+$/.test(tok))return<span key={i}> </span>
-    const clean=tok.replace(/^["""'(]+/g,'').replace(/[.,!?;:"""')—\-]+$/g,'')
+    if(/^\s+$/.test(tok))return React.createElement('span',{key:i},' ')
+    const clean=tok.replace(/^["“”'(]+/g,'').replace(/[.,!?;:“”')—-]+$/g,'')
     const pt=!!clean&&isPtWord(clean)
-    return<span key={i}
-      onClick={pt?async e=>{e.stopPropagation();const r=await translateWord(clean);const rc=e.target.getBoundingClientRect();onWordPress(clean,r?.translation||'',msg.text,rc.left,Math.max(rc.top-80,60))}:undefined}
-      style={{color:pt?YE:TX,fontWeight:pt?600:400,background:pt?`${YE}15`:'transparent',borderRadius:pt?4:0,padding:pt?'0 2px':0,cursor:pt?'pointer':'default',display:'inline'}}
-    >{tok}</span>
+    return React.createElement('span',{key:i,
+      onClick:pt?async e=>{e.stopPropagation();const r=await translateWord(clean);const rc=e.target.getBoundingClientRect();onWordPress(clean,r?.translation||'',msg.text,rc.left,Math.max(rc.top-80,60))}:undefined,
+      style:{color:pt?YE:TX,fontWeight:pt?600:400,background:pt?(YE+'15'):'transparent',borderRadius:pt?4:0,padding:pt?'0 2px':0,cursor:pt?'pointer':'default',display:'inline'}
+    },tok)
   })
+
+  if(msg.role==='system'){
+    return<div style={{textAlign:'center',padding:'8px 0',fontSize:11,color:MU,opacity:0.5}}>{msg.text}</div>
+  }
+
   return<div style={{display:'flex',flexDirection:'column',alignItems:isLuna?'flex-start':'flex-end',marginBottom:4}}>
-    <div onClick={tap} style={{maxWidth:'85%',padding:'12px 16px',borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',background:isLuna?S:AC,border:isLuna?`1px solid ${BD}`:'none',fontSize:15,lineHeight:1.6,color:isLuna?TX:'#fff',cursor:'pointer'}}>
-      {isLuna?words(msg.text):msg.text}
+    <div onClick={tap} style={{
+      maxWidth:'82%',padding:'10px 14px',
+      borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',
+      background:isLuna?S:'#7c6ef7',
+      border:evalBorder?('2px solid '+evalBorder):isLuna?('1px solid '+BD):'none',
+      fontSize:15,lineHeight:1.6,color:isLuna?TX:'#fff',
+      cursor:isLuna?'pointer':'default',wordBreak:'break-word'
+    }}>
+      {isLuna?words(msg.text):<span>{msg.text}</span>}
+      {evalBorder&&<span style={{marginLeft:8,fontSize:12}}>{msg.testEval==='pass'?'✓':'✗'}</span>}
     </div>
-    {showTl&&<div style={{maxWidth:'85%',marginTop:4,padding:'8px 12px',background:S2,border:`1px solid ${BD}`,borderRadius:10,fontSize:13,color:MU,animation:'fadeIn 0.2s ease'}}>{loading?<Spinner size={12}/>:tl}</div>}
-    <div style={{fontSize:10,color:MU,marginTop:2,opacity:0.4}}>{isLuna?'tap to translate':'tap for Portuguese'}</div>
+    {showTl&&<div style={{maxWidth:'82%',marginTop:4,padding:'8px 12px',background:S2,border:('1px solid '+BD),borderRadius:10,fontSize:13,color:MU}}>{loading?React.createElement(Spinner,{size:12}):tl}</div>}
+    {isLuna&&!showTl&&<div style={{fontSize:10,color:MU,marginTop:2,opacity:0.3}}>tap word to translate</div>}
   </div>
 }
-
 function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   // ── State ──────────────────────────────────────────────────────────────
   const[phase,setPhase]=useState('idle')
@@ -1654,6 +1674,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const[dotMode,setDotMode]=useState('')
   const[ptt,setPtt]=useState(true)
   const[lunaVoice,setLunaVoice]=useState(()=>localStorage.getItem('luna_voice')||'shimmer')
+  const[testResult,setTestResult]=useState(null) // null|'pass'|'fail'
+  const testInProgress=useRef(false)
+  const frontierRef=useRef([])
+  const profileRef=useRef(null)
   const[summary,setSummary]=useState(null)
   const[wordMenu,setWordMenu]=useState(null)
   const[textInput,setTextInput]=useState('')
@@ -1666,7 +1690,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
   // ── Refs — mutable values that don't cause re-renders ──────────────────
   const scrollRef=useRef()
-  const pcRef=useRef(null)
+  const chatEndRef=useRef(null)  const pcRef=useRef(null)
   const dcRef=useRef(null)
   const streamRef=useRef(null)
   const audioRef=useRef(null)
@@ -1687,6 +1711,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   useEffect(()=>{speedRef.current=speed},[speed])
   useEffect(()=>{pttRef.current=ptt},[ptt])
   useEffect(()=>{phaseRef.current=phase},[phase])
+  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:'smooth'})},[messages.length])
 
   // End session cleanly when user switches tabs / app goes to background
   useEffect(()=>{
@@ -1731,6 +1756,17 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     setPhase('ending');setStatus('Saving session…')
     cleanup()
     if(!tr.length){phaseRef.current='idle';setPhase('idle');setElapsed(0);return}
+    // Save chat history to profile (persistent across sessions)
+    if(ngMode){
+      setMessages(prev=>{
+        const toSave=prev.filter(m=>m.role!=='system').slice(-50)
+        fetch('/.netlify/functions/ng-profile-update',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({update:{luna_chat_history:toSave}})
+        }).catch(()=>{})
+        return prev
+      })
+    }
     try{
       const endEndpoint=ngMode?'ng-session-end':'luna-session-end'
       const res=await fetch(`/.netlify/functions/${endEndpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ngMode?{mode:'luna',transcript:tr,duration_seconds:dur}:{transcript:tr,duration_seconds:dur})})
@@ -1741,7 +1777,9 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       setSummary({summary:'Session complete.',score:0,boostWords:[],struggleWords:[],newCardsAdded:[]})
     }
     phaseRef.current='done';setPhase('done')
-  },[cleanup,onRateMultiple])
+    // In NG mode: auto-reset after brief pause so chat stays accessible
+    if(ngMode){setTimeout(()=>{phaseRef.current='idle';setPhase('idle')},1500)}
+  },[cleanup,onRateMultiple,ngMode])
 
   // ── Event handler — assigned every render so always fresh ─────────────
   onEventRef.current=(ev)=>{
@@ -1763,7 +1801,16 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         setLiveText('')
         if(text){
           transcriptRef.current.push({role:'assistant',text})
-          setMessages(prev=>[...prev,{role:'luna',text,id:Date.now()}])
+          // Detect test evaluation from this Luna message
+          let testEval=undefined
+          if(testInProgress.current==='answered'){
+            const lc=text.toLowerCase()
+            const passed=lc.includes('isso')||lc.includes('exato')||lc.includes('perfeito')||lc.includes('correto')||lc.includes('muito bem')||lc.includes('certo')
+            const failed=lc.includes('quase')||lc.includes('errado')||lc.includes('não foi')||lc.includes('tente')
+            if(passed){testEval='pass';testInProgress.current=false}
+            else if(failed){testEval='fail';testInProgress.current=false}
+          }
+          setMessages(prev=>[...prev,{role:'luna',text,id:Date.now(),testEval}])
         }
         setDotMode('listen')
         setStatus(pttRef.current?'Hold to talk':'Listening…')
@@ -1810,6 +1857,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
             if(text){
               transcriptRef.current.push({role:'user',text})
               setMessages(prev=>[...prev,{role:'user',text,id:Date.now()}])
+              // If test in progress, user just answered — mark waiting for Luna eval
+              if(testInProgress.current)testInProgress.current='answered'
             }
           }
         }
@@ -1869,6 +1918,18 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
       dc.onopen=()=>{
         log('Data channel open — sending session.update…')
+        // Store frontier + profile context for Test Me injections
+        frontierRef.current=sesDataRef.current?.frontier||[]
+        profileRef.current=sesDataRef.current
+        // Load persisted chat history
+        const history=sesDataRef.current?.chat_history||[]
+        if(history.length){
+          setMessages(prev=>[
+            {role:'system',text:'— previous session —',id:'sep-'+Date.now()},
+            ...history.slice(-20),
+            ...prev
+          ])
+        }
         phaseRef.current='live';setPhase('live')
         setDotMode('listen');setStatus(pttRef.current?'Hold to talk':'Listening…')
         startTimeRef.current=Date.now()
@@ -1987,7 +2048,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   },[onAddCard])
 
   // ── Done screen ────────────────────────────────────────────────────────
-  if(phase==='done'&&summary)return<div style={{padding:'40px 24px 100px',animation:'up 0.4s ease'}}>
+  if(phase==='done'&&summary&&!ngMode)return<div style={{padding:'40px 24px 100px',animation:'up 0.4s ease'}}>
     <div style={{fontSize:52,textAlign:'center',marginBottom:16}}>{(summary.score||0)>=75?'🔥':(summary.score||0)>=50?'💪':'📚'}</div>
     <div style={{fontSize:24,fontWeight:800,color:TX,textAlign:'center',marginBottom:4}}>Session done</div>
     <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:24}}>{fmtTime(elapsed)}</div>
@@ -2040,6 +2101,9 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       <div style={{display:'flex',gap:8,marginTop:10,justifyContent:'center'}}>
         {[['slow','🐢 Slow'],['normal','⚡ Normal']].map(([k,l])=><button key={k} onClick={()=>setSpeed(k)} style={{padding:'6px 18px',borderRadius:20,background:speed===k?AC:S2,color:speed===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:FONT}}>{l}</button>)}
       </div>
+      {ngMode&&<div style={{display:'flex',gap:6,marginTop:8,justifyContent:'center'}}>
+        {['shimmer','echo','nova','onyx'].map(v=><button key={v} onClick={()=>{setLunaVoice(v);localStorage.setItem('luna_voice',v)}} style={{padding:'5px 12px',background:lunaVoice===v?AC:S2,border:`1px solid ${lunaVoice===v?AC:BD}`,borderRadius:20,color:lunaVoice===v?'#fff':MU,fontFamily:FONT,fontSize:10,fontWeight:lunaVoice===v?700:400,cursor:'pointer',textTransform:'capitalize'}}>{v}</button>)}
+      </div>}
     </div>
 
     {/* Chat feed */}
@@ -2049,7 +2113,9 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         <div style={{fontSize:18,fontWeight:700,color:TX,marginBottom:8}}>Talk to Luna</div>
         <div style={{fontSize:13,color:MU,lineHeight:1.7}}>Your Carioca conversation partner.<br/>Tap any word to translate or add to your deck.</div>
       </div>}
+      {messages.length>20&&<button onClick={()=>{}} style={{background:'none',border:`1px solid ${BD}`,borderRadius:8,color:MU,fontSize:11,cursor:'pointer',fontFamily:FONT,padding:'6px 12px',margin:'0 auto 8px',display:'block'}}>↑ Load older</button>}
       {messages.map(msg=><VoiceBubble key={msg.id} msg={msg} cardMap={cardMap} translateWord={translateWord} onWordPress={(w,t,s,x,y)=>setWordMenu({word:w,translation:t,sentence:s,x,y})}/>)}
+      <div ref={chatEndRef}/>
       {liveText&&<div style={{alignSelf:'flex-start',maxWidth:'85%'}}>
         <div style={{padding:'12px 16px',borderRadius:'18px 18px 18px 4px',background:S,border:`1px solid ${BD}`,fontSize:15,lineHeight:1.6,color:MU,fontStyle:'italic'}}>
           {liveText}<span style={{display:'inline-block',width:7,height:13,background:AC,borderRadius:1,marginLeft:3,animation:'pulse 0.7s ease-in-out infinite',verticalAlign:'middle'}}/>
@@ -2063,12 +2129,49 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       <span style={{fontSize:13,color:MU,flex:1}}>{status}</span>
       {phase==='live'&&<span style={{fontSize:12,color:MU,fontVariantNumeric:'tabular-nums',fontFamily:'monospace'}}>{fmtTime(elapsed)}</span>}
       {phase==='live'&&<button onClick={togglePtt} style={{fontSize:11,color:ptt?GR:MU,background:ptt?`${GR}18`:S2,border:`1px solid ${ptt?GR:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT,flexShrink:0}}>{ptt?'Hold to talk':'Auto'}</button>}
-      {phase==='live'&&<button onClick={()=>setShowTextInput(v=>!v)} style={{fontSize:11,color:showTextInput?AC:MU,background:showTextInput?`${AC}18`:S2,border:`1px solid ${showTextInput?AC:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT,flexShrink:0}}>⌨️</button>}
+      
     </div>
 
     {phase==='live'&&<div style={{padding:'6px 20px',flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
-      {ptt&&<button onTouchStart={pttOn} onTouchEnd={pttOff} onMouseDown={pttOn} onMouseUp={pttOff} style={{width:'100%',padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>Hold to talk</button>}
-      {showTextInput&&<div style={{display:'flex',gap:8,alignItems:'center'}}>
+
+      {ptt&&<div style={{display:'flex',gap:8}}>
+        <button onTouchStart={pttOn} onTouchEnd={pttOff} onMouseDown={pttOn} onMouseUp={pttOff}
+          style={{flex:3,padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>
+          Hold to talk
+        </button>
+        {ngMode&&<button onClick={()=>{
+          if(!dcRef.current||dcRef.current.readyState!=='open')return
+          // Build test injection from frontier + profile context
+          const frontier=frontierRef.current||[]
+          const stagnant=frontier.filter(f=>(f.practice_count||0)>=5&&!f.has_luna).slice(0,3)
+          const recentFrontier=frontier.slice(0,3)
+          const targets=stagnant.length?stagnant:recentFrontier
+          const TEST_TYPES=['retrieval','comprehension','correction','which-is-right']
+          const chosenType=TEST_TYPES[Math.floor(Math.random()*TEST_TYPES.length)]
+          const targetList=targets.map(t=>`"${t.pt}" (${t.en})`).join(', ')
+          const injection={
+            type:'conversation.item.create',
+            item:{role:'system',content:[{type:'input_text',text:`ACTIVATE TEST MODE NOW.
+Test type: ${chosenType}
+Priority targets: ${targetList||'any frontier pattern'}
+
+TEST TYPE RULES:
+- retrieval: Ask "Como se diz [X] em português?" using the English of a target
+- comprehension: Ask "O que significa [X]?" or "Se alguém fala [X], o que querem dizer?" using a target
+- correction: Present a sentence with an error and ask "Tem algo errado aqui?" — use the learner's known error patterns
+- which-is-right: "Nessa situação, qual é mais natural: [A] ou [B]?" — A is correct Carioca, B is formal/wrong
+
+After their answer: give 1-2 sentence feedback. Be direct. If correct say something like "Isso!" or "Exato!" — if wrong say "Quase" or "Não foi bem" then correct them naturally.
+Then return to normal conversation.`}]}
+          }
+          testInProgress.current=true
+          dcRef.current.send(JSON.stringify(injection))
+          dcRef.current.send(JSON.stringify({type:'response.create'}))
+        }} style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
+          Testa aí →
+        </button>}
+      </div>}
+      {phase==='live'&&<div style={{display:'flex',gap:8,alignItems:'center'}}>
         <input
           value={textInput}
           onChange={e=>setTextInput(e.target.value)}
@@ -2089,7 +2192,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     <div style={{padding:'8px 20px 20px',flexShrink:0}}>
       {phase==='idle'&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline}/>}
       {phase==='connecting'&&<PBtn label="Connecting…" disabled/>}
-      {phase==='live'&&<PBtn label="End session" onClick={endSession} color={`${RE}cc`}/>}
+      
       {phase==='ending'&&<PBtn label="Saving…" disabled/>}
     </div>
   </div>
@@ -2107,31 +2210,35 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   const[sessionEvents,setSessionEvents]=useState([])
   const[done,setDone]=useState(false)
   const[summary,setSummary]=useState({})
-  const[studyMode,setStudyMode]=useState('smart') // smart|flip|write
   const[writeAnswer,setWriteAnswer]=useState('')
   const[writeResult,setWriteResult]=useState(null)
   const[writeLoading,setWriteLoading]=useState(false)
   const[cardAudio,setCardAudio]=useState(null)
   const[cardPlaying,setCardPlaying]=useState(false)
+  const audioCache=useRef({}) // text → base64 audio, pre-generated
 
-  // Determine if a card should be flip or write
+  // Smart mode only: first exposure = flip, subsequent = write, review = write
   const getCardMode=(card)=>{
     if(!card)return'flip'
-    if(card.isReview)return'write' // review always write
-    if(studyMode==='flip')return'flip'
-    if(studyMode==='write')return'write'
-    // Smart: first exposure = flip, subsequent = write
+    if(card.isReview)return'write'
     return(card.practice_count||0)===0?'flip':'write'
   }
 
   const playCardAudio=async(text)=>{
-    if(cardPlaying)return
+    if(cardPlaying||!text)return
+    setCardPlaying(true)
     try{
-      setCardPlaying(true)
-      const data=await ngFetch('ng-tts',{text,voice:'nova'})
-      if(data.audio){
-        const audio=new Audio('data:audio/mp3;base64,'+data.audio)
+      // Check cache first — should already be there from pre-generation
+      let audioData=audioCache.current[text]
+      if(!audioData){
+        const data=await ngFetch('ng-tts',{text,voice:'nova'})
+        audioData=data.audio
+        if(audioData)audioCache.current[text]=audioData
+      }
+      if(audioData){
+        const audio=new Audio('data:audio/mp3;base64,'+audioData)
         audio.onended=()=>setCardPlaying(false)
+        audio.onerror=()=>setCardPlaying(false)
         setCardAudio(audio)
         audio.play()
       }else setCardPlaying(false)
@@ -2145,9 +2252,19 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     try{
       const data=await ngFetch('ng-frontier')
       if(data.error)throw new Error(data.error)
-      // Frontier first, then review cards marked distinctly
       const reviewCards=(data.review||[]).map(r=>({...r,isReview:true}))
-      setFrontier([...(data.frontier||[]),...reviewCards])
+      const allCards=[...(data.frontier||[]),...reviewCards]
+      setFrontier(allCards)
+      // Pre-generate TTS for all cards in parallel — silent, best-effort
+      if(isOnline&&allCards.length){
+        const texts=[...new Set(allCards.map(c=>c.pt).filter(Boolean))]
+        Promise.all(texts.slice(0,12).map(async text=>{
+          try{
+            const r=await ngFetch('ng-tts',{text,voice:'nova'})
+            if(r.audio)audioCache.current[text]=r.audio
+          }catch{}
+        })).catch(()=>{})
+      }
     }catch(e){console.warn('Frontier load failed:',e)}
     setLoading(false)
   }
@@ -2179,19 +2296,29 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   }
 
   const dontKnow=()=>{
-    // Log as quality 1, fire failure boost, move card to end
-    rate(1)
-    setWriteAnswer('')
-    setWriteResult(null)
-    // Fire failure boost
-    if(card&&isOnline)ngFetch('ng-priority-boost',{scaffold_id:card.scaffold_id,boost_type:'failure'}).catch(()=>{})
+    // Show the answer first — learning moment — then rate and advance
+    if(card){
+      setWriteResult({
+        quality:1,
+        correct:false,
+        feedback:"No problem — see it, say it, move on.",
+        carioca_correction:card.pt,
+        what_was_right:'',
+        revealed:true
+      })
+      if(isOnline)ngFetch('ng-priority-boost',{scaffold_id:card.scaffold_id,boost_type:'failure'}).catch(()=>{})
+      if(isOnline)ngFetch('ng-session-end',{mode:'write',events:[{
+        scaffold_id:card.scaffold_id,stage:card.stage,quality:1,produced:false,mode:'write',isReview:card.isReview||false
+      }],duration_seconds:15}).catch(()=>{})
+    }
   }
 
   // Fire each rating immediately — pick up and put down anytime
   const rate=async(quality)=>{
     if(!card)return
     const produced=quality>=4
-    const event={scaffold_id:card.scaffold_id,stage:card.stage,quality,produced,mode:'flashcard',isReview:card.isReview||false}
+    const cardMode=getCardMode(card)
+    const event={scaffold_id:card.scaffold_id,stage:card.stage,quality,produced,mode:cardMode==='write'?'write':'flashcard',isReview:card.isReview||false}
     const newEvents=[...sessionEvents,event]
     setSessionEvents(newEvents)
 
@@ -2278,14 +2405,6 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
       <button onClick={endEarly} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0,opacity:0.6}}>Done</button>
     </div>
 
-    {/* Mode selector */}
-    <div style={{display:'flex',gap:6,marginBottom:12}}>
-      {['smart','flip','write'].map(m=><button key={m} onClick={()=>{setStudyMode(m);setWriteAnswer('');setWriteResult(null)}}
-        style={{flex:1,padding:'7px 0',background:studyMode===m?AC:S,border:`1px solid ${studyMode===m?AC:BD}`,borderRadius:8,color:studyMode===m?'#fff':MU,fontFamily:FONT,fontSize:11,fontWeight:studyMode===m?700:400,cursor:'pointer',textTransform:'capitalize'}}>
-        {m==='smart'?'◈ Smart':m==='flip'?'▣ Flip':'✍ Write'}
-      </button>)}
-    </div>
-
     {/* Progress bar */}
     <div style={{height:2,background:BD,borderRadius:2,marginBottom:20,overflow:'hidden'}}>
       <div style={{height:'100%',background:AC,borderRadius:2,width:`${((idx)/frontier.length)*100}%`,transition:'width 0.3s ease'}}/>
@@ -2339,25 +2458,25 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
               {writeLoading?'Checking…':'Submit'}
             </button>
             <button onClick={dontKnow}
-              style={{flex:1,padding:'12px',background:S2,border:`1px solid ${RE}33`,borderRadius:12,color:RE,fontFamily:FONT,fontSize:12,cursor:'pointer'}}>
-              I don't know
+              style={{flex:1,padding:'12px',background:S2,border:`1px solid ${MU}33`,borderRadius:12,color:MU,fontFamily:FONT,fontSize:12,cursor:'pointer'}}>
+              Reveal
             </button>
           </div>
         </>:<>
-          <div style={{background:writeResult.correct?`${GR}12`:`${RE}12`,border:`1px solid ${writeResult.correct?GR+'33':RE+'22'}`,borderRadius:12,padding:'12px',marginBottom:10}}>
-            <div style={{fontSize:13,fontWeight:700,color:writeResult.correct?GR:RE,marginBottom:4}}>
-              {writeResult.correct?`✓ Quality ${writeResult.quality}/5`:`✗ Quality ${writeResult.quality}/5`}
+          <div style={{background:writeResult.revealed?`${MU}12`:writeResult.correct?`${GR}12`:`${RE}12`,border:`1px solid ${writeResult.revealed?MU+'22':writeResult.correct?GR+'33':RE+'22'}`,borderRadius:12,padding:'12px',marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:700,color:writeResult.revealed?MU:writeResult.correct?GR:RE,marginBottom:4}}>
+              {writeResult.revealed?'The answer':'Graded: '+writeResult.quality+'/5'}
             </div>
-            <div style={{fontSize:13,color:MU,lineHeight:1.6,marginBottom:writeResult.carioca_correction?8:0}}>
+            {writeResult.feedback&&<div style={{fontSize:13,color:MU,lineHeight:1.6,marginBottom:writeResult.carioca_correction?8:0}}>
               {writeResult.feedback}
-            </div>
-            {writeResult.carioca_correction&&<div style={{fontSize:13,color:AC,fontWeight:600,marginTop:6}}>
+            </div>}
+            {writeResult.carioca_correction&&<div style={{fontSize:20,fontWeight:800,color:AC,marginTop:6,lineHeight:1.4}}>
               {writeResult.carioca_correction}
             </div>}
           </div>
           <button onClick={confirmWriteResult}
-            style={{width:'100%',padding:'12px',background:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:13,fontWeight:700,cursor:'pointer'}}>
-            Continue →
+            style={{width:'100%',padding:'12px',background:writeResult.revealed?MU:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:13,fontWeight:700,cursor:'pointer'}}>
+            {writeResult.revealed?'Got it — next →':'Continue →'}
           </button>
         </>}
       </div>
@@ -2434,7 +2553,11 @@ function NGPhrase({isOnline,onBack}){
     if(!fList.length){setPhase('done');return}
     // Pick a frontier item — rotate through them using explicit round number
     const round=forRound!==undefined?forRound:roundNum
-    const target=fList[round%fList.length]
+    // Pick 2 frontier items for richer scenarios
+    const target1=fList[round%fList.length]
+    const target2=fList[(round+Math.floor(fList.length/2))%fList.length]
+    const target=target1 // primary target for events
+    const targets=[target1,target2].filter((t,i,arr)=>t&&arr.findIndex(x=>x.scaffold_id===t.scaffold_id)===i)
     setTargetScaffold(target)
     setPhase('loading')
     try{
@@ -2616,6 +2739,9 @@ function NGScaffoldMap({isOnline,onBack}){
   const[loading,setLoading]=useState(true)
   const[selected,setSelected]=useState(null)
   const[starredScaffolds,setStarredScaffolds]=useState(new Set())
+  const[pendingHybrids,setPendingHybrids]=useState([])
+  const[showHybridPanel,setShowHybridPanel]=useState(false)
+  const[unlockScaffold,setUnlockScaffold]=useState(null)
 
   useEffect(()=>{load()},[])
 
@@ -2639,6 +2765,7 @@ function NGScaffoldMap({isOnline,onBack}){
       // Load starred scaffolds from profile
       const boosts=profileData?.priority_boosts||{}
       setStarredScaffolds(new Set(Object.keys(boosts).filter(id=>boosts[id]>0)))
+      setPendingHybrids(frontierData.pending_hybrids||[])
       if(scaffoldData?.length)setScaffolds(scaffoldData)
     }catch(e){console.warn('Map load:',e)}
     setLoading(false)
@@ -2680,12 +2807,33 @@ function NGScaffoldMap({isOnline,onBack}){
   return<div style={{padding:'52px 0 100px',animation:'up 0.4s ease'}}>
 
     {/* Header */}
+    {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
+    {showHybridPanel&&<HybridApprovalPanel
+      pending={pendingHybrids}
+      onClose={()=>setShowHybridPanel(false)}
+      onApprove={async(approved)=>{
+        setShowHybridPanel(false)
+        for(const sc of approved){
+          await ngFetch('ng-import-scaffolds',{approvedScaffolds:[{...sc,is_hybrid:true,can_hybridize:false}]}).catch(()=>{})
+        }
+        await ngFetch('ng-profile-update',{update:{pending_hybrids:[]}}).catch(()=>{})
+        setPendingHybrids([])
+        if(approved.length)setUnlockScaffold(approved[0])
+      }}
+      onReject={()=>{}}
+    />}
     <div style={{padding:'0 20px 20px',display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Back</button>
       <div style={{flex:1}}>
         <div style={{fontSize:18,fontWeight:800,color:TX}}>Scaffold Map</div>
         <div style={{fontSize:12,color:MU,marginTop:2}}>{totalControlled} of {totalStages} stages controlled</div>
       </div>
+      {pendingHybrids.length>0&&<button onClick={()=>setShowHybridPanel(true)}
+        style={{position:'relative',background:`${YE}15`,border:`1px solid ${YE}44`,borderRadius:10,padding:'7px 12px',cursor:'pointer',fontFamily:FONT,display:'flex',alignItems:'center',gap:5,flexShrink:0}}>
+        <span style={{fontSize:13}}>◈</span>
+        <span style={{fontSize:11,color:YE,fontWeight:700}}>{pendingHybrids.length} new</span>
+        <div style={{position:'absolute',top:-4,right:-4,width:8,height:8,background:RE,borderRadius:'50%'}}/>
+      </button>}
     </div>
 
     {/* Overall progress bar */}
@@ -2849,6 +2997,7 @@ function NGShuffle({isOnline,onBack}){
   const[phase,setPhase]=useState('setup') // setup|loading|challenge|result|done
   const[count,setCount]=useState(5)
   const[difficulty,setDifficulty]=useState('easy')
+  const[coherentMode,setCoherentMode]=useState(true) // coherent=same category, false=random
   const[words,setWords]=useState([])
   const[challenge,setChallenge]=useState(null)
   const[answer,setAnswer]=useState('')
@@ -2859,7 +3008,7 @@ function NGShuffle({isOnline,onBack}){
     if(!isOnline)return
     setPhase('loading')
     try{
-      const data=await ngFetch('ng-shuffle',{count,difficulty,action:'generate'})
+      const data=await ngFetch('ng-shuffle',{count,difficulty,coherent:coherentMode,action:'generate'})
       if(!data.ok){setPhase('setup');alert(data.error||'Could not load patterns');return}
       setWords(data.words||[])
       setChallenge(data.challenge||{})
@@ -2913,6 +3062,23 @@ function NGShuffle({isOnline,onBack}){
       </div>
     </div>
 
+    {/* Coherent vs Random */}
+    <div style={{marginBottom:20}}>
+      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>Pattern selection</div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={()=>setCoherentMode(true)}
+          style={{flex:1,padding:'12px',background:coherentMode?`${AC}15`:S,border:`1px solid ${coherentMode?AC+'44':BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,textAlign:'left'}}>
+          <div style={{fontSize:12,fontWeight:700,color:coherentMode?AC:TX}}>Coherent</div>
+          <div style={{fontSize:11,color:MU}}>Same category — forms natural sentences</div>
+        </button>
+        <button onClick={()=>setCoherentMode(false)}
+          style={{flex:1,padding:'12px',background:!coherentMode?`${AC}15`:S,border:`1px solid ${!coherentMode?AC+'44':BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,textAlign:'left'}}>
+          <div style={{fontSize:12,fontWeight:700,color:!coherentMode?AC:TX}}>Random</div>
+          <div style={{fontSize:11,color:MU}}>Mixed — harder creative challenge</div>
+        </button>
+      </div>
+    </div>
+
     <PBtn label={isOnline?"Let's go →":'Needs connection'} onClick={start} disabled={!isOnline}/>
 
     {sessionResults.length>0&&<div style={{marginTop:20,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px'}}>
@@ -2936,17 +3102,15 @@ function NGShuffle({isOnline,onBack}){
       {challenge?.hint&&<div style={{fontSize:11,color:MU}}>💡 {challenge.hint}</div>}
     </div>
 
-    {/* Patterns to use */}
+    {/* Patterns to use — EN only, recall the PT from memory */}
     <div style={{marginBottom:16}}>
-      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>Use all of these</div>
+      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>Express these in Portuguese</div>
+      <div style={{fontSize:11,color:MU,opacity:0.6,marginBottom:8}}>Recall the Carioca form — don't write the English</div>
       {words.map((w,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:S,border:`1px solid ${BD}`,borderRadius:10,marginBottom:6}}>
         <div style={{width:20,height:20,borderRadius:'50%',background:AC,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
           <span style={{fontSize:10,color:'#fff',fontWeight:700}}>{i+1}</span>
         </div>
-        <div>
-          <div style={{fontSize:14,fontWeight:600,color:TX}}>{w.pt}</div>
-          <div style={{fontSize:11,color:MU}}>{w.en}</div>
-        </div>
+        <div style={{fontSize:14,fontWeight:600,color:TX}}>{w.en}</div>
       </div>)}
     </div>
 
@@ -2984,6 +3148,13 @@ function NGShuffle({isOnline,onBack}){
     {result.patterns_missed?.length>0&&<div style={{background:S,border:`1px solid ${RE}33`,borderRadius:14,padding:'14px',marginBottom:12}}>
       <div style={{fontSize:11,color:RE,fontWeight:600,marginBottom:6}}>Patterns missed</div>
       {result.patterns_missed.map((p,i)=><div key={i} style={{fontSize:13,color:MU,marginBottom:2}}>· {p}</div>)}
+    </div>}
+
+    {words.length>0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',marginBottom:12}}>
+      <div style={{fontSize:11,color:MU,marginBottom:6}}>The patterns (Portuguese):</div>
+      {words.map((w,i)=><div key={i} style={{fontSize:13,color:TX,marginBottom:2}}>
+        <span style={{color:MU}}>{i+1}. </span>{w.pt}<span style={{color:MU,fontSize:11}}> — {w.en}</span>
+      </div>)}
     </div>}
 
     <div style={{display:'flex',gap:10}}>
@@ -3140,6 +3311,237 @@ function NGSayIt({isOnline,onBack}){
         Translate something else
       </button>
     </div>}
+  </div>
+}
+
+
+
+// ── NGImport — Victor's notes import for Next Gen ──────────────────
+function NGImport({isOnline,onBack}){
+  const[pasted,setPasted]=useState('')
+  const[loading,setLoading]=useState(false)
+  const[suggestions,setSuggestions]=useState([])
+  const[decisions,setDecisions]=useState({})
+  const[submitted,setSubmitted]=useState(false)
+  const[phase,setPhase]=useState('input') // input|review|done
+
+  const analyse=async()=>{
+    if(!pasted.trim()||!isOnline)return
+    setLoading(true)
+    try{
+      const data=await ngFetch('ng-import-scaffolds',{notes:pasted.trim(),newCards:[],previewOnly:true})
+      setSuggestions(data.suggestions||[])
+      setDecisions({})
+      setSubmitted(false)
+      setPhase(data.suggestions?.length?'review':'done')
+    }catch(e){console.warn('Import error:',e)}
+    setLoading(false)
+  }
+
+  const confirm=async()=>{
+    const approved=suggestions.filter((_,i)=>decisions[i]===true)
+    if(approved.length){
+      await ngFetch('ng-import-scaffolds',{approvedScaffolds:approved}).catch(()=>{})
+    }
+    setSubmitted(true)
+    setPhase('done')
+  }
+
+  const allDecided=suggestions.length>0&&suggestions.every((_,i)=>decisions[i]!==undefined)
+
+  if(phase==='input')return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{marginBottom:20}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:16}}>← Back</button>
+      <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:4}}>Victor's Notes</div>
+      <div style={{fontSize:13,color:MU,lineHeight:1.6}}>Paste your lesson notes. Claude will detect scaffold patterns and ask you to approve each one before adding to your bank.</div>
+    </div>
+    <textarea
+      value={pasted}
+      onChange={e=>setPasted(e.target.value)}
+      placeholder={"Paste today's lesson notes here…\n\nBora — let's go\nTamo atrasado — we're late\n…"}
+      style={{width:'100%',minHeight:200,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',color:TX,fontSize:14,outline:'none',resize:'none',fontFamily:FONT,lineHeight:1.7,marginBottom:12}}
+    />
+    <PBtn label={loading?'Analysing…':'Analyse notes →'} onClick={analyse} disabled={!pasted.trim()||loading||!isOnline}/>
+    {loading&&<div style={{textAlign:'center',padding:'20px 0'}}><Spinner size={20}/><div style={{color:MU,fontSize:12,marginTop:8}}>Detecting patterns…</div></div>}
+  </div>
+
+  if(phase==='review')return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+    <button onClick={()=>setPhase('input')} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:16}}>← Back</button>
+    <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:4}}>{suggestions.length} pattern{suggestions.length!==1?'s':''} detected</div>
+    <div style={{fontSize:13,color:MU,marginBottom:20}}>Approve the ones you want in your scaffold bank. Nothing adds without your OK.</div>
+    {suggestions.map((sc,i)=><div key={i} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',marginBottom:10}}>
+      <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:2}}>{sc.base_portuguese}</div>
+      <div style={{fontSize:12,color:MU,marginBottom:8}}>{sc.base_english||''}</div>
+      {sc.stages?.length>0&&<div style={{marginBottom:10}}>
+        {sc.stages.slice(0,3).map((st,j)=><div key={j} style={{fontSize:11,color:MU,paddingLeft:8,borderLeft:`2px solid ${BD}`,marginBottom:3}}>
+          Stage {st.stage||j+1}: {st.pt}
+        </div>)}
+      </div>}
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={()=>setDecisions(d=>({...d,[i]:true}))}
+          style={{flex:1,padding:'8px',background:decisions[i]===true?`${GR}20`:S2,border:`1px solid ${decisions[i]===true?GR+'44':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===true?GR:TX,fontWeight:600}}>
+          {decisions[i]===true?'✓ Add to bank':'Add to bank'}
+        </button>
+        <button onClick={()=>setDecisions(d=>({...d,[i]:false}))}
+          style={{flex:1,padding:'8px',background:decisions[i]===false?`${RE}12`:S2,border:`1px solid ${decisions[i]===false?RE+'33':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===false?RE:MU}}>
+          {decisions[i]===false?'✗ Skip':'Skip'}
+        </button>
+      </div>
+    </div>)}
+    {allDecided&&<PBtn label="Confirm decisions" onClick={confirm}/>}
+    <button onClick={()=>{setDecisions({});suggestions.forEach((_,i)=>setDecisions(d=>({...d,[i]:false})));confirm()}}
+      style={{width:'100%',marginTop:10,padding:'12px',background:'none',border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,color:MU}}>
+      Skip all
+    </button>
+  </div>
+
+  if(phase==='done')return<div style={{padding:'60px 24px',textAlign:'center',animation:'up 0.3s ease'}}>
+    <div style={{fontSize:48,marginBottom:16}}>✓</div>
+    <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:8}}>
+      {submitted?`${suggestions.filter((_,i)=>decisions[i]===true).length} patterns added`:'No patterns detected'}
+    </div>
+    <div style={{fontSize:13,color:MU,marginBottom:24}}>
+      {submitted?'They\'ve entered your scaffold bank and will appear in your frontier.':'Try pasting more detailed lesson notes with example phrases.'}
+    </div>
+    <PBtn label="Import more notes" onClick={()=>{setPasted('');setSuggestions([]);setDecisions({});setPhase('input')}}/>
+  </div>
+
+  return null
+}
+
+
+
+// ── Unlock Animation ──────────────────────────────────────────────────
+// Full-screen cutscene when a scaffold is approved/unlocked
+function ScaffoldUnlockAnimation({scaffold,onComplete}){
+  const[phase,setPhase]=useState('fade-in') // fade-in|reveal|map|glow|fade-out
+  useEffect(()=>{
+    const t1=setTimeout(()=>setPhase('reveal'),400)
+    const t2=setTimeout(()=>setPhase('map'),1000)
+    const t3=setTimeout(()=>setPhase('glow'),1600)
+    const t4=setTimeout(()=>setPhase('fade-out'),3200)
+    const t5=setTimeout(()=>onComplete&&onComplete(),3700)
+    return()=>[t1,t2,t3,t4,t5].forEach(clearTimeout)
+  },[])
+
+  const phaseColor={'social_foundation':'#7c6ef7','dating_register':'#f97066','personality_humour':'#34d399','deep_fluency':'#fbbf24'}
+  const color=phaseColor[scaffold?.category]||AC
+
+  return<div style={{
+    position:'fixed',inset:0,zIndex:500,
+    background:`rgba(7,7,10,${phase==='fade-out'?0:0.95})`,
+    display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+    transition:'background 0.5s ease',
+    fontFamily:FONT
+  }}>
+    {/* Unlock label */}
+    <div style={{
+      fontSize:11,color:color,fontWeight:700,letterSpacing:3,textTransform:'uppercase',
+      marginBottom:16,opacity:phase==='fade-in'?0:1,transition:'opacity 0.5s ease 0.3s'
+    }}>New pattern unlocked</div>
+
+    {/* Scaffold text */}
+    <div style={{
+      fontSize:28,fontWeight:900,color:'#fff',textAlign:'center',padding:'0 32px',
+      lineHeight:1.3,marginBottom:8,
+      opacity:phase==='fade-in'?0:1,
+      transform:phase==='fade-in'?'scale(0.8)':'scale(1)',
+      transition:'all 0.5s ease 0.3s'
+    }}>{scaffold?.base_portuguese}</div>
+    <div style={{
+      fontSize:14,color:MU,marginBottom:40,
+      opacity:phase==='fade-in'?0:1,transition:'opacity 0.5s ease 0.5s'
+    }}>{scaffold?.base_english}</div>
+
+    {/* Map cell animation */}
+    {(phase==='map'||phase==='glow'||phase==='fade-out')&&<div style={{
+      position:'relative',width:80,height:80,
+      opacity:phase==='fade-out'?0:1,transition:'opacity 0.5s ease'
+    }}>
+      {/* Particle sparks */}
+      {[0,1,2,3,4,5,6,7].map(i=><div key={i} style={{
+        position:'absolute',
+        width:4,height:4,borderRadius:'50%',
+        background:color,
+        top:'50%',left:'50%',
+        transform:`rotate(${i*45}deg) translateX(${phase==='glow'?30:0}px)`,
+        opacity:phase==='glow'?0:1,
+        transition:`all 0.6s ease ${i*0.05}s`
+      }}/>)}
+      {/* Cell */}
+      <div style={{
+        width:'100%',height:'100%',borderRadius:16,
+        background:`${color}20`,border:`2px solid ${color}`,
+        display:'flex',alignItems:'center',justifyContent:'center',
+        transform:phase==='map'?'scale(0)':'scale(1)',
+        boxShadow:phase==='glow'?`0 0 40px ${color}88,0 0 80px ${color}44`:'none',
+        transition:'all 0.5s cubic-bezier(0.34,1.56,0.64,1)'
+      }}>
+        <div style={{fontSize:10,color,fontWeight:700,textAlign:'center',padding:4,lineHeight:1.3}}>
+          {scaffold?.base_portuguese?.slice(0,12)}
+        </div>
+      </div>
+    </div>}
+
+    {/* Stage dots */}
+    {phase!=='fade-in'&&<div style={{
+      display:'flex',gap:6,marginTop:20,
+      opacity:phase==='fade-out'?0:1,transition:'opacity 0.3s ease'
+    }}>
+      {[1,2,3,4].map(i=><div key={i} style={{
+        width:8,height:8,borderRadius:'50%',
+        background:i===1?color:BD,
+        transform:i===1&&phase==='glow'?'scale(1.3)':'scale(1)',
+        transition:'all 0.3s ease'
+      }}/>)}
+    </div>}
+
+    {/* Tap to continue */}
+    {phase==='glow'&&<div onClick={()=>onComplete&&onComplete()} style={{
+      position:'absolute',bottom:60,fontSize:12,color:MU,opacity:0.6,cursor:'pointer'
+    }}>tap to continue</div>}
+  </div>
+}
+
+// ── Hybrid Notification Panel (inside NGScaffoldMap) ──────────────────
+// Rendered as a modal panel within the map screen
+function HybridApprovalPanel({pending,onApprove,onReject,onClose}){
+  const[decisions,setDecisions]=useState({})
+  const allDecided=pending.length>0&&pending.every((_,i)=>decisions[i]!==undefined)
+
+  return<div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:S,borderRadius:'20px 20px 0 0',padding:'16px 20px 40px',width:'100%',maxWidth:480,maxHeight:'80vh',overflowY:'auto',animation:'slideUp 0.3s ease'}}>
+      <div style={{width:36,height:4,background:BD,borderRadius:2,margin:'0 auto 16px'}}/>
+      <div style={{fontSize:18,fontWeight:800,color:TX,marginBottom:4}}>New hybrid patterns</div>
+      <div style={{fontSize:12,color:MU,marginBottom:20}}>Forged from patterns you've mastered. Approve to add to your bank.</div>
+      {pending.map((sc,i)=><div key={i} style={{background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',marginBottom:10}}>
+        <div style={{fontSize:13,color:YE,fontWeight:600,marginBottom:2}}>◈ Hybrid</div>
+        <div style={{fontSize:16,fontWeight:800,color:TX,marginBottom:2}}>{sc.base_portuguese}</div>
+        <div style={{fontSize:12,color:MU,marginBottom:6}}>{sc.base_english}</div>
+        <div style={{fontSize:11,color:MU,marginBottom:4,fontStyle:'italic'}}>{sc.reason}</div>
+        <div style={{fontSize:11,color:MU,marginBottom:10}}>From: {sc.parent_a_base} + {sc.parent_b_base}</div>
+        {sc.stages?.slice(0,3).map((st,j)=><div key={j} style={{fontSize:11,color:MU,paddingLeft:8,borderLeft:`2px solid ${BD}`,marginBottom:3}}>
+          Stage {st.stage}: {st.pt}
+        </div>)}
+        <div style={{display:'flex',gap:8,marginTop:10}}>
+          <button onClick={()=>setDecisions(d=>({...d,[i]:true}))}
+            style={{flex:1,padding:'9px',background:decisions[i]===true?`${GR}20`:S,border:`1px solid ${decisions[i]===true?GR+'44':BD}`,borderRadius:10,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===true?GR:TX,fontWeight:600}}>
+            {decisions[i]===true?'✓ Add':'Add to bank'}
+          </button>
+          <button onClick={()=>setDecisions(d=>({...d,[i]:false}))}
+            style={{flex:1,padding:'9px',background:decisions[i]===false?`${RE}12`:S,border:`1px solid ${decisions[i]===false?RE+'33':BD}`,borderRadius:10,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===false?RE:MU}}>
+            {decisions[i]===false?'✗ Skip':'Skip'}
+          </button>
+        </div>
+      </div>)}
+      {allDecided&&<button onClick={()=>{
+        const approved=pending.filter((_,i)=>decisions[i]===true)
+        const rejected=pending.filter((_,i)=>decisions[i]===false)
+        onApprove(approved,rejected)
+      }} style={{width:'100%',padding:'14px',background:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:14,fontWeight:700,cursor:'pointer',marginTop:4}}>
+        Confirm
+      </button>}
+    </div>
   </div>
 }
 
@@ -3804,6 +4206,7 @@ export default function App(){
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-shuffle'&&<NGShuffle isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-import'&&<NGImport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       </ErrorBoundary>
       {/* Next Gen Nav — 5 primary + More sheet */}
@@ -3829,6 +4232,7 @@ export default function App(){
             {k:'ng-say-it',i:'💬',l:'Say It',d:'Carioca translator'},
             {k:'ng-map',i:'⊞',l:'Map',d:'Scaffold progress'},
             {k:'ng-intelligence',i:'◎',l:'Intel',d:'Talk to Luna'},
+            {k:'ng-import',i:'📥',l:'Import',d:"Victor's notes"},
           ].map(t=><button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
             <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
             <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
@@ -3862,6 +4266,6 @@ export default function App(){
       <div style={{display:screen==='voice'?'block':'none'}}><ErrorBoundary><VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={screen==='voice'}/></ErrorBoundary></div>
       <div style={{display:screen==='import'?'block':'none'}}><Import cards={cards} onImport={onImport} isOnline={isOnline} active={screen==='import'} onBack={()=>setScreen('bank')}/></div>
     </div>
-    <Nav screen={screen} go={setScreen} due={due}/>
+    <Nav screen={screen} go={setScreen} due={due} onSwitchNG={()=>{localStorage.setItem(NG_MODE_KEY,'nextgen');setNgMode('nextgen')}}/>
   </div>
 }
