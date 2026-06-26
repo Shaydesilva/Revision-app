@@ -192,8 +192,7 @@ ${activePressure?'\n## ACTIVE FOCUS\n'+activePressure:''}
         session:{
           type:'realtime',model,instructions,
           audio:{output:{voice:voice||'shimmer'}},
-          // Bake PTT mode in at session creation — prevents mid-hold responses
-          turn_detection:pttMode?{type:'none'}:{type:'server_vad',silence_duration_ms:600,threshold:0.5}
+          // turn_detection set client-side via session.update after DC opens
         }
       })
     })
@@ -216,7 +215,8 @@ ${activePressure?'\n## ACTIVE FOCUS\n'+activePressure:''}
         phase,
         scenario,
         ptt_mode_set:pttMode,
-        chat_history:profile?.luna_chat_history||[]
+        chat_history:profile?.luna_chat_history||[],
+        pttMode:!!pttMode
       })
     }
 
