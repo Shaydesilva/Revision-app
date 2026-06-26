@@ -1498,6 +1498,9 @@ function MnemonicSection({card}){
 
 function Import({cards,onImport,isOnline=true,active,onBack}){
   const[stage,setStage]=useState('idle')
+  const[scaffoldSuggestions,setScaffoldSuggestions]=useState([])
+  const[showScaffoldApproval,setShowScaffoldApproval]=useState(false)
+  const[scaffoldDecisions,setScaffoldDecisions]=useState({})
   const[pasted,setPasted]=useState('')
   const[preview,setPreview]=useState([])
   const[visible,setVisible]=useState(0)
@@ -1521,16 +1524,15 @@ function Import({cards,onImport,isOnline=true,active,onBack}){
     await onImport(preview)
     // Next Gen: detect scaffolds from Victor's notes
     if(pasted&&preview.length){
+      // Get scaffold suggestions — don't auto-add, show for approval
       fetch('/.netlify/functions/ng-import-scaffolds',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({notes:pasted,newCards:preview})
+        body:JSON.stringify({notes:pasted,newCards:preview,previewOnly:true})
       }).then(r=>r.json()).then(result=>{
-        if(result.newScaffolds>0||result.extensions>0){
-          const msg=[]
-          if(result.newScaffolds>0)msg.push(`${result.newScaffolds} new scaffold${result.newScaffolds!==1?'s':''}`)
-          if(result.extensions>0)msg.push(`${result.extensions} extension${result.extensions!==1?'s':''}`)
-          console.log('Next Gen import:',msg.join(', '))
+        if(result.suggestions?.length){
+          setScaffoldSuggestions(result.suggestions)
+          setShowScaffoldApproval(true)
         }
       }).catch(()=>{})
     }
@@ -1572,7 +1574,32 @@ function Import({cards,onImport,isOnline=true,active,onBack}){
           <PBtn label={`Add ${preview.length} cards`} onClick={confirmImport}/>
         </div>}</>}
     </>}
-    {stage==='done'&&<div style={{textAlign:'center',paddingTop:60,animation:'up 0.4s ease'}}><div style={{fontSize:56,marginBottom:16,animation:'pop 0.5s ease'}}>🎉</div><div style={{fontSize:24,fontWeight:800,color:TX,marginBottom:8}}>{preview.length} cards added</div><div style={{fontSize:13,color:MU,marginBottom:28}}>Starting at zero — your performance takes it from here.</div><PBtn label="Back to home" onClick={()=>setStage('idle')}/></div>}
+    {stage==='done'&&<div style={{textAlign:'center',paddingTop:60,animation:'up 0.4s ease'}}>
+        <div style={{fontSize:56,marginBottom:16,animation:'pop 0.5s ease'}}>🎉</div>
+        <div style={{fontSize:24,fontWeight:800,color:TX,marginBottom:8}}>{preview.length} cards added</div>
+        <div style={{fontSize:13,color:MU,marginBottom:28}}>Starting at zero — your performance takes it from here.</div>
+        <PBtn label="Back to home" onClick={()=>setStage('idle')}/>
+      </div>}
+      {showScaffoldApproval&&<div style={{marginTop:20,padding:'0 4px',animation:'up 0.3s ease'}}>
+        <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:4}}>New patterns detected</div>
+        <div style={{fontSize:12,color:MU,marginBottom:12}}>Approve patterns to add to your scaffold bank. Nothing adds without your OK.</div>
+        {scaffoldSuggestions.map((sc,i)=><div key={i} style={{background:S2,border:`1px solid ${BD}`,borderRadius:12,padding:'12px',marginBottom:8}}>
+          <div style={{fontSize:14,fontWeight:700,color:TX,marginBottom:1}}>{sc.base_portuguese}</div>
+          <div style={{fontSize:11,color:MU,marginBottom:8}}>{sc.base_english||''}</div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setScaffoldDecisions(d=>({...d,[i]:true}))} style={{flex:1,padding:'7px',background:scaffoldDecisions[i]===true?`${GR}20`:S,border:`1px solid ${scaffoldDecisions[i]===true?GR+'33':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:11,color:scaffoldDecisions[i]===true?GR:TX,fontWeight:600}}>{scaffoldDecisions[i]===true?'✓ Yes':'Approve'}</button>
+            <button onClick={()=>setScaffoldDecisions(d=>({...d,[i]:false}))} style={{flex:1,padding:'7px',background:scaffoldDecisions[i]===false?`${RE}12`:S,border:`1px solid ${scaffoldDecisions[i]===false?RE+'33':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:11,color:scaffoldDecisions[i]===false?RE:MU}}>{scaffoldDecisions[i]===false?'✗ No':'Reject'}</button>
+          </div>
+        </div>)}
+        <div style={{display:'flex',gap:8,marginTop:8}}>
+          <button onClick={async()=>{
+            const approved=scaffoldSuggestions.filter((_,i)=>scaffoldDecisions[i]===true)
+            if(approved.length)await fetch('/.netlify/functions/ng-import-scaffolds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approvedScaffolds:approved})}).catch(()=>{})
+            setShowScaffoldApproval(false)
+          }} style={{flex:2,padding:'10px',background:AC,border:'none',borderRadius:10,color:'#fff',fontFamily:FONT,fontSize:12,fontWeight:700,cursor:'pointer'}}>Confirm</button>
+          <button onClick={()=>setShowScaffoldApproval(false)} style={{flex:1,padding:'10px',background:S,border:`1px solid ${BD}`,borderRadius:10,color:MU,fontFamily:FONT,fontSize:12,cursor:'pointer'}}>Skip</button>
+        </div>
+      </div>}
   </div>
 }
 
@@ -1626,6 +1653,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const[status,setStatus]=useState('Ready')
   const[dotMode,setDotMode]=useState('')
   const[ptt,setPtt]=useState(true)
+  const[lunaVoice,setLunaVoice]=useState(()=>localStorage.getItem('luna_voice')||'shimmer')
   const[summary,setSummary]=useState(null)
   const[wordMenu,setWordMenu]=useState(null)
   const[textInput,setTextInput]=useState('')
@@ -1659,6 +1687,18 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   useEffect(()=>{speedRef.current=speed},[speed])
   useEffect(()=>{pttRef.current=ptt},[ptt])
   useEffect(()=>{phaseRef.current=phase},[phase])
+
+  // End session cleanly when user switches tabs / app goes to background
+  useEffect(()=>{
+    const handleVisibility=()=>{
+      if(document.hidden&&dcRef.current?.readyState==='open'){
+        console.log('VoiceMode: tab hidden, ending session')
+        hangup()
+      }
+    }
+    document.addEventListener('visibilitychange',handleVisibility)
+    return()=>document.removeEventListener('visibilitychange',handleVisibility)
+  },[])
   useEffect(()=>{
     const m={}
     cards.forEach(c=>{if(c.portuguese&&c.english)m[c.portuguese.toLowerCase().trim()]=c.english})
@@ -1799,7 +1839,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     try{
       log('Requesting session token…')
       const endpoint=ngMode?'ng-luna-session':'luna-session'
-      const res=await fetch(`/.netlify/functions/${endpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectrum:spectrumRef.current,speed:speedRef.current})})
+      const sessionBody=ngMode
+        ?{spectrum:spectrumRef.current,speed:speedRef.current,pttMode:pttRef.current,voice:lunaVoice}
+        :{spectrum:spectrumRef.current,speed:speedRef.current}
+      const res=await fetch(`/.netlify/functions/${endpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessionBody)})
       const data=await res.json()
       if(!res.ok)throw new Error(data.error||`Server ${res.status}`)
       const token=data.value
@@ -1831,14 +1874,13 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         startTimeRef.current=Date.now()
         timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
         if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
-        // Enable transcription + set VAD based on PTT mode
+        // Enable transcription (turn_detection already set at session creation)
         const suMsg={type:'session.update',session:{
           modalities:['text','audio'],
-          input_audio_transcription:{model:'whisper-1'},
-          turn_detection:pttRef.current?{type:'none'}:{type:'server_vad',silence_duration_ms:600,threshold:0.5}
+          input_audio_transcription:{model:'whisper-1'}
         }}
         dc.send(JSON.stringify(suMsg))
-        log('Sent session.update: PTT='+(pttRef.current?'hold':'auto'))
+        log('Sent session.update: transcription enabled')
         // Trigger Luna's opening line after brief delay
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
         // Periodic reinforcement to keep model on track
@@ -2065,6 +2107,36 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   const[sessionEvents,setSessionEvents]=useState([])
   const[done,setDone]=useState(false)
   const[summary,setSummary]=useState({})
+  const[studyMode,setStudyMode]=useState('smart') // smart|flip|write
+  const[writeAnswer,setWriteAnswer]=useState('')
+  const[writeResult,setWriteResult]=useState(null)
+  const[writeLoading,setWriteLoading]=useState(false)
+  const[cardAudio,setCardAudio]=useState(null)
+  const[cardPlaying,setCardPlaying]=useState(false)
+
+  // Determine if a card should be flip or write
+  const getCardMode=(card)=>{
+    if(!card)return'flip'
+    if(card.isReview)return'write' // review always write
+    if(studyMode==='flip')return'flip'
+    if(studyMode==='write')return'write'
+    // Smart: first exposure = flip, subsequent = write
+    return(card.practice_count||0)===0?'flip':'write'
+  }
+
+  const playCardAudio=async(text)=>{
+    if(cardPlaying)return
+    try{
+      setCardPlaying(true)
+      const data=await ngFetch('ng-tts',{text,voice:'nova'})
+      if(data.audio){
+        const audio=new Audio('data:audio/mp3;base64,'+data.audio)
+        audio.onended=()=>setCardPlaying(false)
+        setCardAudio(audio)
+        audio.play()
+      }else setCardPlaying(false)
+    }catch{setCardPlaying(false)}
+  }
 
   useEffect(()=>{loadFrontier()},[])
 
@@ -2081,6 +2153,39 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   }
 
   const card=frontier[idx]
+
+  const submitWrite=async()=>{
+    if(!card||writeLoading||getCardMode(card)!=='write')return
+    setWriteLoading(true)
+    try{
+      const data=await ngFetch('ng-write-eval',{
+        target_pt:card.pt,
+        user_answer:writeAnswer,
+        scaffold_id:card.scaffold_id,
+        stage:card.stage,
+        en_prompt:card.en
+      })
+      setWriteResult(data)
+      // Auto-advance after seeing result — rate fires separately on Continue
+    }catch{setWriteResult({quality:2,correct:false,feedback:'Could not evaluate.'})}
+    setWriteLoading(false)
+  }
+
+  const confirmWriteResult=()=>{
+    if(!writeResult)return
+    rate(writeResult.quality||2)
+    setWriteAnswer('')
+    setWriteResult(null)
+  }
+
+  const dontKnow=()=>{
+    // Log as quality 1, fire failure boost, move card to end
+    rate(1)
+    setWriteAnswer('')
+    setWriteResult(null)
+    // Fire failure boost
+    if(card&&isOnline)ngFetch('ng-priority-boost',{scaffold_id:card.scaffold_id,boost_type:'failure'}).catch(()=>{})
+  }
 
   // Fire each rating immediately — pick up and put down anytime
   const rate=async(quality)=>{
@@ -2105,6 +2210,10 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     }else{
       setIdx(i=>i+1)
       setFlipped(false)
+      setWriteAnswer('')
+      setWriteResult(null)
+      if(cardAudio){cardAudio.pause();cardAudio.currentTime=0}
+      setCardPlaying(false)
     }
   }
 
@@ -2169,40 +2278,90 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
       <button onClick={endEarly} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0,opacity:0.6}}>Done</button>
     </div>
 
+    {/* Mode selector */}
+    <div style={{display:'flex',gap:6,marginBottom:12}}>
+      {['smart','flip','write'].map(m=><button key={m} onClick={()=>{setStudyMode(m);setWriteAnswer('');setWriteResult(null)}}
+        style={{flex:1,padding:'7px 0',background:studyMode===m?AC:S,border:`1px solid ${studyMode===m?AC:BD}`,borderRadius:8,color:studyMode===m?'#fff':MU,fontFamily:FONT,fontSize:11,fontWeight:studyMode===m?700:400,cursor:'pointer',textTransform:'capitalize'}}>
+        {m==='smart'?'◈ Smart':m==='flip'?'▣ Flip':'✍ Write'}
+      </button>)}
+    </div>
+
     {/* Progress bar */}
-    <div style={{height:2,background:BD,borderRadius:2,marginBottom:28,overflow:'hidden'}}>
+    <div style={{height:2,background:BD,borderRadius:2,marginBottom:20,overflow:'hidden'}}>
       <div style={{height:'100%',background:AC,borderRadius:2,width:`${((idx)/frontier.length)*100}%`,transition:'width 0.3s ease'}}/>
     </div>
 
-    {/* Card */}
-    <div
-      onClick={()=>!flipped&&setFlipped(true)}
-      style={{background:S,border:`1px solid ${flipped?AC+'44':BD}`,borderRadius:20,padding:'32px 24px',minHeight:220,cursor:flipped?'default':'pointer',transition:'border 0.2s',animation:'up 0.25s ease',marginBottom:20}}
-    >
-      {/* Stage indicator */}
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:20}}>
-        <div style={{fontSize:11,color:card.isReview?YE:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase'}}>
-          {card.isReview?'Review — '+card.category?.replace(/_/g,' '):card.category?.replace(/_/g,' ')}
+    {/* Card — Flip or Write It based on mode */}
+    {getCardMode(card)==='flip'?
+      <div onClick={()=>!flipped&&setFlipped(true)}
+        style={{background:S,border:`1px solid ${flipped?AC+'44':BD}`,borderRadius:20,padding:'28px 24px',minHeight:200,cursor:flipped?'default':'pointer',transition:'border 0.2s',animation:'up 0.25s ease',marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+          <div style={{fontSize:11,color:card.isReview?YE:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase'}}>
+            {card.isReview?'Review — '+card.category?.replace(/_/g,' '):card.category?.replace(/_/g,' ')}
+          </div>
+          <div style={{marginLeft:'auto',display:'flex',gap:3}}>
+            {[1,2,3,4].map(i=><div key={i} style={{width:10,height:3,borderRadius:2,background:i<=card.stage?(card.isReview?YE:AC):BD}}/>)}
+          </div>
+          <div style={{fontSize:11,color:card.isReview?YE:AC}}>{card.isReview?'Acquired':'Stage '+card.stage}</div>
         </div>
-        <div style={{marginLeft:'auto',display:'flex',gap:3}}>
-          {[1,2,3,4].map(i=><div key={i} style={{width:10,height:3,borderRadius:2,background:i<=card.stage?(card.isReview?YE:AC):BD}}/>)}
+        <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
+          <div style={{fontSize:26,fontWeight:800,color:TX,lineHeight:1.3,flex:1}}>{card.pt}</div>
+          <button onClick={e=>{e.stopPropagation();playCardAudio(card.pt)}}
+            style={{flexShrink:0,width:36,height:36,borderRadius:'50%',background:cardPlaying?AC:S2,border:`1px solid ${cardPlaying?AC:BD}`,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {cardPlaying?'⏸':'▶'}
+          </button>
         </div>
-        <div style={{fontSize:11,color:card.isReview?YE:AC}}>{card.isReview?'Acquired':'Stage '+card.stage}</div>
+        {!flipped&&<div style={{fontSize:12,color:MU,marginTop:16}}>Tap to reveal</div>}
+        {flipped&&<div style={{marginTop:12}}>
+          <div style={{fontSize:15,color:MU,marginBottom:8}}>{card.en}</div>
+          <div style={{fontSize:11,color:MU}}>How did you do?</div>
+        </div>}
       </div>
+    :
+      <div style={{background:S,border:`1px solid ${writeResult?(writeResult.correct?GR+'44':RE+'33'):BD}`,borderRadius:20,padding:'24px',animation:'up 0.25s ease',marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+          <div style={{fontSize:11,color:AC,fontWeight:600,letterSpacing:2,textTransform:'uppercase'}}>Write It</div>
+          <div style={{marginLeft:'auto',display:'flex',gap:3}}>
+            {[1,2,3,4].map(i=><div key={i} style={{width:10,height:3,borderRadius:2,background:i<=card.stage?AC:BD}}/>)}
+          </div>
+        </div>
+        <div style={{fontSize:13,color:MU,marginBottom:6}}>How do you say this in Portuguese?</div>
+        <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:16}}>{card.en}</div>
 
-      {/* Front: the scaffold stage */}
-      <div style={{fontSize:28,fontWeight:800,color:TX,lineHeight:1.3,marginBottom:8}}>{card.pt}</div>
-
-      {!flipped&&<>
-        <div style={{fontSize:13,color:MU,marginTop:20}}>Can you say this naturally?</div>
-        <div style={{fontSize:11,color:AC,marginTop:6}}>Tap to check</div>
-      </>}
-
-      {flipped&&<>
-        <div style={{fontSize:16,color:MU,marginTop:4,marginBottom:16}}>{card.en}</div>
-        <div style={{borderTop:`1px solid ${BD}`,paddingTop:12,fontSize:11,color:MU,marginBottom:4}}>How did you do?</div>
-      </>}
-    </div>
+        {!writeResult?<>
+          <textarea value={writeAnswer} onChange={e=>setWriteAnswer(e.target.value)}
+            placeholder="Escreve em português…"
+            autoFocus
+            style={{width:'100%',minHeight:80,background:S2,border:`1px solid ${BD}`,borderRadius:12,padding:'12px',color:TX,fontSize:15,outline:'none',resize:'none',fontFamily:FONT,marginBottom:10}}/>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={submitWrite} disabled={!writeAnswer.trim()||writeLoading}
+              style={{flex:2,padding:'12px',background:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:13,fontWeight:700,cursor:'pointer',opacity:writeAnswer.trim()&&!writeLoading?1:0.4}}>
+              {writeLoading?'Checking…':'Submit'}
+            </button>
+            <button onClick={dontKnow}
+              style={{flex:1,padding:'12px',background:S2,border:`1px solid ${RE}33`,borderRadius:12,color:RE,fontFamily:FONT,fontSize:12,cursor:'pointer'}}>
+              I don't know
+            </button>
+          </div>
+        </>:<>
+          <div style={{background:writeResult.correct?`${GR}12`:`${RE}12`,border:`1px solid ${writeResult.correct?GR+'33':RE+'22'}`,borderRadius:12,padding:'12px',marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:700,color:writeResult.correct?GR:RE,marginBottom:4}}>
+              {writeResult.correct?`✓ Quality ${writeResult.quality}/5`:`✗ Quality ${writeResult.quality}/5`}
+            </div>
+            <div style={{fontSize:13,color:MU,lineHeight:1.6,marginBottom:writeResult.carioca_correction?8:0}}>
+              {writeResult.feedback}
+            </div>
+            {writeResult.carioca_correction&&<div style={{fontSize:13,color:AC,fontWeight:600,marginTop:6}}>
+              {writeResult.carioca_correction}
+            </div>}
+          </div>
+          <button onClick={confirmWriteResult}
+            style={{width:'100%',padding:'12px',background:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:13,fontWeight:700,cursor:'pointer'}}>
+            Continue →
+          </button>
+        </>}
+      </div>
+    }
 
     {/* Rating buttons */}
     {flipped&&card.isReview&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
@@ -2256,7 +2415,6 @@ function NGPhrase({isOnline,onBack}){
   const[result,setResult]=useState(null)
   const[sessionEvents,setSessionEvents]=useState([])
   const[roundNum,setRoundNum]=useState(0)
-  const MAX_ROUNDS=4
 
   useEffect(()=>{loadAndGenerate()},[])
 
@@ -2361,7 +2519,7 @@ Return JSON:
 
   const nextRound=()=>{
     const nextRound=roundNum+1
-    if(nextRound>=MAX_ROUNDS){setPhase('done');return}
+    // No hard cap — continue as long as user wants
     setRoundNum(nextRound)
     setAnswer('')
     setResult(null)
@@ -2394,8 +2552,8 @@ Return JSON:
   return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
     <div style={{display:'flex',alignItems:'center',marginBottom:24}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Home</button>
-      <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{roundNum+1} of {MAX_ROUNDS}</div>
-      <div style={{width:40}}/>
+      <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>Round {roundNum+1}</div>
+      <button onClick={()=>{setRoundNum(0);setAnswer('');setResult(null);setSessionEvents([]);loadAndGenerate()}} style={{background:'none',border:'none',color:MU,fontSize:18,cursor:'pointer',fontFamily:FONT,padding:0}}>↺</button>
     </div>
 
     {/* Scenario */}
@@ -2442,7 +2600,7 @@ Return JSON:
         <div style={{fontSize:13,color:MU}}>{targetScaffold?.en}</div>
       </div>
 
-      <PBtn label={roundNum+1>=MAX_ROUNDS?'Finish session':'Next scenario'} onClick={nextRound}/>
+      <PBtn label='Next scenario →' onClick={nextRound}/>
     </div>}
   </div>
 }
@@ -2457,6 +2615,7 @@ function NGScaffoldMap({isOnline,onBack}){
   const[hybridEligible,setHybridEligible]=useState(new Set())
   const[loading,setLoading]=useState(true)
   const[selected,setSelected]=useState(null)
+  const[starredScaffolds,setStarredScaffolds]=useState(new Set())
 
   useEffect(()=>{load()},[])
 
@@ -2464,19 +2623,22 @@ function NGScaffoldMap({isOnline,onBack}){
     setLoading(true)
     try{
       const UID='00000000-0000-0000-0000-000000000001'
-      const[frontierData,{data:scaffoldData}]=await Promise.all([
+      const[frontierData,{data:scaffoldData},{data:profileData}]=await Promise.all([
         ngFetch('ng-frontier'),
         sb.from('ng_scaffolds')
           .select('id,base_portuguese,base_english,phase,category,stages,current_stage,context')
           .eq('user_id',UID)
-          .order('phase')
+          .order('phase'),
+        sb.from('ng_learner_profile').select('priority_boosts').eq('user_id',UID).single()
       ])
-      // Use controlled_list from frontier response — pipe separator
       const ctrl=new Set(
         (frontierData.controlled_list||[]).map(c=>`${c.scaffold_id}|${c.stage}`)
       )
       setControlled(ctrl)
       setHybridEligible(new Set(frontierData.hybrid_eligible_ids||[]))
+      // Load starred scaffolds from profile
+      const boosts=profileData?.priority_boosts||{}
+      setStarredScaffolds(new Set(Object.keys(boosts).filter(id=>boosts[id]>0)))
       if(scaffoldData?.length)setScaffolds(scaffoldData)
     }catch(e){console.warn('Map load:',e)}
     setLoading(false)
@@ -2533,29 +2695,40 @@ function NGScaffoldMap({isOnline,onBack}){
       </div>
     </div>
 
-    {/* Selected scaffold detail */}
-    {selected&&<div style={{margin:'0 20px 20px',background:S,border:`1px solid ${AC}44`,borderRadius:16,padding:'16px',animation:'up 0.2s ease'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
-        <div>
-          <div style={{fontSize:16,fontWeight:700,color:TX}}>{selected.base_portuguese}</div>
-          <div style={{fontSize:12,color:MU}}>{selected.base_english}</div>
-        </div>
-        <button onClick={()=>setSelected(null)} style={{background:'none',border:'none',color:MU,fontSize:18,cursor:'pointer',padding:'0 4px',fontFamily:FONT}}>×</button>
-      </div>
-      <div style={{display:'flex',flexDirection:'column',gap:6}}>
-        {selected.stages.map(st=>{
-          const done=controlled.has(`${selected.id}|${st.stage}`)
-          return<div key={st.stage} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:done?`${GR}12`:S2,borderRadius:10,border:`1px solid ${done?GR+'33':BD}`}}>
-            <div style={{width:6,height:6,borderRadius:'50%',background:done?GR:BD,flexShrink:0}}/>
-            <div style={{flex:1}}>
-              <div style={{fontSize:13,color:done?TX:MU,fontWeight:done?600:400}}>{st.pt}</div>
-              <div style={{fontSize:11,color:MU}}>{st.en}</div>
-            </div>
-            <div style={{fontSize:11,color:done?GR:MU}}>
-              {done?'✓':`Stage ${st.stage}`}
-            </div>
+    {/* Selected scaffold — fixed overlay popup */}
+    {selected&&<div onClick={()=>setSelected(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:S,border:`1px solid ${BD}`,borderRadius:20,padding:'20px',width:'100%',maxWidth:420,maxHeight:'75vh',overflowY:'auto',animation:'up 0.2s ease'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:18,fontWeight:800,color:TX}}>{selected.base_portuguese}</div>
+            <div style={{fontSize:13,color:MU,marginTop:2}}>{selected.base_english}</div>
           </div>
-        })}
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button onClick={async()=>{
+              await ngFetch('ng-priority-boost',{scaffold_id:selected.id,boost_type:'star',remove:starredScaffolds.has(selected.id)})
+              setStarredScaffolds(prev=>{const n=new Set(prev);n.has(selected.id)?n.delete(selected.id):n.add(selected.id);return n})
+            }} style={{background:starredScaffolds.has(selected.id)?`${YE}20`:S2,border:`1px solid ${starredScaffolds.has(selected.id)?YE+'44':BD}`,borderRadius:10,padding:'6px 10px',cursor:'pointer',fontSize:16,fontFamily:FONT}}>
+              {starredScaffolds.has(selected.id)?'★':'☆'}
+            </button>
+            <button onClick={()=>setSelected(null)} style={{background:'none',border:'none',color:MU,fontSize:22,cursor:'pointer',padding:'0 4px',fontFamily:FONT,lineHeight:1}}>×</button>
+          </div>
+        </div>
+        {starredScaffolds.has(selected.id)&&<div style={{fontSize:11,color:YE,marginBottom:10}}>★ Priority boosted — this will appear more in Study, Phrase and Shuffle</div>}
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {(selected.stages||[]).map(st=>{
+            const done=controlled.has(`${selected.id}|${st.stage}`)
+            return<div key={st.stage} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:done?`${GR}12`:S2,borderRadius:12,border:`1px solid ${done?GR+'33':BD}`}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:done?GR:BD,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,color:done?TX:MU,fontWeight:done?600:400,lineHeight:1.4}}>{st.pt}</div>
+                <div style={{fontSize:11,color:MU,marginTop:2}}>{st.en}</div>
+              </div>
+              <div style={{fontSize:11,color:done?GR:MU,fontWeight:done?600:400,flexShrink:0}}>
+                {done?'✓ Controlled':`Stage ${st.stage}`}
+              </div>
+            </div>
+          })}
+        </div>
       </div>
     </div>}
 
@@ -2829,12 +3002,19 @@ function NGSayIt({isOnline,onBack}){
   const[result,setResult]=useState(null)
   const[audioEl,setAudioEl]=useState(null)
   const[playing,setPlaying]=useState(false)
+
+  // Cleanup audio on unmount
+  useEffect(()=>{
+    return()=>{if(audioEl){audioEl.pause();audioEl.currentTime=0}}
+  },[audioEl])
   const[addedToBank,setAddedToBank]=useState(false)
   const[scaffoldDecisions,setScaffoldDecisions]=useState({}) // {idx: true/false}
   const[scaffoldsSubmitted,setScaffoldsSubmitted]=useState(false)
 
   const translate=async()=>{
     if(!input.trim()||!isOnline)return
+    // Stop any existing audio before new translation
+    if(audioEl){audioEl.pause();audioEl.currentTime=0;setAudioEl(null);setPlaying(false)}
     setLoading(true)
     setResult(null)
     setAddedToBank(false)
@@ -3641,7 +3821,7 @@ export default function App(){
       </div>
 
       {/* More sheet */}
-      {showMore&&<div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:S,border:`1px solid ${BD}`,borderRadius:'20px 20px 0 0',padding:'12px 20px 80px',zIndex:99,animation:'slideUp 0.2s ease'}}>
+      {showMore&&<><div onClick={()=>setShowMore(false)} style={{position:'fixed',inset:0,zIndex:98,background:'rgba(0,0,0,0.3)'}}/><div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:S,border:`1px solid ${BD}`,borderRadius:'20px 20px 0 0',padding:'12px 20px 80px',zIndex:99,animation:'slideUp 0.2s ease'}}>
         <div style={{width:36,height:4,background:BD,borderRadius:2,margin:'0 auto 16px'}}/>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
           {[
@@ -3658,7 +3838,8 @@ export default function App(){
         <button onClick={()=>{localStorage.setItem(NG_MODE_KEY,'original');setNgMode('original');setShowMore(false)}} style={{width:'100%',marginTop:10,padding:'12px',background:'none',border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,color:MU}}>
           ⊙ Switch to Classic mode
         </button>
-      </div>}
+      </div></>
+}
     </div>
   }
 
