@@ -48,11 +48,11 @@ exports.handler=async(event)=>{
       const picked=[]
       const usedCats=new Set()
       // For coherent mode: pick a dominant category first, then filter
+      // For coherent mode: find the category with most eligible scaffolds
+      const catFreq={}
+      eligiblePool.forEach(s=>{catFreq[s.category]=(catFreq[s.category]||0)+1})
       const dominantCat=coherent
-        ?(eligiblePool.sort((a,b)=>
-            Object.values(byCat||{}).find(g=>g.some(s=>s.id===b.id))?.length||0 -
-            Object.values(byCat||{}).find(g=>g.some(s=>s.id===a.id))?.length||0
-          )[0]?.category||null)
+        ?(Object.entries(catFreq).sort(([,a],[,b])=>b-a)[0]?.[0]||null)
         :null
 
       for(const sc of shuffled){
