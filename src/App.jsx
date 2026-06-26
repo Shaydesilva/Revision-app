@@ -3248,7 +3248,7 @@ function NGSayIt({isOnline,onBack}){
     const approved=result.suggestions.filter((_,i)=>scaffoldDecisions[i]===true)
     if(approved.length){
       await ngFetch('ng-say-it',{approvedScaffolds:approved})
-      if(onUnlock&&approved[0])onUnlock(approved[0])
+      if(approved[0])setUnlockScaffold(approved[0])
     }
     setScaffoldsSubmitted(true)
   }
@@ -3256,9 +3256,9 @@ function NGSayIt({isOnline,onBack}){
   const allDecided=result?.suggestions?.length>0&&
     result.suggestions.every((_,i)=>scaffoldDecisions[i]!==undefined)
 
-  return<>
-  {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
-  <div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
+  return<div style={{position:'relative'}}>
+    {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
+    <div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
     <div style={{marginBottom:20}}>
       <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:4}}>Say It</div>
       <div style={{fontSize:13,color:MU}}>Type anything. Get the Carioca version.</div>
@@ -3337,9 +3337,8 @@ function NGSayIt({isOnline,onBack}){
       </button>
     </div>}
   </div>
-</>
-
-
+  </div>
+}
 
 // ── NGImport — Victor's notes import for Next Gen ──────────────────
 function NGImport({isOnline,onBack}){
