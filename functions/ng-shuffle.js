@@ -76,9 +76,9 @@ exports.handler=async(event)=>{
             const firstUncontrolled=stages.findIndex((_,i)=>!controlledSet.has(sc.id+'|'+(i+1)))
             targetIdx=firstUncontrolled>=0?firstUncontrolled:stages.length-1
           }else{
-            // Hard: highest controlled stage — recently acquired, needs reinforcement
-            const lastControlled=stages.map((_,i)=>controlled.has(sc.id+'|'+(i+1))?i:-1).filter(i=>i>=0)
-            targetIdx=lastControlled.length?lastControlled[lastControlled.length-1]:Math.min(2,stages.length-1)
+            // Hard: recently acquired stages — highest controlled, at risk of fading
+            const controlledIdxs=stages.map((_,i)=>controlledSet.has(sc.id+'|'+(i+1))?i:-1).filter(i=>i>=0)
+            targetIdx=controlledIdxs.length?controlledIdxs[controlledIdxs.length-1]:Math.min(2,stages.length-1)
           }
           const targetStage=stages[Math.max(0,Math.min(targetIdx,stages.length-1))]||stages[0]
           if(!targetStage)continue
