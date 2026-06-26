@@ -10,7 +10,7 @@ exports.handler=async(event)=>{
     const UID='00000000-0000-0000-0000-000000000001'
 
     const body=JSON.parse(event.body||'{}')
-    const{mode,transcript=[],events=[],duration_seconds=0}=body
+    const{mode,transcript=[],events=[],duration_seconds=0,skip_insert=false}=body
 
     console.log('ng-session-end: mode=',mode,'events=',events.length,'transcript=',transcript.length)
 
@@ -71,14 +71,14 @@ exports.handler=async(event)=>{
         user_id:UID,
         scaffold_id:ev.scaffold_id,
         stage:Number(ev.stage),
-        mode,
+        mode:ev.mode||mode, // use per-event mode if provided (e.g. 'write' vs 'flashcard')
         quality:Number(ev.quality)||3,
         produced:Boolean(ev.produced),
         created_at:now
       }))
 
     let eventsInserted=0
-    if(eventRows.length){
+    if(eventRows.length&&!skip_insert){
       const{error:insertErr}=await sb.from('ng_scaffold_events').insert(eventRows)
       if(insertErr){
         console.log('Insert error:',insertErr.message)
