@@ -37,20 +37,20 @@ exports.handler=async(event)=>{
     const strugglePatterns = profile?.struggle_patterns||{}
     const lunaNotes        = profile?.luna_notes||''
     const priorityBoosts   = profile?.priority_boosts||{}
-    const sessionHistory   = profile?.session_history||[]
+    const sessionHistory   = Array.isArray(profile?.session_history)?profile.session_history:[]
     const metrics          = profile?.metrics_snapshot||{}
     const avoidance        = profile?.scaffold_avoidance||[]
     const fieldReports     = profile?.field_reports||[]
     const phase            = profile?.phase||1
-    const pendingHybrids   = profile?.pending_hybrids||[]
+    const pendingHybrids   = Array.isArray(profile?.pending_hybrids)?profile.pending_hybrids:[]
     const chatHistory      = profile?.luna_chat_history||[]
 
     // ── Build scaffold lookup map ───────────────────────────────────────
     const scaffoldMap={}
-    ;(scaffolds||[]).forEach(s=>{scaffoldMap[s.id]=s})
+    ;(Array.isArray(scaffolds)?scaffolds:[]).forEach(s=>{scaffoldMap[s.id]=s})
 
     // ── Analyse events for Luna test history ───────────────────────────
-    const lunaTestEvents=(allEvents||[]).filter(e=>e.mode==='luna_test')
+    const lunaTestEvents=(Array.isArray(allEvents)?allEvents:[]).filter(e=>e.mode==='luna_test')
     const lunaTestHistory={} // scaffold_id → [{stage,quality,date}]
     lunaTestEvents.forEach(e=>{
       if(!lunaTestHistory[e.scaffold_id])lunaTestHistory[e.scaffold_id]=[]
@@ -59,25 +59,25 @@ exports.handler=async(event)=>{
 
     // Events per scaffold in Luna (non-test)
     const lunaProductionMap={} // scaffold_id → count of times produced in Luna
-    ;(allEvents||[]).filter(e=>e.mode==='luna'||e.mode==='voice').forEach(e=>{
+    ;(Array.isArray(allEvents)?allEvents:[]).filter(e=>e.mode==='luna'||e.mode==='voice').forEach(e=>{
       lunaProductionMap[e.scaffold_id]=(lunaProductionMap[e.scaffold_id]||0)+1
     })
 
     // Events per scaffold total (all modes)
     const totalEventMap={}
-    ;(allEvents||[]).forEach(e=>{
+    ;(Array.isArray(allEvents)?allEvents:[]).forEach(e=>{
       totalEventMap[e.scaffold_id]=(totalEventMap[e.scaffold_id]||0)+1
     })
 
     // ── Build card map for translation hints ───────────────────────────
     const cardMap={}
-    ;(cards||[]).forEach(c=>{
+    ;(Array.isArray(cards)?cards:[]).forEach(c=>{
       if(c.portuguese)cardMap[c.portuguese.toLowerCase().trim()]=c.english
     })
 
     // ── Build controlled patterns text ─────────────────────────────────
     const controlledByScaffold={}
-    controlledArr.forEach(c=>{
+    ;(Array.isArray(controlledArr)?controlledArr:[]).forEach(c=>{
       if(!controlledByScaffold[c.scaffold_id])controlledByScaffold[c.scaffold_id]=[]
       controlledByScaffold[c.scaffold_id].push(c.stage)
     })
@@ -96,7 +96,7 @@ exports.handler=async(event)=>{
     const sevenDaysAgo=now-7*24*3600*1000
 
     // Classify each frontier pattern
-    const frontierClassified=frontier.map(f=>{
+    const frontierClassified=(Array.isArray(frontier)?frontier:[]).map(f=>{
       const sc=scaffoldMap[f.scaffold_id]
       const lunaProductions=lunaProductionMap[f.scaffold_id]||0
       const totalSessions=totalEventMap[f.scaffold_id]||0
@@ -168,18 +168,18 @@ exports.handler=async(event)=>{
     }))
 
     // ── Error fingerprint text ──────────────────────────────────────────
-    const errorLines=Object.entries(errorFingerprint).map(([key,desc])=>
+    const errorLines=Object.entries(errorFingerprint||{}).map(([key,desc])=>
       `  • ${desc}`
     ).filter(Boolean).join('\n')
 
     // ── Struggle patterns text ──────────────────────────────────────────
-    const struggleLines=(strugglePatterns.by_scaffold||[])
+    const struggleLines=(Array.isArray(strugglePatterns?.by_scaffold)?strugglePatterns.by_scaffold:[])
       .slice(0,8)
       .map(s=>`  • "${s.base}" — avg quality ${s.avg_quality?.toFixed(1)||'?'} across ${s.sessions||'?'} sessions`)
       .join('\n')
 
     // ── Priority boosts text ────────────────────────────────────────────
-    const starredPatterns=Object.keys(priorityBoosts)
+    const starredPatterns=Object.keys(priorityBoosts||{})
       .filter(id=>priorityBoosts[id]>0)
       .map(id=>{
         const sc=scaffoldMap[id]
@@ -187,12 +187,12 @@ exports.handler=async(event)=>{
       }).filter(Boolean).join('\n')
 
     // ── Recent session history ──────────────────────────────────────────
-    const recentSessions=(sessionHistory||[]).slice(0,3).map(s=>
+    const recentSessions=sessionHistory.slice(0,3).map(s=>
       `  ${s.date||''}: ${s.duration_mins||'?'} mins — ${s.summary||'no summary'}`
     ).join('\n')
 
     // ── Field reports ───────────────────────────────────────────────────
-    const fieldBlock=(fieldReports||[]).slice(0,3).map(r=>
+    const fieldBlock=(Array.isArray(fieldReports)?fieldReports:[]).slice(0,3).map(r=>
       `  [${r.date||''}] ${r.summary||r.text||''}`
     ).join('\n')
 
