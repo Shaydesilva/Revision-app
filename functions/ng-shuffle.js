@@ -155,10 +155,15 @@ Return JSON only.`,
 
       // Run acquisition check via ng-session-end (events already inserted)
       if(rows.length){
-        fetch(`${process.env.URL||''}/.netlify/functions/ng-session-end`,{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({mode:'shuffle',events:rows,skip_insert:true,duration_seconds:rows.length*30})
-        }).catch(()=>{})
+        try{
+          const siteUrl=process.env.URL||process.env.DEPLOY_URL||''
+          if(siteUrl){
+            fetch(`${siteUrl}/.netlify/functions/ng-session-end`,{
+              method:'POST',headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({mode:'shuffle',events:rows,skip_insert:true,duration_seconds:rows.length*30})
+            }).catch(()=>{})
+          }
+        }catch(_){}
       }
 
       return{statusCode:200,headers:{'Content-Type':'application/json'},body:JSON.stringify({ok:true,...ev,events_logged:rows.length})}
