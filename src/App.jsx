@@ -2200,7 +2200,8 @@ After they answer: give 1-2 sentences of feedback (Isso! / Quase / etc), then co
               content:[{type:'text',text:`NEXT RESPONSE ONLY: Do a ${chosenType} test. Target: ${targetList||'any frontier pattern'}. ${errorFP?'Errors: '+errorFP:''} Ask in Portuguese, naturally. Short feedback after answer, then continue.`}]
             }
           }))
-          dcRef.current.send(JSON.stringify({type:'response.create'})) style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
+          dcRef.current.send(JSON.stringify({type:'response.create'}))
+        }} style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
           Testa aí →
         </button>}
       </div>}
