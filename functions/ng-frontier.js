@@ -229,13 +229,18 @@ exports.handler=async(event)=>{
     if(metricsAge>5)fetch('/.netlify/functions/ng-progress-metrics',{method:'POST'}).catch(()=>{})
 
     // Daily hybrid generation — fires after 7am Rio time (UTC-3)
-    const nowRio=new Date(Date.now()-3*3600000) // UTC-3
-    const todayRio=nowRio.toISOString().slice(0,10)
-    const lastHybrid=profile?.last_hybrid_date||'2000-01-01'
-    const rioHour=nowRio.getUTCHours()
-    if(rioHour>=7&&lastHybrid<todayRio){
-      fetch('/.netlify/functions/ng-hybrid-generate',{method:'POST'}).catch(()=>{})
-    }
+    try{
+      const nowRio=new Date(Date.now()-3*3600000)
+      const todayRio=nowRio.toISOString().slice(0,10)
+      const lastHybrid=profile?.last_hybrid_date||'2000-01-01'
+      const rioHour=nowRio.getUTCHours()
+      if(rioHour>=7&&lastHybrid<todayRio){
+        const siteUrl=process.env.URL||process.env.DEPLOY_URL||''
+        if(siteUrl){
+          fetch(`${siteUrl}/.netlify/functions/ng-hybrid-generate`,{method:'POST'}).catch(()=>{})
+        }
+      }
+    }catch(_){}
 
     // Pending hybrids count for map badge
     const pendingHybrids=profile?.pending_hybrids||[]
