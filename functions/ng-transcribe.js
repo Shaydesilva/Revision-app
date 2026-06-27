@@ -30,7 +30,17 @@ exports.handler=async(event)=>{
     const form=new FormData()
     form.append('file',blob,'speech.webm')
     form.append('model','whisper-1')
-    form.append('language','pt') // Portuguese — speeds up transcription
+    // No language lock — learner mixes PT/EN, auto-detect is more accurate
+    // Prompt primes Whisper for Carioca vocabulary and contractions
+    form.append('prompt',
+      'Conversa em português brasileiro, estilo carioca. ' +
+      'Palavras comuns: bora, tamo, tá, né, cara, galera, beleza, saudade, ' +
+      'boa, show, legal, massa, curtir, curtindo, demais, pra, pro, ' +
+      'tô, você, vc, aqui, lá, isso, esse, essa, ' +
+      'obrigado, obrigada, por favor, com licença, desculpa, ' +
+      'oi, olá, tchau, até logo, até mais.'
+    )
+    form.append('temperature','0') // deterministic — reduces hallucination
 
     const r=await fetch('https://api.openai.com/v1/audio/transcriptions',{
       method:'POST',
