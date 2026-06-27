@@ -1679,6 +1679,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const frontierRef=useRef([])
   const profileRef=useRef(null)
   const sesDataRef=useRef(null)
+  const recorderRef=useRef(null)
+  const recChunksRef=useRef([])
   const[summary,setSummary]=useState(null)
   const[wordMenu,setWordMenu]=useState(null)
   const[textInput,setTextInput]=useState('')
@@ -1744,6 +1746,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     clearInterval(reinRef.current)
     if(dcRef.current){try{dcRef.current.close()}catch{}dcRef.current=null}
     if(pcRef.current){try{pcRef.current.close()}catch{}pcRef.current=null}
+    if(recorderRef.current){try{if(recorderRef.current.state!=='inactive')recorderRef.current.stop()}catch{}recorderRef.current=null}
+    recChunksRef.current=[]
     if(streamRef.current){streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null}
     if(audioRef.current)audioRef.current.srcObject=null
     lunaLiveRef.current=''
@@ -1873,14 +1877,42 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
       case 'input_audio_buffer.speech_started':
         setDotMode('listen');setStatus('Listening…')
+        // Start capturing for Whisper transcription
+        if(recorderRef.current&&recorderRef.current.state==='inactive'){
+          recChunksRef.current=[]
+          recorderRef.current.start()
+        }
         break
       case 'input_audio_buffer.speech_stopped':
         setDotMode('');setStatus('Thinking…')
+        // Stop recorder — onstop will transcribe via Whisper
+        if(recorderRef.current&&recorderRef.current.state==='recording'){
+          recorderRef.current.stop()
+        }
         break
     }
   }
 
   // ── Connect ────────────────────────────────────────────────────────────
+  const transcribeAudio=async(blob)=>{
+    if(!blob||blob.size<1000)return
+    try{
+      const r=await fetch('/.netlify/functions/ng-transcribe',{
+        method:'POST',
+        headers:{'Content-Type':'audio/webm'},
+        body:blob
+      })
+      const d=await r.json()
+      if(d.text?.trim()){
+        const text=d.text.trim()
+        transcriptRef.current.push({role:'user',text})
+        setMessages(prev=>[...prev,{role:'user',text,id:Date.now()}])
+        if(testInProgress.current)testInProgress.current='answered'
+        if(GOODBYE_V.some(g=>text.toLowerCase().includes(g)))shouldEndRef.current=true
+      }
+    }catch(e){log('Transcribe error: '+e.message)}
+  }
+
   const connect=useCallback(async()=>{
     if(!isOnline||phaseRef.current!=='idle')return
     phaseRef.current='connecting'
@@ -1923,6 +1955,21 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
       dc.onopen=()=>{
         log('Data channel open — sending session.update…')
+        // Init MediaRecorder for user speech transcription via Whisper
+        try{
+          const mimeType=['audio/webm;codecs=opus','audio/webm','audio/ogg'].find(m=>MediaRecorder.isTypeSupported(m))||''
+          const rec=new MediaRecorder(stream,mimeType?{mimeType}:{})
+          rec.ondataavailable=e=>{if(e.data&&e.data.size>0)recChunksRef.current.push(e.data)}
+          rec.onstop=()=>{
+            const chunks=[...recChunksRef.current]
+            recChunksRef.current=[]
+            const blob=new Blob(chunks,{type:mimeType||'audio/webm'})
+            transcribeAudio(blob)
+          }
+          recorderRef.current=rec
+          log('MediaRecorder ready: '+mimeType)
+        }catch(e){log('MediaRecorder init failed: '+e.message)}
+
         // Store frontier + profile context for Test Me injections
         frontierRef.current=sesDataRef.current?.frontier||[]
         profileRef.current=sesDataRef.current
@@ -1941,12 +1988,11 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
         if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
         // Enable transcription (turn_detection already set at session creation)
-        // Single session.update: transcription + modalities
+        // Minimal session.update — input_audio_transcription rejected by API
         dc.send(JSON.stringify({type:'session.update',session:{
-          modalities:['text','audio'],
-          input_audio_transcription:{model:'whisper-1',language:'pt'}
+          modalities:['text','audio']
         }}))
-        log('Sent session.update: transcription enabled')
+        log('Sent session.update: modalities set')
         // Trigger Luna's opening line after brief delay
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
         // Periodic reinforcement to keep model on track
@@ -2000,7 +2046,11 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     e.preventDefault()
     if(!streamRef.current)return
     streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})
-    // Manually commit audio and trigger response in PTT mode
+    // Stop recorder — Whisper will transcribe via ng-transcribe
+    if(recorderRef.current&&recorderRef.current.state==='recording'){
+      recorderRef.current.stop()
+    }
+    // Commit audio buffer and trigger response
     if(dcRef.current?.readyState==='open'){
       dcRef.current.send(JSON.stringify({type:'input_audio_buffer.commit'}))
       setTimeout(()=>{
@@ -2013,13 +2063,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     const n=!pttRef.current
     setPtt(n)
     if(streamRef.current)streamRef.current.getAudioTracks().forEach(t=>{t.enabled=!n})
-    // Switch VAD mode on the fly
-    if(dcRef.current?.readyState==='open'){
-      dcRef.current.send(JSON.stringify({
-        type:'session.update',
-        session:{turn_detection:n?{type:'none'}:{type:'server_vad',silence_duration_ms:600,threshold:0.5}}
-      }))
-    }
+    // turn_detection rejected by OpenAI Realtime API — VAD handled server-side
   }
 
   // ── Translation ────────────────────────────────────────────────────────
