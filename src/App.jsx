@@ -1951,15 +1951,23 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
         if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
         // Enable transcription (turn_detection already set at session creation)
-        const suMsg={type:'session.update',session:{
+        // Step 1: enable transcription (whisper, Portuguese)
+        dc.send(JSON.stringify({type:'session.update',session:{
           modalities:['text','audio'],
-          input_audio_transcription:{model:'whisper-1'},
-          turn_detection:sesDataRef.current?.pttMode
-            ?{type:'none'}
-            :{type:'server_vad',silence_duration_ms:600,threshold:0.5}
-        }}
-        dc.send(JSON.stringify(suMsg))
-        log('Sent session.update: transcription enabled')
+          input_audio_transcription:{model:'whisper-1',language:'pt'}
+        }}))
+        log('Sent session.update: transcription enabled (pt)')
+        // Step 2: set turn_detection separately (none for PTT, vad for auto)
+        setTimeout(()=>{
+          if(dcRef.current?.readyState==='open'){
+            dc.send(JSON.stringify({type:'session.update',session:{
+              turn_detection:sesDataRef.current?.pttMode
+                ?{type:'none'}
+                :{type:'server_vad',silence_duration_ms:600,threshold:0.5}
+            }}))
+            log('Sent session.update: turn_detection set')
+          }
+        },100)
         // Trigger Luna's opening line after brief delay
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
         // Periodic reinforcement to keep model on track
@@ -2180,9 +2188,8 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
           const profile=profileRef.current||{}
           const errorFP=profile.error_fingerprint?Object.keys(profile.error_fingerprint).slice(0,3).join(', '):'none recorded'
           const lunaNotesStr=profile.luna_notes?profile.luna_notes.slice(0,120):''
-          const injection={
-            type:'conversation.item.create',
-            item:{role:'system',content:[{type:'input_text',text:`ACTIVATE TEST MODE NOW.
+          // (injection now via session.update below)
+          const _injection_unused={type:'_',item:{role:'system',content:[{type:'input_text',text:`ACTIVATE TEST MODE NOW.
 Test type: ${chosenType}
 Priority targets: ${targetList||'any frontier pattern'}
 Known error patterns: ${errorFP}
@@ -2197,9 +2204,27 @@ TEST TYPE RULES:
 After their answer: give 1-2 sentence feedback. Be direct. If correct say something like "Isso!" or "Exato!" — if wrong say "Quase" or "Não foi bem" then correct them naturally.
 Then return to normal conversation.`}]}
           }
+          // Inject via session.update (overrides instructions temporarily)
+          // conversation.item.create with role:'system' is not valid Realtime API
+          const originalInstructions=sesDataRef.current?.instructions||''
+          const testInstructions=originalInstructions+`
+
+===RESPOND WITH THIS TEST NOW===
+Test type: ${chosenType}
+Target patterns: ${targetList||'any pattern you know they struggle with'}
+Error patterns: ${errorFP}
+${lunaNotesStr?'Notes: '+lunaNotesStr:''}
+
+Ask ONE ${chosenType} question RIGHT NOW, naturally in Portuguese. Don't say "let's do a test" — just ask.
+After they answer: give 1-2 sentences of feedback (Isso! / Quase / etc), then continue the conversation.`
+
           testInProgress.current=true
-          dcRef.current.send(JSON.stringify(injection))
-          dcRef.current.send(JSON.stringify({type:'response.create'}))
+          dcRef.current.send(JSON.stringify({type:'session.update',session:{instructions:testInstructions}}))
+          setTimeout(()=>{
+            if(dcRef.current?.readyState==='open'){
+              dcRef.current.send(JSON.stringify({type:'response.create'}))
+            }
+          },150)
         }} style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
           Testa aí →
         </button>}
