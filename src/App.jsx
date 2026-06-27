@@ -1715,16 +1715,6 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   useEffect(()=>{phaseRef.current=phase},[phase])
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:'smooth'})},[messages.length])
 
-  // NG mode: auto-connect when navigating to Luna — no button needed
-  useEffect(()=>{
-    if(ngMode&&isOnline&&phaseRef.current==='idle'){
-      // Small delay so component is fully mounted
-      const t=setTimeout(()=>{
-        if(phaseRef.current==='idle')connect()
-      },400)
-      return()=>clearTimeout(t)
-    }
-  },[ngMode,isOnline])
 
   // End session cleanly when user switches tabs / app goes to background
   useEffect(()=>{
@@ -1951,23 +1941,12 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000)),1000)
         if(pttRef.current)stream.getAudioTracks().forEach(t=>{t.enabled=false})
         // Enable transcription (turn_detection already set at session creation)
-        // Step 1: enable transcription (whisper, Portuguese)
+        // Single session.update: transcription + modalities
         dc.send(JSON.stringify({type:'session.update',session:{
           modalities:['text','audio'],
           input_audio_transcription:{model:'whisper-1',language:'pt'}
         }}))
-        log('Sent session.update: transcription enabled (pt)')
-        // Step 2: set turn_detection separately (none for PTT, vad for auto)
-        setTimeout(()=>{
-          if(dcRef.current?.readyState==='open'){
-            dc.send(JSON.stringify({type:'session.update',session:{
-              turn_detection:sesDataRef.current?.pttMode
-                ?{type:'none'}
-                :{type:'server_vad',silence_duration_ms:600,threshold:0.5}
-            }}))
-            log('Sent session.update: turn_detection set')
-          }
-        },100)
+        log('Sent session.update: transcription enabled')
         // Trigger Luna's opening line after brief delay
         setTimeout(()=>{if(dcRef.current?.readyState==='open')dc.send(JSON.stringify({type:'response.create'}))},600)
         // Periodic reinforcement to keep model on track
@@ -2164,16 +2143,12 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       
     </div>
 
-    {(phase==='live'||phase==='idle'&&ngMode)&&<div style={{padding:'6px 20px',flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
+    {phase==='live'&&<div style={{padding:'6px 20px',flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
 
       {ptt&&<div style={{display:'flex',gap:8}}>
-        <button
-          onTouchStart={phase==='idle'&&ngMode?(e=>{e.preventDefault();connect()}):pttOn}
-          onTouchEnd={phase==='idle'&&ngMode?undefined:pttOff}
-          onMouseDown={phase==='idle'&&ngMode?(e=>{e.preventDefault();connect()}):pttOn}
-          onMouseUp={phase==='idle'&&ngMode?undefined:pttOff}
-          style={{flex:3,padding:'14px',border:`1.5px dashed ${phase==='idle'?AC+'44':BD}`,borderRadius:14,background:'transparent',color:phase==='idle'?AC:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>
-          {phase==='connecting'?'Connecting…':phase==='idle'?'Starting…':'Hold to talk'}
+        <button onTouchStart={pttOn} onTouchEnd={pttOff} onMouseDown={pttOn} onMouseUp={pttOff}
+          style={{flex:3,padding:'14px',border:`1.5px dashed ${BD}`,borderRadius:14,background:'transparent',color:MU,fontFamily:FONT,fontSize:14,fontWeight:600,cursor:'pointer',WebkitTapHighlightColor:'transparent',userSelect:'none'}}>
+          Hold to talk
         </button>
         {ngMode&&<button onClick={()=>{
           if(!dcRef.current||dcRef.current.readyState!=='open')return
@@ -2219,13 +2194,13 @@ Ask ONE ${chosenType} question RIGHT NOW, naturally in Portuguese. Don't say "le
 After they answer: give 1-2 sentences of feedback (Isso! / Quase / etc), then continue the conversation.`
 
           testInProgress.current=true
-          dcRef.current.send(JSON.stringify({type:'session.update',session:{instructions:testInstructions}}))
-          setTimeout(()=>{
-            if(dcRef.current?.readyState==='open'){
-              dcRef.current.send(JSON.stringify({type:'response.create'}))
+          dcRef.current.send(JSON.stringify({
+            type:'conversation.item.create',
+            item:{type:'message',role:'system',
+              content:[{type:'text',text:`NEXT RESPONSE ONLY: Do a ${chosenType} test. Target: ${targetList||'any frontier pattern'}. ${errorFP?'Errors: '+errorFP:''} Ask in Portuguese, naturally. Short feedback after answer, then continue.`}]
             }
-          },150)
-        }} style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
+          }))
+          dcRef.current.send(JSON.stringify({type:'response.create'})) style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
           Testa aí →
         </button>}
       </div>}
@@ -2247,12 +2222,12 @@ After they answer: give 1-2 sentences of feedback (Isso! / Quase / etc), then co
       </div>}
     </div>}
 
-    {/* Classic mode only: Start talking button */}
-    {!ngMode&&<div style={{padding:'8px 20px 20px',flexShrink:0}}>
-      {phase==='idle'&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline}/>}
+    <div style={{padding:'8px 20px 20px',flexShrink:0}}>
+      {phase==='idle'&&!ngMode&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline}/>}
+      {phase==='idle'&&ngMode&&<PBtn label={isOnline?'◉  Start Luna':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline} color={AC}/>}
       {phase==='connecting'&&<PBtn label="Connecting…" disabled/>}
       {phase==='ending'&&<PBtn label="Saving…" disabled/>}
-    </div>}
+    </div>
   </div>
 }
 
