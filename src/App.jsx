@@ -1679,6 +1679,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const frontierRef=useRef([])
   const profileRef=useRef(null)
   const sesDataRef=useRef(null)
+  const testsGivenRef=useRef([])
   const recorderRef=useRef(null)
   const recChunksRef=useRef([])
   const[summary,setSummary]=useState(null)
@@ -1812,10 +1813,29 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
           let testEval=undefined
           if(testInProgress.current==='answered'){
             const lc=text.toLowerCase()
-            const passed=lc.includes('isso')||lc.includes('exato')||lc.includes('perfeito')||lc.includes('correto')||lc.includes('muito bem')||lc.includes('certo')
-            const failed=lc.includes('quase')||lc.includes('errado')||lc.includes('não foi')||lc.includes('tente')
-            if(passed){testEval='pass';testInProgress.current=false}
-            else if(failed){testEval='fail';testInProgress.current=false}
+            const passed=lc.includes('isso')||lc.includes('exato')||lc.includes('perfeito')||lc.includes('correto')||lc.includes('muito bem')||lc.includes('acertou')||lc.includes('show')
+            const failed=lc.includes('quase')||lc.includes('errado')||lc.includes('não foi')||lc.includes('tente')||lc.includes('quase lá')
+            if(passed||failed){
+              testEval=passed?'pass':'fail'
+              testInProgress.current=false
+              // Update testsGiven with result
+              const lastIdx=testsGivenRef.current.length-1
+              if(lastIdx>=0){
+                const updated=[...testsGivenRef.current]
+                updated[lastIdx]={...updated[lastIdx],result:testEval}
+                testsGivenRef.current=updated
+              }
+              // Log to acquisition engine — Luna test feeds the Map
+              const lastTest=testsGivenRef.current[testsGivenRef.current.length-1]
+              if(lastTest&&isOnline){
+                ngFetch('ng-session-end',{
+                  mode:'luna_test',
+                  events:[{scaffold_id:lastTest.scaffold_id,stage:lastTest.stage,
+                    quality:passed?4:1,produced:passed,mode:'luna_test'}],
+                  duration_seconds:30
+                }).catch(()=>{})
+              }
+            }
           }
           setMessages(prev=>[...prev,{role:'luna',text,id:Date.now(),testEval}])
         }
@@ -1917,6 +1937,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     if(!isOnline||phaseRef.current!=='idle')return
     phaseRef.current='connecting'
     testInProgress.current=false // reset from any previous session
+    testsGivenRef.current=[] // reset test history for new session
     setPhase('connecting');setStatus('Connecting…')
     setMessages([]);setLiveText('')
     transcriptRef.current=[];lunaLiveRef.current='';shouldEndRef.current=false
@@ -2196,55 +2217,34 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         </button>
         {ngMode&&<button onClick={()=>{
           if(!dcRef.current||dcRef.current.readyState!=='open')return
-          // Build test injection from frontier + profile context
-          const frontier=frontierRef.current||[]
-          const stagnant=frontier.filter(f=>(f.practice_count||0)>=5&&!f.has_luna).slice(0,3)
-          const recentFrontier=frontier.slice(0,3)
-          const targets=stagnant.length?stagnant:recentFrontier
-          const TEST_TYPES=['retrieval','comprehension','correction','which-is-right']
-          const chosenType=TEST_TYPES[Math.floor(Math.random()*TEST_TYPES.length)]
-          const targetList=targets.map(t=>`"${t.pt}" (${t.en})`).join(', ')
-          const profile=profileRef.current||{}
-          const errorFP=profile.error_fingerprint?Object.keys(profile.error_fingerprint).slice(0,3).join(', '):'none recorded'
-          const lunaNotesStr=profile.luna_notes?profile.luna_notes.slice(0,120):''
-          // (injection now via session.update below)
-          const _injection_unused={type:'_',item:{role:'system',content:[{type:'input_text',text:`ACTIVATE TEST MODE NOW.
-Test type: ${chosenType}
-Priority targets: ${targetList||'any frontier pattern'}
-Known error patterns: ${errorFP}
-${lunaNotesStr?`Luna notes: ${lunaNotesStr}`:''}
-
-TEST TYPE RULES:
-- retrieval: Ask "Como se diz [X] em português?" using the English of a target
-- comprehension: Ask "O que significa [X]?" or "Se alguém fala [X], o que querem dizer?" using a target
-- correction: Present a sentence with an error and ask "Tem algo errado aqui?" — use the learner's known error patterns (errors: ${errorFP})
-- which-is-right: "Nessa situação, qual é mais natural: [A] ou [B]?" — A is correct Carioca, B is formal/wrong
-
-After their answer: give 1-2 sentence feedback. Be direct. If correct say something like "Isso!" or "Exato!" — if wrong say "Quase" or "Não foi bem" then correct them naturally.
-Then return to normal conversation.`}]}
+          // Build intelligent test injection from full queue
+          const queue=sesDataRef.current?.test_queue||[]
+          const given=testsGivenRef.current
+          // Find next untested — or retry last fail
+          const lastTest=given[given.length-1]
+          const shouldRetry=lastTest&&lastTest.result==='fail'&&
+            given.filter(g=>g.scaffold_id===lastTest.scaffold_id).length<2
+          let target=null
+          if(shouldRetry){
+            target=queue.find(q=>q.scaffold_id===lastTest.scaffold_id)
+          }else{
+            // Skip recently tested (last 3 different patterns)
+            const recentIds=new Set(given.slice(-3).map(g=>g.scaffold_id))
+            target=queue.find(q=>!recentIds.has(q.scaffold_id))
+            if(!target)target=queue[0] // fallback: restart queue
           }
-          // Inject via session.update (overrides instructions temporarily)
-          // conversation.item.create with role:'system' is not valid Realtime API
-          const originalInstructions=sesDataRef.current?.instructions||''
-          const testInstructions=originalInstructions+`
-
-===RESPOND WITH THIS TEST NOW===
-Test type: ${chosenType}
-Target patterns: ${targetList||'any pattern you know they struggle with'}
-Error patterns: ${errorFP}
-${lunaNotesStr?'Notes: '+lunaNotesStr:''}
-
-Ask ONE ${chosenType} question RIGHT NOW, naturally in Portuguese. Don't say "let's do a test" — just ask.
-After they answer: give 1-2 sentences of feedback (Isso! / Quase / etc), then continue the conversation.`
-
-          testInProgress.current=true
+          if(!target)return
+          // Build injection — 🧪 prefix, role:'user', type:'input_text'
+          // Does NOT go into setMessages — invisible in UI
+          const injection=`🧪 ${target.testType} | target: "${target.pt}" (${target.en}) | stage: ${target.stage} | urgency: ${target.urgency}`
           dcRef.current.send(JSON.stringify({
             type:'conversation.item.create',
-            item:{type:'message',role:'system',
-              content:[{type:'text',text:`NEXT RESPONSE ONLY: Do a ${chosenType} test. Target: ${targetList||'any frontier pattern'}. ${errorFP?'Errors: '+errorFP:''} Ask in Portuguese, naturally. Short feedback after answer, then continue.`}]
-            }
+            item:{type:'message',role:'user',content:[{type:'input_text',text:injection}]}
           }))
           dcRef.current.send(JSON.stringify({type:'response.create'}))
+          // Track this test
+          testsGivenRef.current=[...given,{scaffold_id:target.scaffold_id,stage:target.stage,type:target.testType,timestamp:Date.now(),result:'pending'}]
+          testInProgress.current=true
         }} style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
           Testa aí →
         </button>}
