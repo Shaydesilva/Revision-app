@@ -226,7 +226,21 @@ exports.handler=async(event)=>{
     // Fire metrics if stale (> 5 min) or never computed
     const lastMetrics=profile?.metrics_snapshot?.computed_at
     const metricsAge=lastMetrics?(Date.now()-new Date(lastMetrics).getTime())/60000:999
-    if(metricsAge>5)fetch('/.netlify/functions/ng-progress-metrics',{method:'POST'}).catch(()=>{})
+    if(metricsAge>5){
+      try{
+        const siteUrl2=process.env.URL||process.env.DEPLOY_URL||''
+        if(siteUrl2)fetch(`${siteUrl2}/.netlify/functions/ng-progress-metrics`,{method:'POST'}).catch(()=>{})
+      }catch(_){}
+    }
+
+    // Nightly brain — fires after 4am Rio, once per day (checks its own dedup)
+    try{
+      const nowRioNB=new Date(Date.now()-3*3600000)
+      if(nowRioNB.getUTCHours()>=4){
+        const siteUrlNB=process.env.URL||process.env.DEPLOY_URL||''
+        if(siteUrlNB)fetch(`${siteUrlNB}/.netlify/functions/ng-nightly-brain`,{method:'POST'}).catch(()=>{})
+      }
+    }catch(_){}
 
     // Daily hybrid generation — fires after 7am Rio time (UTC-3)
     try{

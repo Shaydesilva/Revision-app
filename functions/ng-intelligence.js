@@ -10,7 +10,49 @@ exports.handler=async(event)=>{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
 
-    const{messages=[],extractInsights=false}=JSON.parse(event.body||'{}')
+    const{messages=[],extractInsights=false,action=null}=JSON.parse(event.body||'{}')
+
+    // ── loadHistory: return the most recent conversation for UI restore ──
+    if(action==='loadHistory'){
+      const{data:lastSession}=await sb
+        .from('ng_intelligence_sessions')
+        .select('messages,created_at')
+        .eq('user_id',UID)
+        .order('created_at',{ascending:false})
+        .limit(1)
+        .single()
+      return{statusCode:200,headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          messages:Array.isArray(lastSession?.messages)?lastSession.messages.slice(-30):[],
+          date:lastSession?.created_at||null
+        })}
+    }
+
+    // ── saveSession: persist current conversation (fired per exchange) ──
+    if(action==='saveSession'){
+      if(Array.isArray(messages)&&messages.length){
+        // Upsert-like: update today's session or insert new
+        const today=new Date().toISOString().slice(0,10)
+        const{data:todaySession}=await sb
+          .from('ng_intelligence_sessions')
+          .select('id,created_at')
+          .eq('user_id',UID)
+          .gte('created_at',today+'T00:00:00')
+          .order('created_at',{ascending:false})
+          .limit(1)
+          .single()
+        if(todaySession?.id){
+          await sb.from('ng_intelligence_sessions')
+            .update({messages:messages.slice(-50)})
+            .eq('id',todaySession.id)
+        }else{
+          await sb.from('ng_intelligence_sessions')
+            .insert({user_id:UID,messages:messages.slice(-50),insights_extracted:''})
+        }
+      }
+      return{statusCode:200,body:JSON.stringify({ok:true})}
+    }
+
     if(!messages.length)return{statusCode:400,body:JSON.stringify({error:'No messages'})}
 
     // Load everything — complete context

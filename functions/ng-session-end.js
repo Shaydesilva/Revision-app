@@ -9,6 +9,10 @@ exports.handler=async(event)=>{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
 
+async function brainLog(sb,proc,thought,data=null,importance=1){
+  try{await sb.from('ng_brain_log').insert({user_id:UID,process:proc,thought,data,importance})}catch(_){}
+}
+
     const body=JSON.parse(event.body||'{}')
     const{mode,transcript=[],events=[],duration_seconds=0,skip_insert=false}=body
 
@@ -34,16 +38,30 @@ exports.handler=async(event)=>{
       const frontier=profile?.frontier||[]
       const transcriptText=transcript.map(t=>`${t.role==='assistant'?'Luna':'Shay'}: ${t.text}`).join('\n')
       const frontierList=frontier.map(f=>`${f.scaffold_id}|${f.pt}`).join('\n')
+      const existingNotes=profile?.luna_notes||''
       try{
         const gptRes=await fetch('https://api.openai.com/v1/chat/completions',{
           method:'POST',
           headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
           body:JSON.stringify({
-            model:'gpt-4o-mini',max_tokens:600,temperature:0.1,
+            model:'gpt-4o-mini',max_tokens:800,temperature:0.1,
             response_format:{type:'json_object'},
             messages:[
-              {role:'system',content:`Analyse a Portuguese learning conversation. Return JSON only.\nFrontier: ${frontierList}`},
-              {role:'user',content:`Transcript:\n${transcriptText}\n\nReturn JSON:{\"scaffoldEvents\":[{\"scaffold_id\":\"string\",\"stage\":1,\"quality\":1-5,\"produced\":true}],\"errorPatterns\":{},\"summary\":\"string\",\"lunaNotes\":\"string\"}`}
+              {role:'system',content:`Analyse a Portuguese learning conversation and UPDATE the learner's cumulative notes.
+Frontier: ${frontierList}
+
+EXISTING NOTES (accumulated across all previous sessions):
+${existingNotes||'(none yet — first session)'}
+
+Your job: merge new observations from THIS session into the existing notes.
+- Keep useful long-term patterns from existing notes (confidence areas, recurring struggles, personality traits)
+- Add new observations from this session
+- Remove or update anything the new session contradicts or supersedes
+- Prune anything stale or no longer useful
+- Keep the total under 600 words — this is a working memory, not a transcript log
+- Write in third person, terse, factual bullet-style observations
+Return JSON only.`},
+              {role:'user',content:`This session's transcript:\n${transcriptText}\n\nReturn JSON:{"scaffoldEvents":[{"scaffold_id":"string","stage":1,"quality":1-5,"produced":true}],"errorPatterns":{},"summary":"string","lunaNotes":"the FULL updated cumulative notes, merging old + new"}`}
             ]
           })
         })
@@ -60,7 +78,8 @@ exports.handler=async(event)=>{
       analysedEvents=[...events,...uniqueGpt]
         newErrorPatterns=analysis.errorPatterns||{}
         sessionSummary=analysis.summary||''
-        newLunaNotes=analysis.lunaNotes||''
+        // Cumulative notes — GPT merges old+new; fallback to existing if GPT fails to produce anything
+        newLunaNotes=analysis.lunaNotes||existingNotes
       }catch(e){console.log('Luna analysis failed:',e.message)}
     }
 
@@ -76,6 +95,35 @@ exports.handler=async(event)=>{
         produced:Boolean(ev.produced),
         created_at:now
       }))
+
+    // Feed memory engine — direct writes, no internal HTTP
+    try{
+      for(const ev of eventRows){
+        const skill=(ev.mode==='flashcard')?'recognition':'production'
+        const success=(ev.quality||3)>=3
+        const{data:mrow}=await sb.from('ng_memory').select('*')
+          .eq('user_id',UID).eq('scaffold_id',ev.scaffold_id).eq('stage',ev.stage).eq('skill',skill).single()
+        const nowM=new Date().toISOString()
+        const rFn=(S,el)=>S<=0?0:Math.exp(Math.log(0.9)*el/S)
+        if(!mrow){
+          const S0=success?(ev.quality>=4?3:1.5):0.5
+          await sb.from('ng_memory').insert({user_id:UID,scaffold_id:ev.scaffold_id,stage:ev.stage,skill,
+            stability:S0,retrievability:1,difficulty:Math.min(10,Math.max(1,5+(3-(ev.quality||3))*0.35)),
+            reps:1,lapses:success?0:1,last_review:nowM,
+            next_due:new Date(Date.now()+S0*24*3600*1000).toISOString(),updated_at:nowM}).catch?.(()=>{})
+        }else{
+          const elapsed=mrow.last_review?(Date.now()-new Date(mrow.last_review).getTime())/(24*3600*1000):0
+          const R=rFn(mrow.stability,elapsed)
+          const S=success
+            ?Math.min(365,mrow.stability*(1+Math.exp(1.2)*(11-mrow.difficulty)*Math.pow(mrow.stability,-0.05)*(Math.exp((1-R)*1.4)-1)*0.35))
+            :Math.max(0.5,mrow.stability*0.25*Math.pow(R,0.4))
+          await sb.from('ng_memory').update({stability:S,retrievability:1,
+            difficulty:Math.min(10,Math.max(1,mrow.difficulty+(3-(ev.quality||3))*0.35)),
+            reps:mrow.reps+1,lapses:mrow.lapses+(success?0:1),last_review:nowM,
+            next_due:new Date(Date.now()+S*24*3600*1000).toISOString(),updated_at:nowM}).eq('id',mrow.id)
+        }
+      }
+    }catch(memErr){console.log('memory update skipped:',memErr.message)}
 
     let eventsInserted=0
     if(eventRows.length&&!skip_insert){
@@ -175,12 +223,34 @@ exports.handler=async(event)=>{
       }
     }
 
+    // Brain log: acquisitions are milestones; sessions are routine
+    if(newlyAcquired.length){
+      const acqNames=newlyAcquired.slice(0,3).map(a=>`${a.scaffold_id} stage ${a.stage}`).join(', ')
+      await brainLog(sb,'session',`Acquisition! ${newlyAcquired.length} stage(s) crossed into controlled: ${acqNames}. Graph propagation credits neighbours.`,{acquired:newlyAcquired.length},3)
+    }else if(analysedEvents.length>=3){
+      await brainLog(sb,'session',`${mode} session processed: ${analysedEvents.length} events through the memory engine. ${sessionSummary?sessionSummary.slice(0,120):''}`,{mode,events:analysedEvents.length},1)
+    }
+
     // ── Write profile ─────────────────────────────────────────────────
-    const currentSession=profile?.session_history||{}
+    // session_history is a real array of session summaries — append, cap at 20
+    const existingHistory=Array.isArray(profile?.session_history)?profile.session_history:[]
+    const newSessionEntry={
+      date:now,
+      mode,
+      duration_mins:Math.round((duration_seconds||0)/60),
+      summary:sessionSummary||`${mode} session — ${analysedEvents.length} events`,
+      events_count:analysedEvents.length
+    }
+    // Only log a history entry for modes worth remembering (luna, and sessions with real content)
+    const shouldLogHistory=mode==='luna'||analysedEvents.length>0
+    const updatedHistory=shouldLogHistory
+      ?[newSessionEntry,...existingHistory].slice(0,20)
+      :existingHistory
+
     const{error:profileErr}=await sb.from('ng_learner_profile').upsert({
       user_id:UID,
       controlled:updatedControlled,
-      session_history:{...currentSession,last_session:now,last_mode:mode,[`last_${mode}`]:now},
+      session_history:updatedHistory,
       ...(newLunaNotes?{luna_notes:newLunaNotes}:{}),
       ...(Object.keys(newErrorPatterns).length?{error_fingerprint:{...(profile?.error_fingerprint||{}),...newErrorPatterns}}:{}),
       version:(profile?.version||0)+1,
@@ -210,7 +280,8 @@ exports.handler=async(event)=>{
       for(const acq of newlyAcquired){
         const sc=scaffoldMap[acq.scaffold_id]
         if(sc&&acq.stage===sc.stages?.length){
-          fetch(`/.netlify/functions/ng-self-extend`,{
+          const siteUrl=process.env.URL||process.env.DEPLOY_URL||''
+          if(siteUrl)fetch(`${siteUrl}/.netlify/functions/ng-self-extend`,{
             method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify({scaffold_id:acq.scaffold_id})
           }).catch(()=>{})

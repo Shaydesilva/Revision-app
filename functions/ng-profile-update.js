@@ -34,7 +34,7 @@ exports.handler=async(event)=>{
         error_fingerprint:{},
         avoided_patterns:[],
         scaffold_avoidance:[],
-        session_history:{},
+        session_history:[],
         luna_notes:'',
         personality_profile:{},
         field_reports:[],
@@ -68,8 +68,8 @@ exports.handler=async(event)=>{
       error_fingerprint:mergeErrorFingerprint(existing.error_fingerprint||{},update.error_fingerprint||{}),
       // Frontier replaces entirely (recomputed fresh each time)
       frontier:update.frontier!==undefined?update.frontier:existing.frontier,
-      // Session history merges
-      session_history:{...(existing.session_history||{}),...(update.session_history||{})},
+      // Session history: array format (new) appends; object format (legacy) replaced by incoming
+      session_history:mergeSessionHistory(existing.session_history,update.session_history),
       // Luna notes appends if new content
       luna_notes:mergeLunaNotes(existing.luna_notes||'',update.luna_notes||''),
       // Metadata
@@ -124,6 +124,20 @@ function mergeAvoidance(existing,incoming){
     }else{map[a.scaffold_id]=a}
   })
   return Object.values(map)
+}
+
+function mergeSessionHistory(existing,incoming){
+  // New format: arrays — append incoming entries, cap 20
+  if(Array.isArray(incoming)){
+    const base=Array.isArray(existing)?existing:[]
+    // Dedupe by date+mode
+    const seen=new Set(incoming.map(e=>`${e.date}|${e.mode}`))
+    const kept=base.filter(e=>!seen.has(`${e.date}|${e.mode}`))
+    return[...incoming,...kept].slice(0,20)
+  }
+  if(incoming===undefined||incoming===null)return Array.isArray(existing)?existing:[]
+  // Legacy object update — convert to array format, drop legacy keys
+  return Array.isArray(existing)?existing:[]
 }
 
 function mergeFieldReports(existing,incoming){
