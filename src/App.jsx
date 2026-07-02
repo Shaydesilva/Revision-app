@@ -3925,6 +3925,9 @@ function NGRadio({isOnline,onBack}){
   const[stationPrompt,setStationPrompt]=useState(()=>localStorage.getItem('radio_station')||'')
   const[showTl,setShowTl]=useState({})
   const[exportMsg,setExportMsg]=useState('')
+  const[frontierPatterns,setFrontierPatterns]=useState([])
+  const[patternPopup,setPatternPopup]=useState(null) // {f,loading,scaffold,mem}
+  const wasAutoPausedRef=useRef(false)
   const sessionRef=useRef(null)
   const audioQueueRef=useRef([])
   const playingRef=useRef(false)
@@ -4030,6 +4033,7 @@ function NGRadio({isOnline,onBack}){
     try{
       const d=await ngFetch('ng-radio',{action:'tune',station:stationPrompt})
       sessionRef.current=d.session_key
+      setFrontierPatterns(Array.isArray(d.frontier_ref)?d.frontier_ref:[])
       setPhase('playing')
       ingestSegment(d,0)
       setTimeout(()=>maybeBuffer(),600)
@@ -4051,6 +4055,60 @@ function NGRadio({isOnline,onBack}){
     const el=feedRef.current;if(!el)return
     const nearBottom=el.scrollHeight-el.scrollTop-el.clientHeight<90
     if(!nearBottom&&followRef.current)setFollow(false)
+  }
+
+  const openPattern=async(f)=>{
+    // Auto-pause the show while the popup is open
+    if(!pausedRef.current){
+      wasAutoPausedRef.current=true
+      pausedRef.current=true;setPaused(true)
+      try{currentAudioRef.current?.pause()}catch{}
+    }
+    setPatternPopup({f,loading:true,scaffold:null,mem:[]})
+    try{
+      const[{data:scf},{data:memRows}]=await Promise.all([
+        sb.from('ng_scaffolds').select('*').eq('id',f.scaffold_id).single(),
+        sb.from('ng_memory').select('stage,skill,stability')
+          .eq('user_id','00000000-0000-0000-0000-000000000001').eq('scaffold_id',f.scaffold_id)
+      ])
+      setPatternPopup({f,loading:false,scaffold:scf,mem:memRows||[]})
+    }catch{setPatternPopup(p=>p?{...p,loading:false}:null)}
+  }
+  const closePattern=()=>{
+    setPatternPopup(null)
+    // Resume only if WE paused it
+    if(wasAutoPausedRef.current){
+      wasAutoPausedRef.current=false
+      pausedRef.current=false;setPaused(false)
+      try{currentAudioRef.current?.play()}catch{}
+    }
+  }
+
+  // Golden highlight: wrap frontier pattern matches inside a spoken line
+  const highlightLine=(text)=>{
+    if(!frontierPatterns.length||!text)return text
+    const lower=text.toLowerCase()
+    const matches=[]
+    frontierPatterns.forEach(f=>{
+      if(!f.pt)return
+      const pat=f.pt.toLowerCase().replace(/[.!?…]+$/,'').trim()
+      if(pat.length<3)return
+      const idx=lower.indexOf(pat)
+      if(idx>=0)matches.push({start:idx,end:idx+pat.length,f})
+    })
+    if(!matches.length)return text
+    matches.sort((a,b)=>a.start-b.start)
+    const parts=[];let pos=0
+    matches.forEach(m=>{
+      if(m.start<pos)return
+      if(m.start>pos)parts.push(text.slice(pos,m.start))
+      parts.push(<span key={m.start} onClick={e=>{e.stopPropagation();openPattern(m.f)}}
+        style={{color:GD,fontWeight:700,textDecoration:'underline',textDecorationColor:`${GD}66`,textUnderlineOffset:3,cursor:'pointer'}}>
+        {text.slice(m.start,m.end)}</span>)
+      pos=m.end
+    })
+    if(pos<text.length)parts.push(text.slice(pos))
+    return parts
   }
 
   const exportTranscript=async()=>{
@@ -4124,7 +4182,7 @@ function NGRadio({isOnline,onBack}){
             border:active?`1.5px solid ${isChico?AC:GR}`:`1px solid ${BD}`,
             fontSize:14,lineHeight:1.6,color:TX,cursor:'pointer',
             boxShadow:active?`0 0 12px ${isChico?AC:GR}22`:'none'
-          }}>{l.pt}</div>
+          }}>{highlightLine(l.pt)}</div>
           {showTl[i]&&<div style={{maxWidth:'82%',marginTop:3,padding:'6px 10px',background:S2,border:`1px solid ${BD}`,borderRadius:8,fontSize:12,color:MU}}>{l.en}</div>}
         </div>
       })}
@@ -4137,6 +4195,43 @@ function NGRadio({isOnline,onBack}){
         style={{background:`${RE}dd`,border:'none',borderRadius:20,padding:'8px 16px',cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:'#fff',boxShadow:'0 4px 14px rgba(0,0,0,0.4)'}}>
         ▼ AO VIVO
       </button>
+    </div>}
+
+    {/* Frontier pattern popup — same style as the scaffold map card */}
+    {patternPopup&&<div onClick={closePattern} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:S,border:`1px solid ${BD}`,borderRadius:20,padding:'20px',width:'100%',maxWidth:420,maxHeight:'70vh',overflowY:'auto',animation:'up 0.2s ease'}}>
+        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:`${GD}15`,border:`1px solid ${GD}44`,borderRadius:8,padding:'4px 10px',marginBottom:12}}>
+          <span style={{fontSize:11,color:GD,fontWeight:700}}>◈ Frontier — you're learning this</span>
+        </div>
+        <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:2}}>{patternPopup.f.pt}</div>
+        <div style={{fontSize:13,color:MU,marginBottom:16}}>{patternPopup.f.en}</div>
+        {patternPopup.loading&&<div style={{textAlign:'center',padding:'20px'}}><Spinner size={18}/></div>}
+        {!patternPopup.loading&&patternPopup.scaffold?.stages&&<div>
+          <div style={{fontSize:10,color:MU,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>Stage progress</div>
+          {patternPopup.scaffold.stages.map(st=>{
+            const prodMem=(patternPopup.mem||[]).find(m=>m.stage===st.stage&&m.skill==='production')
+            const strength=prodMem?Math.min(1,prodMem.stability/21):0
+            const controlled=strength>=1
+            const isCurrent=st.stage===patternPopup.f.stage
+            return<div key={st.stage} style={{marginBottom:10,padding:'10px 12px',background:isCurrent?`${GD}0a`:S2,border:`1px solid ${controlled?GR+'44':isCurrent?GD+'44':BD}`,borderRadius:12}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                <span style={{fontSize:10,fontWeight:700,color:controlled?GR:isCurrent?GD:MU}}>
+                  {controlled?'✓':isCurrent?'◈':'·'} Stage {st.stage}{isCurrent&&!controlled?' — current':''}
+                </span>
+              </div>
+              <div style={{fontSize:14,fontWeight:600,color:TX,marginBottom:2}}>{st.pt}</div>
+              <div style={{fontSize:11,color:MU,marginBottom:6}}>{st.en}</div>
+              <div style={{height:3,background:BD,borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${Math.round(strength*100)}%`,background:controlled?GR:GD,borderRadius:3,transition:'width 0.6s ease'}}/>
+              </div>
+            </div>
+          })}
+        </div>}
+        {!patternPopup.loading&&!patternPopup.scaffold&&<div style={{fontSize:12,color:MU,textAlign:'center',padding:'12px'}}>Couldn't load details</div>}
+        <button onClick={closePattern} style={{width:'100%',marginTop:6,padding:'12px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:700,color:AC}}>
+          ▶ Voltar pro programa
+        </button>
+      </div>
     </div>}
 
     {/* Controls */}
