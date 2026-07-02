@@ -4691,6 +4691,8 @@ export default function App(){
   const[ngMode,setNgMode]=useState(()=>localStorage.getItem(NG_MODE_KEY)||null)
   const[ngScreen,setNgScreen]=useState('ng-home')
   const[showMore,setShowMore]=useState(false)
+  const[loaded,setLoaded]=useState(false)
+  const[isOnline,setIsOnline]=useState(navigator.onLine)
 
   // Always-on brain: heartbeat ping on load + every 5 min while app is open
   useEffect(()=>{
@@ -4699,8 +4701,6 @@ export default function App(){
     const hb=setInterval(()=>{ngFetch('ng-heartbeat',{}).catch(()=>{})},5*60*1000)
     return()=>clearInterval(hb)
   },[ngMode,isOnline])
-  const[loaded,setLoaded]=useState(false)
-  const[isOnline,setIsOnline]=useState(navigator.onLine)
 
   useEffect(()=>{const s=document.createElement('style');s.textContent=CSS;document.head.appendChild(s);return()=>document.head.removeChild(s)},[])
 
