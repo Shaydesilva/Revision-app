@@ -5,6 +5,9 @@
 [functions]
   directory = "functions"
 
+[functions."ng-heartbeat"]
+  schedule = "*/20 * * * *"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
