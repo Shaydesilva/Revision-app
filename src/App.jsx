@@ -3916,44 +3916,78 @@ function NGToday({isOnline,onBack,goTo}){
 
 // ── NGRadio — Radio Carioca: tune in, infinite buffered show ────────
 function NGRadio({isOnline,onBack}){
-  const[phase,setPhase]=useState('off') // off|tuning|playing|paused
-  const[lines,setLines]=useState([]) // all lines across segments [{speaker,pt,en,segIdx}]
+  const[phase,setPhase]=useState('off') // off|tuning|playing
+  const[paused,setPaused]=useState(false)
+  const[speed,setSpeed]=useState(1)
+  const[follow,setFollow]=useState(true)
+  const[lines,setLines]=useState([]) // all lines across segments [{speaker,pt,en,lineIdx}]
   const[currentLine,setCurrentLine]=useState(-1)
   const[stationPrompt,setStationPrompt]=useState(()=>localStorage.getItem('radio_station')||'')
-  const[showTl,setShowTl]=useState({}) // lineIdx → bool
+  const[showTl,setShowTl]=useState({})
+  const[exportMsg,setExportMsg]=useState('')
   const sessionRef=useRef(null)
-  const audioQueueRef=useRef([]) // [{lineIdx, b64}]
+  const audioQueueRef=useRef([])
   const playingRef=useRef(false)
   const segIndexRef=useRef(0)
   const bufferingRef=useRef(false)
   const stopRef=useRef(false)
-  const scrollRef=useRef(null)
+  const pausedRef=useRef(false)
+  const speedRef=useRef(1)
+  const currentAudioRef=useRef(null)
+  const followRef=useRef(true)
+  const feedRef=useRef(null)
   const endRef=useRef(null)
 
-  useEffect(()=>{endRef.current?.scrollIntoView({behavior:'smooth'})},[currentLine])
-  useEffect(()=>()=>{stopRef.current=true},[])
+  useEffect(()=>{followRef.current=follow},[follow])
+  useEffect(()=>{if(follow)endRef.current?.scrollIntoView({behavior:'smooth'})},[currentLine,follow])
+  useEffect(()=>()=>{stopRef.current=true;try{currentAudioRef.current?.pause()}catch{}},[])
+
+  const setSpeedLive=v=>{
+    speedRef.current=v;setSpeed(v)
+    try{if(currentAudioRef.current)currentAudioRef.current.playbackRate=v}catch{}
+  }
+  const togglePause=()=>{
+    if(pausedRef.current){
+      pausedRef.current=false;setPaused(false)
+      try{currentAudioRef.current?.play()}catch{}
+    }else{
+      pausedRef.current=true;setPaused(true)
+      try{currentAudioRef.current?.pause()}catch{}
+    }
+  }
+
+  // Consumption-driven buffering: whenever the queue runs low, generate more.
+  const maybeBuffer=()=>{
+    if(!stopRef.current&&!bufferingRef.current&&audioQueueRef.current.length<8)bufferNext()
+  }
 
   const playQueue=async()=>{
     if(playingRef.current)return
     playingRef.current=true
     while(!stopRef.current){
+      // Hold here while paused between lines
+      while(pausedRef.current&&!stopRef.current){await new Promise(r=>setTimeout(r,200))}
+      if(stopRef.current)break
       const next=audioQueueRef.current.shift()
       if(!next){
         playingRef.current=false
-        // Queue empty — if still tuned, poll briefly for buffer refill
+        maybeBuffer()
         if(!stopRef.current)setTimeout(()=>{if(audioQueueRef.current.length&&!stopRef.current)playQueue()},800)
         return
       }
+      maybeBuffer() // stay ahead while consuming — this is what makes it infinite
       setCurrentLine(next.lineIdx)
       await new Promise(res=>{
         try{
           const a=new Audio('data:audio/mp3;base64,'+next.b64)
+          a.playbackRate=speedRef.current
+          currentAudioRef.current=a
           a.onended=res;a.onerror=res
           a.play().catch(res)
         }catch{res()}
       })
-      // small natural gap between speakers
-      await new Promise(r=>setTimeout(r,350))
+      currentAudioRef.current=null
+      await new Promise(r=>setTimeout(r,300))
     }
     playingRef.current=false
   }
@@ -3973,7 +4007,7 @@ function NGRadio({isOnline,onBack}){
     try{
       segIndexRef.current+=1
       const d=await ngFetch('ng-radio',{action:'next',session_key:sessionRef.current,segment_index:segIndexRef.current,station:stationPrompt})
-      if(d.lines){
+      if(d.lines&&!stopRef.current){
         setLines(prev=>{
           const base=prev.length
           const segLines=d.lines.map((l,i)=>({...l,lineIdx:base+i}))
@@ -3984,15 +4018,13 @@ function NGRadio({isOnline,onBack}){
       }
     }catch{}
     bufferingRef.current=false
-    // Keep buffer 1 segment ahead while playing
-    if(!stopRef.current&&audioQueueRef.current.length<10)setTimeout(bufferNext,3000)
   }
 
   const tune=async()=>{
     if(!isOnline)return
-    stopRef.current=false
+    stopRef.current=false;pausedRef.current=false;setPaused(false)
     setPhase('tuning')
-    setLines([]);setCurrentLine(-1)
+    setLines([]);setCurrentLine(-1);setFollow(true)
     audioQueueRef.current=[];segIndexRef.current=0
     localStorage.setItem('radio_station',stationPrompt)
     try{
@@ -4000,42 +4032,90 @@ function NGRadio({isOnline,onBack}){
       sessionRef.current=d.session_key
       setPhase('playing')
       ingestSegment(d,0)
-      // Immediately start buffering segment 1
-      setTimeout(bufferNext,1000)
+      setTimeout(()=>maybeBuffer(),600)
     }catch{setPhase('off')}
   }
 
   const stop=()=>{
     stopRef.current=true
+    try{currentAudioRef.current?.pause()}catch{}
+    currentAudioRef.current=null
     audioQueueRef.current=[]
+    pausedRef.current=false;setPaused(false)
     setPhase('off')
     setCurrentLine(-1)
   }
 
+  // Free scroll: scrolling away from the bottom breaks follow mode
+  const onFeedScroll=()=>{
+    const el=feedRef.current;if(!el)return
+    const nearBottom=el.scrollHeight-el.scrollTop-el.clientHeight<90
+    if(!nearBottom&&followRef.current)setFollow(false)
+  }
+
+  const exportTranscript=async()=>{
+    if(!sb||!isOnline){setExportMsg('Needs connection');return}
+    setExportMsg('Building…')
+    try{
+      const{data:segs}=await sb.from('ng_radio_segments')
+        .select('session_key,segment_index,lines,created_at')
+        .eq('user_id','00000000-0000-0000-0000-000000000001')
+        .order('created_at',{ascending:false}).limit(40)
+      if(!segs?.length){setExportMsg('Nothing to export yet');return}
+      const sessions={},order=[]
+      segs.forEach(s=>{
+        if(!sessions[s.session_key]){sessions[s.session_key]=[];order.push(s.session_key)}
+        sessions[s.session_key].push(s)
+      })
+      let out='RÁDIO CARIOCA — transcript export\n'
+      order.slice(0,3).forEach(key=>{
+        const parts=sessions[key].sort((a,b)=>(a.segment_index||0)-(b.segment_index||0))
+        out+=`\n═══ Session ${key} — ${(parts[0]?.created_at||'').slice(0,16).replace('T',' ')} ═══\n`
+        parts.forEach(p=>{(p.lines||[]).forEach(l=>{
+          out+=`\n${l.speaker==='echo'?'Chico':'Bia'}: ${l.pt}\n   (${l.en})\n`
+        })})
+      })
+      if(navigator.share){
+        try{await navigator.share({title:'Rádio Carioca transcript',text:out});setExportMsg('Shared ✓')}
+        catch(e){if(e.name!=='AbortError'){await navigator.clipboard.writeText(out);setExportMsg('Copied ✓')}else setExportMsg('')}
+      }else{
+        await navigator.clipboard.writeText(out)
+        setExportMsg('Copied to clipboard ✓')
+      }
+    }catch(e){setExportMsg('Export failed: '+e.message)}
+    setTimeout(()=>setExportMsg(''),4000)
+  }
+
+  const SPEEDS=[0.7,0.85,1,1.15]
+
   return<div style={{height:'100dvh',display:'flex',flexDirection:'column',animation:'up 0.35s ease'}}>
     <div style={{padding:'52px 20px 12px',flexShrink:0}}>
-      <button onClick={()=>{stop();onBack()}} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:12}}>← Back</button>
+      <div style={{display:'flex',alignItems:'center',marginBottom:12}}>
+        <button onClick={()=>{stop();onBack()}} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Back</button>
+        <button onClick={exportTranscript} style={{marginLeft:'auto',background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT,fontSize:11,color:MU}}>↗ Export</button>
+      </div>
+      {exportMsg&&<div style={{fontSize:11,color:AC,marginBottom:8}}>{exportMsg}</div>}
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <div style={{fontSize:24}}>📻</div>
         <div>
           <div style={{fontSize:20,fontWeight:900,color:TX}}>Rádio Carioca</div>
-          <div style={{fontSize:11,color:MU}}>{phase==='playing'?'● AO VIVO — Chico & Bia':phase==='tuning'?'Sintonizando…':'Toca aí'}</div>
+          <div style={{fontSize:11,color:MU}}>{phase==='playing'?(paused?'⏸ Pausado':'● AO VIVO — Chico & Bia'):phase==='tuning'?'Sintonizando…':'Toca aí'}</div>
         </div>
-        {phase==='playing'&&<div style={{marginLeft:'auto',width:8,height:8,background:RE,borderRadius:'50%',animation:'pulse 1.2s infinite'}}/>}
+        {phase==='playing'&&!paused&&<div style={{marginLeft:'auto',width:8,height:8,background:RE,borderRadius:'50%',animation:'pulse 1.2s infinite'}}/>}
       </div>
     </div>
 
-    {/* Transcript feed */}
-    <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'8px 20px'}}>
+    {/* Transcript feed — lines reveal only as spoken */}
+    <div ref={feedRef} onScroll={onFeedScroll} style={{flex:1,overflowY:'auto',padding:'8px 20px',position:'relative'}}>
       {phase==='off'&&<div style={{textAlign:'center',padding:'60px 20px'}}>
         <div style={{fontSize:44,marginBottom:14,opacity:0.5}}>📻</div>
         <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:6}}>Two Cariocas. Infinite conversation.</div>
         <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Tune in whenever. It's always mid-show.<br/>Tap any bubble for the translation.</div>
       </div>}
-      {lines.map((l,i)=>{
+      {lines.slice(0,currentLine+1).map((l,i)=>{
         const isChico=l.speaker==='echo'
         const active=i===currentLine
-        return<div key={i} style={{display:'flex',flexDirection:'column',alignItems:isChico?'flex-start':'flex-end',marginBottom:6,opacity:i<=currentLine?1:0.35,transition:'opacity 0.3s ease'}}>
+        return<div key={i} style={{display:'flex',flexDirection:'column',alignItems:isChico?'flex-start':'flex-end',marginBottom:6,animation:'up 0.25s ease'}}>
           <div style={{fontSize:9,color:MU,marginBottom:2,padding:'0 6px'}}>{isChico?'Chico':'Bia'}</div>
           <div onClick={()=>setShowTl(p=>({...p,[i]:!p[i]}))} style={{
             maxWidth:'82%',padding:'10px 14px',
@@ -4051,6 +4131,14 @@ function NGRadio({isOnline,onBack}){
       <div ref={endRef}/>
     </div>
 
+    {/* Back-to-live chip when free scrolling */}
+    {phase==='playing'&&!follow&&<div style={{position:'absolute',bottom:118,left:'50%',transform:'translateX(-50%)',zIndex:50}}>
+      <button onClick={()=>{setFollow(true);endRef.current?.scrollIntoView({behavior:'smooth'})}}
+        style={{background:`${RE}dd`,border:'none',borderRadius:20,padding:'8px 16px',cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:'#fff',boxShadow:'0 4px 14px rgba(0,0,0,0.4)'}}>
+        ▼ AO VIVO
+      </button>
+    </div>}
+
     {/* Controls */}
     <div style={{padding:'10px 20px 28px',flexShrink:0,borderTop:`1px solid ${BD}`}}>
       {phase==='off'&&<>
@@ -4060,12 +4148,28 @@ function NGRadio({isOnline,onBack}){
         <PBtn label={isOnline?'📻 Tune in':'Needs connection'} onClick={tune} disabled={!isOnline}/>
       </>}
       {phase==='tuning'&&<PBtn label="Sintonizando…" disabled/>}
-      {phase==='playing'&&<PBtn label="◼ Tune out" onClick={stop} color={`${RE}bb`}/>}
+      {phase==='playing'&&<>
+        <div style={{display:'flex',gap:6,marginBottom:10,alignItems:'center'}}>
+          <span style={{fontSize:10,color:MU,flexShrink:0}}>Velocidade</span>
+          {SPEEDS.map(v=><button key={v} onClick={()=>setSpeedLive(v)}
+            style={{flex:1,padding:'7px 0',background:speed===v?`${AC}20`:S2,border:`1px solid ${speed===v?AC+'55':BD}`,borderRadius:9,cursor:'pointer',fontFamily:FONT,fontSize:11,fontWeight:speed===v?700:400,color:speed===v?AC:MU}}>
+            {v===1?'1×':v+'×'}
+          </button>)}
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={togglePause}
+            style={{flex:2,padding:'13px',background:paused?`${GR}18`:S2,border:`1px solid ${paused?GR+'55':BD}`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:14,fontWeight:700,color:paused?GR:TX}}>
+            {paused?'▶ Continuar':'⏸ Pausar'}
+          </button>
+          <button onClick={stop}
+            style={{flex:1,padding:'13px',background:`${RE}12`,border:`1px solid ${RE}33`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:14,fontWeight:700,color:RE}}>
+            ◼
+          </button>
+        </div>
+      </>}
     </div>
   </div>
 }
-
-// ── NGPlacementChat — text placement conversation with Luna ─────────
 function NGPlacementChat({isOnline,onBack,onComplete}){
   const[messages,setMessages]=useState([])
   const[input,setInput]=useState('')
