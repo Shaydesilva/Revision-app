@@ -2852,6 +2852,7 @@ function NGScaffoldMap({isOnline,onBack}){
   const[mapView,setMapView]=useState('grid') // grid | constellation
   const[memState,setMemState]=useState([])
   const[graphEdges,setGraphEdges]=useState([])
+  const[constFetched,setConstFetched]=useState(false)
   const[scaffolds,setScaffolds]=useState([])
   const[controlled,setControlled]=useState(new Set())
   const[hybridEligible,setHybridEligible]=useState(new Set())
@@ -2864,8 +2865,10 @@ function NGScaffoldMap({isOnline,onBack}){
 
   useEffect(()=>{
     if(mapView!=='constellation'||memState.length)return
-    ngFetch('ng-memory',{action:'state'}).then(d=>setMemState(d.state||[])).catch(()=>{})
-    ngFetch('ng-graph',{action:'full'}).then(d=>setGraphEdges(d.edges||[])).catch(()=>{})
+    Promise.all([
+      ngFetch('ng-memory',{action:'state'}).then(d=>setMemState(d.state||[])).catch(()=>{}),
+      ngFetch('ng-graph',{action:'full'}).then(d=>setGraphEdges(d.edges||[])).catch(()=>{})
+    ]).finally(()=>setConstFetched(true))
   },[mapView])
 
   useEffect(()=>{load()},[])
@@ -2972,6 +2975,12 @@ function NGScaffoldMap({isOnline,onBack}){
     {mapView==='constellation'&&<div style={{padding:'0 12px 24px'}}>
       {(memState.length||graphEdges.length)
         ?<ConstellationView scaffolds={scaffolds} memState={memState} edges={graphEdges}/>
+        :constFetched
+        ?<div style={{textAlign:'center',padding:'50px 20px'}}>
+          <div style={{fontSize:32,marginBottom:12,opacity:0.4}}>✦</div>
+          <div style={{fontSize:14,fontWeight:700,color:TX,marginBottom:6}}>No memory data yet</div>
+          <div style={{fontSize:12,color:MU,lineHeight:1.7}}>The constellation lights up from the memory engine and knowledge graph.<br/>Open <b>Intel</b> and tap <b style={{color:AC}}>✦ V2 Setup</b> once — it backfills your whole history.</div>
+        </div>
         :<div style={{textAlign:'center',padding:'60px 20px'}}><Spinner size={20}/><div style={{fontSize:12,color:MU,marginTop:12}}>Mapping the constellation…</div></div>}
       <div style={{fontSize:10,color:MU,opacity:0.6,textAlign:'center',marginTop:10}}>Brightness = memory strength · threads = relationships · tap ⊞ for grid</div>
     </div>}
@@ -3836,11 +3845,28 @@ function NGBrain({isOnline,onBack}){
 function NGToday({isOnline,onBack,goTo}){
   const[data,setData]=useState(null)
   const[loading,setLoading]=useState(true)
+  const[err,setErr]=useState(null)
+  const[generating,setGenerating]=useState(false)
 
-  useEffect(()=>{
+  const load=()=>{
     if(!isOnline){setLoading(false);return}
-    ngFetch('ng-today',{action:'get'}).then(d=>{setData(d);setLoading(false)}).catch(()=>setLoading(false))
-  },[isOnline])
+    setLoading(true);setErr(null)
+    ngFetch('ng-today',{action:'get'})
+      .then(d=>{
+        if(d?.error)setErr('ng-today returned an error: '+d.error)
+        setData(d);setLoading(false)
+      })
+      .catch(e=>{setErr('Could not reach ng-today — is ng-today.js uploaded to functions/? ('+(e?.message||'fetch failed')+')');setLoading(false)})
+  }
+  useEffect(load,[isOnline])
+
+  const generateNow=async()=>{
+    setGenerating(true)
+    try{
+      await ngFetch('ng-nightly-brain',{})
+      setTimeout(()=>{setGenerating(false);load()},2500)
+    }catch(e){setErr('Nightly brain failed: '+(e?.message||'unknown'));setGenerating(false)}
+  }
 
   const dismissMission=async(id)=>{
     setData(p=>({...p,missions:(p.missions||[]).filter(m=>m.id!==id)}))
@@ -3854,11 +3880,23 @@ function NGToday({isOnline,onBack,goTo}){
   if(loading)return<div style={{padding:'80px 24px',textAlign:'center'}}><Spinner size={22}/></div>
   const d=data||{}
   const dials=d.fluency_dials
+  const isEmpty=!d.coach_note&&!d.workout&&!dials&&!(d.missions?.length)
 
   return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
     <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:16,padding:0}}>← Back</button>
     <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Today</div>
-    <div style={{fontSize:12,color:MU,marginBottom:18}}>{d.is_today?'Assembled overnight by the brain':'Latest available plan'}</div>
+    <div style={{fontSize:12,color:MU,marginBottom:18}}>{d.is_today?'Assembled overnight by the brain':isEmpty?'':'Latest available plan'}</div>
+
+    {err&&<div style={{background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'13px 15px',marginBottom:14}}>
+      <div style={{fontSize:12,color:RE,lineHeight:1.6}}>{err}</div>
+    </div>}
+
+    {isEmpty&&!err&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'22px',textAlign:'center',marginBottom:16}}>
+      <div style={{fontSize:32,marginBottom:10,opacity:0.5}}>☾</div>
+      <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:6}}>The brain hasn't assembled today yet</div>
+      <div style={{fontSize:12,color:MU,lineHeight:1.7,marginBottom:16}}>It runs automatically after 4am Rio on your first app open. Or run it right now — takes about a minute.</div>
+      <PBtn label={generating?'☾ Thinking…':'☾ Generate today now'} onClick={generateNow} disabled={generating||!isOnline}/>
+    </div>}
 
     {/* Coach's note */}
     {d.coach_note&&<div style={{background:`${AC}0d`,border:`1px solid ${AC}33`,borderRadius:16,padding:'16px',marginBottom:16}}>
