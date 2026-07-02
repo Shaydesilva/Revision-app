@@ -24,7 +24,7 @@ async function tts(text,voice){
   return buf.toString('base64')
 }
 
-async function generateSegment(sb,profile,scaffolds,mem,prevLines,station,segIndex,recentBeats){
+async function generateSegment(sb,profile,scaffolds,mem,prevLines,station,segIndex,recentBeats,formatHint){
   const scMap={};(scaffolds||[]).forEach(s=>{scMap[s.id]=s})
   const strong=(mem||[]).filter(m=>m.skill==='production'&&m.stability>=14)
     .map(m=>scMap[m.scaffold_id]?.base_portuguese).filter(Boolean)
@@ -55,6 +55,7 @@ Return JSON only: {"lines":[{"speaker":"echo|shimmer","pt":"","en":""}],"pattern
 KNOWN PATTERNS: ${strong.slice(0,40).join(', ')||'basic Carioca'}
 FRONTIER (max 2, only if natural): ${frontier.join(', ')||'none'}
 SHOW BIBLE (callbacks only): ${showBible.slice(0,500)}
+SEGMENT FORMAT DIRECTIVE: ${formatHint||'fresh new story'}
 RECENT BEATS — already told, do NOT retell any of these:
 ${recentBeats||'(none yet)'}
 PREVIOUS SEGMENT ENDED WITH:
@@ -85,6 +86,8 @@ exports.handler=async(event)=>{
       const ls=Array.isArray(s.lines)?s.lines.slice(0,2):[]
       return ls.map(l=>l.pt).join(' / ')
     }).filter(Boolean).map(b=>'- '+b.slice(0,140)).join('\n')
+    const FORMATS=['a brand-new story from one of the hosts','a listener message (invent a listener + neighbourhood)','mock neighbourhood news','a debate between the hosts (pick a petty Rio topic)','a quick game between the hosts','advance an existing running gag FORWARD with new developments']
+    const pickFormat=(i)=>FORMATS[((i||0)+new Date().getDate())%FORMATS.length]
     const stationPrompt=station||profile?.radio_station_prompt||''
 
     // ═══ TUNE: instant start ═════════════════════════════════════════
@@ -92,14 +95,16 @@ exports.handler=async(event)=>{
       const key='radio_'+Date.now()
       // Try today's pre-generated opener first (nightly brain made it)
       const today=new Date(Date.now()-3*3600000).toISOString().slice(0,10)
+      // Single-use cache: only serve an opener that has NEVER been heard.
+      // Replays are what made every session start with the same story.
       let{data:opener}=await sb.from('ng_radio_segments').select('*')
-        .eq('user_id',UID).eq('is_opener',true)
+        .eq('user_id',UID).eq('is_opener',true).eq('played_count',0)
         .gte('created_at',today+'T00:00:00')
-        .order('played_count',{ascending:true}).limit(1).single()
+        .order('created_at',{ascending:false}).limit(1).single()
 
       if(!opener){
         // No cached opener — generate live (slower cold start, still works)
-        const seg=await generateSegment(sb,profile,scaffolds,mem,null,stationPrompt,0,recentBeats)
+        const seg=await generateSegment(sb,profile,scaffolds,mem,null,stationPrompt,0,recentBeats,pickFormat(Math.floor(Math.random()*6)))
         const{data:inserted}=await sb.from('ng_radio_segments').insert({
           user_id:UID,station:stationPrompt||'default',session_key:key,segment_index:0,
           lines:seg.lines||[],is_opener:true,patterns_used:seg.patterns_used||[]
@@ -131,7 +136,7 @@ exports.handler=async(event)=>{
         .eq('user_id',UID).eq('session_key',session_key)
         .order('segment_index',{ascending:false}).limit(1).single()
 
-      const seg=await generateSegment(sb,profile,scaffolds,mem,prev?.lines||null,stationPrompt,segment_index,recentBeats)
+      const seg=await generateSegment(sb,profile,scaffolds,mem,prev?.lines||null,stationPrompt,segment_index,recentBeats,pickFormat(segment_index))
       await sb.from('ng_radio_segments').insert({
         user_id:UID,station:stationPrompt||'default',session_key,segment_index,
         lines:seg.lines||[],patterns_used:seg.patterns_used||[]
