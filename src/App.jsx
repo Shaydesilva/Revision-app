@@ -6,7 +6,8 @@ const BG='#07070a',S='#0d0d18',S2='#111120',BD='#1c1c30',AC='#7c6ef7',TX='#f0f0f
 const FONT="-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif"
 const TIERS=[{name:'Turista',min:0},{name:'Comunicador',min:15},{name:'Carioca',min:35},{name:'Carioca Honorario',min:60}]
 const getTier=n=>TIERS.reduce((a,t)=>n>=t.min?t:a,TIERS[0])
-const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
+const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
 
 
 function sm2(card,q){
@@ -2286,6 +2287,8 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   const[flipped,setFlipped]=useState(false)
   const[loading,setLoading]=useState(true)
   const[sessionEvents,setSessionEvents]=useState([])
+  const[coachHint,setCoachHint]=useState(null)
+  const coachCheckedAt=useRef(0)
   const[done,setDone]=useState(false)
   const[summary,setSummary]=useState({})
   const[writeAnswer,setWriteAnswer]=useState('')
@@ -2330,6 +2333,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     try{
       const data=await ngFetch('ng-frontier')
       if(data.error)throw new Error(data.error)
+      ngFetch('ng-today',{action:'get'}).then(t=>{if(t?.coach_note)setCoachNote(t.coach_note)}).catch(()=>{})
       const reviewCards=(data.review||[]).map(r=>({...r,isReview:true}))
       const allCards=[...(data.frontier||[]),...reviewCards]
       setFrontier(allCards)
@@ -2416,6 +2420,14 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     const newEvents=[...sessionEvents,event]
     setSessionEvents(newEvents)
 
+    // Live coach: check every 5 events, only when struggling
+    if(isOnline&&newEvents.length>=5&&newEvents.length-coachCheckedAt.current>=5){
+      coachCheckedAt.current=newEvents.length
+      ngFetch('ng-coach',{mode:'study',events:newEvents}).then(c=>{
+        if(c.hint)setCoachHint(c.hint)
+      }).catch(()=>{})
+    }
+
     // Log immediately, don't batch
     if(isOnline){
       ngFetch('ng-session-end',{mode:'flashcard',events:[event],duration_seconds:15})
@@ -2500,6 +2512,13 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
       <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{idx+1} of {frontier.length}</div>
       <button onClick={endEarly} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0,opacity:0.6}}>Done</button>
     </div>
+
+    {/* Live coach hint — the brain watching in real time */}
+    {coachHint&&<div style={{background:`${GR}0d`,border:`1px solid ${GR}33`,borderRadius:12,padding:'10px 13px',marginBottom:14,display:'flex',gap:10,alignItems:'flex-start',animation:'up 0.3s ease'}}>
+      <span style={{fontSize:14,flexShrink:0}}>◉</span>
+      <div style={{flex:1,fontSize:12,color:TX,lineHeight:1.55}}>{coachHint}</div>
+      <button onClick={()=>setCoachHint(null)} style={{background:'none',border:'none',color:MU,fontSize:14,cursor:'pointer',padding:0,flexShrink:0,fontFamily:FONT}}>×</button>
+    </div>}
 
     {/* Progress bar */}
     <div style={{height:2,background:BD,borderRadius:2,marginBottom:20,overflow:'hidden'}}>
@@ -2609,6 +2628,7 @@ function NGPhrase({isOnline,onBack}){
   const[phase,setPhase]=useState('loading') // loading|scenario|answering|result|done
   const[frontier,setFrontier]=useState([])
   const[targetScaffold,setTargetScaffold]=useState(null)
+  const[secondaryTarget,setSecondaryTarget]=useState(null)
   const[scenario,setScenario]=useState('')
   const[answer,setAnswer]=useState('')
   const[result,setResult]=useState(null)
@@ -2639,6 +2659,7 @@ function NGPhrase({isOnline,onBack}){
     const target=target1 // primary target for events
     const targets=[target1,target2].filter((t,i,arr)=>t&&arr.findIndex(x=>x.scaffold_id===t.scaffold_id)===i)
     setTargetScaffold(target)
+    setSecondaryTarget(targets[1]||null)
     setPhase('loading')
     try{
       const res=await fetch('/.netlify/functions/claude',{
@@ -2675,10 +2696,12 @@ Do NOT include the phrases. Do NOT give hints. Just set the scene.`}],
           system:`You evaluate Portuguese language responses for a Carioca learner.
 Be generous. Accept contractions, informal spelling, dropped subjects.
 Never penalise missing accents. Judge on meaning and pattern use.
+${secondaryTarget?'This scenario requires TWO patterns — grade both independently.':''}
 Return JSON only.`,
           messages:[{role:'user',content:`Scenario: ${scenario}
 
-Target scaffold: "${targetScaffold.pt}" (${targetScaffold.en})
+Target pattern 1: "${targetScaffold.pt}" (${targetScaffold.en})
+${secondaryTarget?`Target pattern 2: "${secondaryTarget.pt}" (${secondaryTarget.en})`:''}
 
 Learner's response: "${answer}"
 
@@ -2688,9 +2711,11 @@ Return JSON:
   "quality": 1-5,
   "natural": true/false,
   "feedback": "one short honest sentence in English",
-  "carioca_version": "how a Carioca would naturally say this"
+  "carioca_version": "how a Carioca would naturally say this"${secondaryTarget?`,
+  "used_secondary": true/false,
+  "secondary_quality": 1-5`:''}
 }`}],
-          max_tokens:200
+          max_tokens:250
         })
       })
       const d=await res.json()
@@ -2704,7 +2729,18 @@ Return JSON:
         produced:evaluation.used_target||false,
         mode:'phrase'
       }
-      const newEvents=[...sessionEvents,event]
+      const events=[event]
+      // Grade + log secondary pattern independently — both progress toward acquisition
+      if(secondaryTarget){
+        events.push({
+          scaffold_id:secondaryTarget.scaffold_id,
+          stage:secondaryTarget.stage,
+          quality:evaluation.secondary_quality||(evaluation.used_secondary?3:1),
+          produced:evaluation.used_secondary||false,
+          mode:'phrase'
+        })
+      }
+      const newEvents=[...sessionEvents,...events]
       setSessionEvents(newEvents)
       setResult(evaluation)
       setPhase('result')
@@ -2713,7 +2749,7 @@ Return JSON:
       if(isOnline){
         ngFetch('ng-session-end',{
           mode:'phrase',
-          events:[event],
+          events,
           duration_seconds:60
         }).catch(()=>{})
       }
@@ -2813,6 +2849,9 @@ Return JSON:
 
 // ── NGScaffoldMap ─────────────────────────────────────────────────
 function NGScaffoldMap({isOnline,onBack}){
+  const[mapView,setMapView]=useState('grid') // grid | constellation
+  const[memState,setMemState]=useState([])
+  const[graphEdges,setGraphEdges]=useState([])
   const[scaffolds,setScaffolds]=useState([])
   const[controlled,setControlled]=useState(new Set())
   const[hybridEligible,setHybridEligible]=useState(new Set())
@@ -2822,6 +2861,12 @@ function NGScaffoldMap({isOnline,onBack}){
   const[pendingHybrids,setPendingHybrids]=useState([])
   const[showHybridPanel,setShowHybridPanel]=useState(false)
   const[unlockScaffold,setUnlockScaffold]=useState(null)
+
+  useEffect(()=>{
+    if(mapView!=='constellation'||memState.length)return
+    ngFetch('ng-memory',{action:'state'}).then(d=>setMemState(d.state||[])).catch(()=>{})
+    ngFetch('ng-graph',{action:'full'}).then(d=>setGraphEdges(d.edges||[])).catch(()=>{})
+  },[mapView])
 
   useEffect(()=>{load()},[])
 
@@ -2923,6 +2968,14 @@ function NGScaffoldMap({isOnline,onBack}){
       </div>
     </div>
 
+    {/* Constellation view — knowledge as a living network */}
+    {mapView==='constellation'&&<div style={{padding:'0 12px 24px'}}>
+      {(memState.length||graphEdges.length)
+        ?<ConstellationView scaffolds={scaffolds} memState={memState} edges={graphEdges}/>
+        :<div style={{textAlign:'center',padding:'60px 20px'}}><Spinner size={20}/><div style={{fontSize:12,color:MU,marginTop:12}}>Mapping the constellation…</div></div>}
+      <div style={{fontSize:10,color:MU,opacity:0.6,textAlign:'center',marginTop:10}}>Brightness = memory strength · threads = relationships · tap ⊞ for grid</div>
+    </div>}
+
     {/* Selected scaffold — fixed overlay popup */}
     {selected&&<div onClick={()=>setSelected(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:S,border:`1px solid ${BD}`,borderRadius:20,padding:'20px',width:'100%',maxWidth:420,maxHeight:'75vh',overflowY:'auto',animation:'up 0.2s ease'}}>
@@ -2960,8 +3013,8 @@ function NGScaffoldMap({isOnline,onBack}){
       </div>
     </div>}
 
-    {/* Category sections */}
-    {Object.entries(categories).map(([cat,label])=>{
+    {/* Category sections — grid view */}
+    {mapView==='grid'&&Object.entries(categories).map(([cat,label])=>{
       const catScaffolds=grouped[cat]||[]
       if(!catScaffolds.length)return null
       const color=catColor[cat]||AC
@@ -3694,7 +3747,465 @@ function ModeSelect({onSelect}){
 }
 
 // ── NGHome ────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════════
+// V2 COMPONENTS — Today, Radio, Placement, Constellation
+// ═══════════════════════════════════════════════════════════════════
+
+
+// ── NGBrain — tune into the always-on brain's thought stream ────────
+function NGBrain({isOnline,onBack}){
+  const[thoughts,setThoughts]=useState([])
+  const[loading,setLoading]=useState(true)
+  const pollRef=useRef(null)
+  const PROC_META={
+    heartbeat:{i:'♥',c:'#f97066',l:'Heartbeat'},
+    nightly_brain:{i:'☾',c:'#7c6ef7',l:'Nightly Brain'},
+    coach:{i:'◉',c:'#34d399',l:'Live Coach'},
+    radio:{i:'📻',c:'#fbbf24',l:'Radio'},
+    memory:{i:'◌',c:'#60a5fa',l:'Memory'},
+    graph:{i:'✦',c:'#c084fc',l:'Graph'},
+    placement:{i:'⊕',c:'#f472b6',l:'Placement'},
+    field:{i:'🌴',c:'#4ade80',l:'Field'},
+    session:{i:'▣',c:'#94a3b8',l:'Session'}
+  }
+  const load=async()=>{
+    if(!isOnline||!sb)return
+    try{
+      const{data}=await sb.from('ng_brain_log').select('*')
+        .eq('user_id','00000000-0000-0000-0000-000000000001')
+        .order('created_at',{ascending:false}).limit(60)
+      setThoughts(data||[])
+    }catch{}
+    setLoading(false)
+  }
+  useEffect(()=>{
+    load()
+    // Ping the heartbeat so the brain wakes when you tune in
+    ngFetch('ng-heartbeat',{}).catch(()=>{})
+    pollRef.current=setInterval(load,8000)
+    return()=>clearInterval(pollRef.current)
+  },[isOnline])
+
+  const timeAgo=(ts)=>{
+    const s=Math.floor((Date.now()-new Date(ts).getTime())/1000)
+    if(s<60)return`${s}s`
+    if(s<3600)return`${Math.floor(s/60)}m`
+    if(s<86400)return`${Math.floor(s/3600)}h`
+    return`${Math.floor(s/86400)}d`
+  }
+
+  return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
+    <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:16,padding:0}}>← Back</button>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+      <div style={{fontSize:24}}>🧠</div>
+      <div style={{fontSize:22,fontWeight:900,color:TX}}>The Brain</div>
+      <div style={{width:7,height:7,background:GR,borderRadius:'50%',animation:'pulse 1.6s infinite',marginTop:2}}/>
+    </div>
+    <div style={{fontSize:12,color:MU,marginBottom:20}}>Live stream of everything the system is thinking and doing.</div>
+
+    {loading&&<div style={{textAlign:'center',padding:'40px'}}><Spinner size={20}/></div>}
+    {!loading&&!thoughts.length&&<div style={{textAlign:'center',padding:'50px 20px'}}>
+      <div style={{fontSize:36,marginBottom:12,opacity:0.4}}>🧠</div>
+      <div style={{fontSize:14,fontWeight:700,color:TX,marginBottom:6}}>Quiet in here — for now</div>
+      <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Thoughts appear as the brain works: nightly runs, live coaching, radio generation, memory sweeps. Do a session and come back.</div>
+    </div>}
+
+    {thoughts.map(t=>{
+      const meta=PROC_META[t.process]||{i:'·',c:MU,l:t.process}
+      const big=t.importance>=3
+      return<div key={t.id} style={{
+        background:big?`${meta.c}0d`:S,
+        border:`1px solid ${big?meta.c+'44':BD}`,
+        borderRadius:14,padding:'12px 14px',marginBottom:8,
+        boxShadow:big?`0 0 16px ${meta.c}15`:'none'
+      }}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+          <span style={{fontSize:13}}>{meta.i}</span>
+          <span style={{fontSize:10,fontWeight:700,color:meta.c,letterSpacing:1,textTransform:'uppercase'}}>{meta.l}</span>
+          {big&&<span style={{fontSize:9,color:meta.c,opacity:0.8}}>★ milestone</span>}
+          <span style={{marginLeft:'auto',fontSize:10,color:MU,opacity:0.6}}>{timeAgo(t.created_at)}</span>
+        </div>
+        <div style={{fontSize:13,color:TX,lineHeight:1.6}}>{t.thought}</div>
+      </div>
+    })}
+  </div>
+}
+
+// ── NGToday — coach note + prescribed workout + dials + missions ────
+function NGToday({isOnline,onBack,goTo}){
+  const[data,setData]=useState(null)
+  const[loading,setLoading]=useState(true)
+
+  useEffect(()=>{
+    if(!isOnline){setLoading(false);return}
+    ngFetch('ng-today',{action:'get'}).then(d=>{setData(d);setLoading(false)}).catch(()=>setLoading(false))
+  },[isOnline])
+
+  const dismissMission=async(id)=>{
+    setData(p=>({...p,missions:(p.missions||[]).filter(m=>m.id!==id)}))
+    ngFetch('ng-today',{action:'mission_dismiss',mission_id:id}).catch(()=>{})
+  }
+  const doneMission=async(id)=>{
+    setData(p=>({...p,missions:(p.missions||[]).filter(m=>m.id!==id)}))
+    ngFetch('ng-today',{action:'mission_done',mission_id:id}).catch(()=>{})
+  }
+
+  if(loading)return<div style={{padding:'80px 24px',textAlign:'center'}}><Spinner size={22}/></div>
+  const d=data||{}
+  const dials=d.fluency_dials
+
+  return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
+    <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:16,padding:0}}>← Back</button>
+    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Today</div>
+    <div style={{fontSize:12,color:MU,marginBottom:18}}>{d.is_today?'Assembled overnight by the brain':'Latest available plan'}</div>
+
+    {/* Coach's note */}
+    {d.coach_note&&<div style={{background:`${AC}0d`,border:`1px solid ${AC}33`,borderRadius:16,padding:'16px',marginBottom:16}}>
+      <div style={{fontSize:10,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>Coach's note</div>
+      <div style={{fontSize:14,color:TX,lineHeight:1.7}}>{d.coach_note}</div>
+    </div>}
+
+    {/* Fluency dials */}
+    {dials&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8,marginBottom:16}}>
+      {[['Ouvir',dials.comprehension],['Falar',dials.production],['Ritmo',dials.speed],['Registro',dials.register]].map(([l,v])=>
+        <div key={l} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'10px 6px',textAlign:'center'}}>
+          <div style={{fontSize:18,fontWeight:800,color:v>=70?GR:v>=45?YE:MU}}>{v??'–'}</div>
+          <div style={{fontSize:9,color:MU,marginTop:2}}>{l}</div>
+        </div>)}
+    </div>}
+    {dials?.projection_weeks&&<div style={{fontSize:11,color:MU,textAlign:'center',marginBottom:16}}>
+      Conversational threshold: ~{dials.projection_weeks} weeks at current pace
+    </div>}
+
+    {/* Week recap (Sundays) */}
+    {d.week_recap?.headline&&<div style={{background:S,border:`1px solid ${YE}44`,borderRadius:16,padding:'16px',marginBottom:16}}>
+      <div style={{fontSize:15,fontWeight:800,color:YE,marginBottom:6}}>{d.week_recap.headline}</div>
+      <div style={{fontSize:12,color:MU,lineHeight:1.7}}>{d.week_recap.best_moment} {d.week_recap.number_that_moved}</div>
+    </div>}
+
+    {/* The Workout */}
+    {d.workout&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'16px',marginBottom:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div style={{fontSize:15,fontWeight:800,color:TX}}>The Workout</div>
+        <div style={{fontSize:11,color:MU}}>~{Math.round(d.workout.estimated_mins||10)} min</div>
+      </div>
+      {(d.workout.reviews?.length>0)&&<div style={{fontSize:12,color:MU,marginBottom:6}}>◌ {d.workout.reviews.length} reviews at the forgetting edge</div>}
+      {(d.workout.frontier?.length>0)&&<div style={{fontSize:12,color:MU,marginBottom:6}}>◈ {d.workout.frontier.length} frontier patterns</div>}
+      {d.workout.listening&&<div style={{fontSize:12,color:MU,marginBottom:6}}>◉ 1 listening drill (Ouvido)</div>}
+      {d.workout.composition&&<div style={{fontSize:12,color:MU,marginBottom:10}}>✍ 1 composition scenario</div>}
+      <PBtn label="Start workout →" onClick={()=>goTo&&goTo('ng-study')}/>
+      <div style={{fontSize:10,color:MU,opacity:0.6,marginTop:8,textAlign:'center'}}>Runs through Study — the engine already loaded today's items</div>
+    </div>}
+
+    {/* Mission shelf — opportunities, never obligations */}
+    {(d.missions?.length>0)&&<div style={{marginBottom:16}}>
+      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>On the shelf — if it comes up</div>
+      {d.missions.map(m=><div key={m.id} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 14px',marginBottom:8}}>
+        <div style={{fontSize:13,fontWeight:700,color:TX,marginBottom:2}}>{m.is_home_variant?'🏠 ':'🌴 '}{m.title}</div>
+        {m.prompt_pt&&<div style={{fontSize:13,color:AC,fontWeight:600,marginBottom:2}}>{m.prompt_pt}</div>}
+        {m.prompt_en&&<div style={{fontSize:11,color:MU,marginBottom:8}}>{m.prompt_en}</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>doneMission(m.id)} style={{flex:1,padding:'7px',background:`${GR}12`,border:`1px solid ${GR}33`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:11,color:GR,fontWeight:600}}>Happened ✓</button>
+          <button onClick={()=>dismissMission(m.id)} style={{flex:1,padding:'7px',background:S2,border:`1px solid ${BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:11,color:MU}}>Not for me</button>
+        </div>
+      </div>)}
+    </div>}
+  </div>
+}
+
+// ── NGRadio — Radio Carioca: tune in, infinite buffered show ────────
+function NGRadio({isOnline,onBack}){
+  const[phase,setPhase]=useState('off') // off|tuning|playing|paused
+  const[lines,setLines]=useState([]) // all lines across segments [{speaker,pt,en,segIdx}]
+  const[currentLine,setCurrentLine]=useState(-1)
+  const[stationPrompt,setStationPrompt]=useState(()=>localStorage.getItem('radio_station')||'')
+  const[showTl,setShowTl]=useState({}) // lineIdx → bool
+  const sessionRef=useRef(null)
+  const audioQueueRef=useRef([]) // [{lineIdx, b64}]
+  const playingRef=useRef(false)
+  const segIndexRef=useRef(0)
+  const bufferingRef=useRef(false)
+  const stopRef=useRef(false)
+  const scrollRef=useRef(null)
+  const endRef=useRef(null)
+
+  useEffect(()=>{endRef.current?.scrollIntoView({behavior:'smooth'})},[currentLine])
+  useEffect(()=>()=>{stopRef.current=true},[])
+
+  const playQueue=async()=>{
+    if(playingRef.current)return
+    playingRef.current=true
+    while(!stopRef.current){
+      const next=audioQueueRef.current.shift()
+      if(!next){
+        playingRef.current=false
+        // Queue empty — if still tuned, poll briefly for buffer refill
+        if(!stopRef.current)setTimeout(()=>{if(audioQueueRef.current.length&&!stopRef.current)playQueue()},800)
+        return
+      }
+      setCurrentLine(next.lineIdx)
+      await new Promise(res=>{
+        try{
+          const a=new Audio('data:audio/mp3;base64,'+next.b64)
+          a.onended=res;a.onerror=res
+          a.play().catch(res)
+        }catch{res()}
+      })
+      // small natural gap between speakers
+      await new Promise(r=>setTimeout(r,350))
+    }
+    playingRef.current=false
+  }
+
+  const ingestSegment=(data,baseLineIdx)=>{
+    const segLines=(data.lines||[]).map((l,i)=>({...l,lineIdx:baseLineIdx+i}))
+    setLines(prev=>[...prev,...segLines])
+    ;(data.audio||[]).forEach(a=>{
+      if(a.b64)audioQueueRef.current.push({lineIdx:baseLineIdx+a.line_index,b64:a.b64})
+    })
+    playQueue()
+  }
+
+  const bufferNext=async()=>{
+    if(bufferingRef.current||stopRef.current)return
+    bufferingRef.current=true
+    try{
+      segIndexRef.current+=1
+      const d=await ngFetch('ng-radio',{action:'next',session_key:sessionRef.current,segment_index:segIndexRef.current,station:stationPrompt})
+      if(d.lines){
+        setLines(prev=>{
+          const base=prev.length
+          const segLines=d.lines.map((l,i)=>({...l,lineIdx:base+i}))
+          ;(d.audio||[]).forEach(a=>{if(a.b64)audioQueueRef.current.push({lineIdx:base+a.line_index,b64:a.b64})})
+          playQueue()
+          return[...prev,...segLines]
+        })
+      }
+    }catch{}
+    bufferingRef.current=false
+    // Keep buffer 1 segment ahead while playing
+    if(!stopRef.current&&audioQueueRef.current.length<10)setTimeout(bufferNext,3000)
+  }
+
+  const tune=async()=>{
+    if(!isOnline)return
+    stopRef.current=false
+    setPhase('tuning')
+    setLines([]);setCurrentLine(-1)
+    audioQueueRef.current=[];segIndexRef.current=0
+    localStorage.setItem('radio_station',stationPrompt)
+    try{
+      const d=await ngFetch('ng-radio',{action:'tune',station:stationPrompt})
+      sessionRef.current=d.session_key
+      setPhase('playing')
+      ingestSegment(d,0)
+      // Immediately start buffering segment 1
+      setTimeout(bufferNext,1000)
+    }catch{setPhase('off')}
+  }
+
+  const stop=()=>{
+    stopRef.current=true
+    audioQueueRef.current=[]
+    setPhase('off')
+    setCurrentLine(-1)
+  }
+
+  return<div style={{height:'100dvh',display:'flex',flexDirection:'column',animation:'up 0.35s ease'}}>
+    <div style={{padding:'52px 20px 12px',flexShrink:0}}>
+      <button onClick={()=>{stop();onBack()}} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:12}}>← Back</button>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{fontSize:24}}>📻</div>
+        <div>
+          <div style={{fontSize:20,fontWeight:900,color:TX}}>Rádio Carioca</div>
+          <div style={{fontSize:11,color:MU}}>{phase==='playing'?'● AO VIVO — Chico & Bia':phase==='tuning'?'Sintonizando…':'Toca aí'}</div>
+        </div>
+        {phase==='playing'&&<div style={{marginLeft:'auto',width:8,height:8,background:RE,borderRadius:'50%',animation:'pulse 1.2s infinite'}}/>}
+      </div>
+    </div>
+
+    {/* Transcript feed */}
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'8px 20px'}}>
+      {phase==='off'&&<div style={{textAlign:'center',padding:'60px 20px'}}>
+        <div style={{fontSize:44,marginBottom:14,opacity:0.5}}>📻</div>
+        <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:6}}>Two Cariocas. Infinite conversation.</div>
+        <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Tune in whenever. It's always mid-show.<br/>Tap any bubble for the translation.</div>
+      </div>}
+      {lines.map((l,i)=>{
+        const isChico=l.speaker==='echo'
+        const active=i===currentLine
+        return<div key={i} style={{display:'flex',flexDirection:'column',alignItems:isChico?'flex-start':'flex-end',marginBottom:6,opacity:i<=currentLine?1:0.35,transition:'opacity 0.3s ease'}}>
+          <div style={{fontSize:9,color:MU,marginBottom:2,padding:'0 6px'}}>{isChico?'Chico':'Bia'}</div>
+          <div onClick={()=>setShowTl(p=>({...p,[i]:!p[i]}))} style={{
+            maxWidth:'82%',padding:'10px 14px',
+            borderRadius:isChico?'16px 16px 16px 4px':'16px 16px 4px 16px',
+            background:isChico?S:'#2a4a3a',
+            border:active?`1.5px solid ${isChico?AC:GR}`:`1px solid ${BD}`,
+            fontSize:14,lineHeight:1.6,color:TX,cursor:'pointer',
+            boxShadow:active?`0 0 12px ${isChico?AC:GR}22`:'none'
+          }}>{l.pt}</div>
+          {showTl[i]&&<div style={{maxWidth:'82%',marginTop:3,padding:'6px 10px',background:S2,border:`1px solid ${BD}`,borderRadius:8,fontSize:12,color:MU}}>{l.en}</div>}
+        </div>
+      })}
+      <div ref={endRef}/>
+    </div>
+
+    {/* Controls */}
+    <div style={{padding:'10px 20px 28px',flexShrink:0,borderTop:`1px solid ${BD}`}}>
+      {phase==='off'&&<>
+        <input value={stationPrompt} onChange={e=>setStationPrompt(e.target.value)}
+          placeholder="Station vibe (optional): trading, Ipanema nightlife…"
+          style={{width:'100%',background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'11px 14px',color:TX,fontSize:13,outline:'none',fontFamily:FONT,marginBottom:10}}/>
+        <PBtn label={isOnline?'📻 Tune in':'Needs connection'} onClick={tune} disabled={!isOnline}/>
+      </>}
+      {phase==='tuning'&&<PBtn label="Sintonizando…" disabled/>}
+      {phase==='playing'&&<PBtn label="◼ Tune out" onClick={stop} color={`${RE}bb`}/>}
+    </div>
+  </div>
+}
+
+// ── NGPlacementChat — text placement conversation with Luna ─────────
+function NGPlacementChat({isOnline,onBack,onComplete}){
+  const[messages,setMessages]=useState([])
+  const[input,setInput]=useState('')
+  const[loading,setLoading]=useState(false)
+  const[phase,setPhase]=useState('chat') // chat|processing|done
+  const[result,setResult]=useState(null)
+  const endRef=useRef(null)
+  useEffect(()=>{endRef.current?.scrollIntoView({behavior:'smooth'})},[messages,loading])
+
+  // Kick off — Luna opens
+  useEffect(()=>{
+    if(!isOnline||messages.length)return
+    setLoading(true)
+    ngFetch('ng-placement',{action:'chat',messages:[]}).then(d=>{
+      setMessages([{role:'assistant',content:d.reply}])
+      setLoading(false)
+    }).catch(()=>setLoading(false))
+  },[isOnline])
+
+  const send=async()=>{
+    const msg=input.trim()
+    if(!msg||loading)return
+    const updated=[...messages,{role:'user',content:msg}]
+    setMessages(updated);setInput('');setLoading(true)
+    try{
+      const d=await ngFetch('ng-placement',{action:'chat',messages:updated})
+      const withReply=[...updated,{role:'assistant',content:d.reply}]
+      setMessages(withReply)
+      if(d.done){
+        setPhase('processing')
+        const fin=await ngFetch('ng-placement',{action:'finalize',messages:withReply})
+        setResult(fin)
+        setPhase('done')
+        if(onComplete)onComplete(fin)
+      }
+    }catch{}
+    setLoading(false)
+  }
+
+  if(phase==='processing')return<div style={{padding:'100px 24px',textAlign:'center'}}>
+    <Spinner size={26}/>
+    <div style={{fontSize:15,fontWeight:700,color:TX,marginTop:18}}>Processando…</div>
+    <div style={{fontSize:12,color:MU,marginTop:6}}>Mapping your Portuguese across 788 stages</div>
+  </div>
+
+  if(phase==='done')return<div style={{padding:'80px 24px',textAlign:'center',animation:'up 0.4s ease'}}>
+    <div style={{fontSize:44,marginBottom:14}}>✦</div>
+    <div style={{fontSize:22,fontWeight:900,color:TX,marginBottom:8}}>Placed.</div>
+    <div style={{fontSize:14,color:AC,fontWeight:700,marginBottom:6}}>{result?.granted||0} stages marked known</div>
+    <div style={{fontSize:12,color:MU,lineHeight:1.7,marginBottom:8}}>{result?.notes||''}</div>
+    <div style={{fontSize:11,color:MU,opacity:0.7,marginBottom:24}}>Placement stages get validated by reviews over the next week — anything you can't actually produce slides back to the frontier. Self-correcting.</div>
+    <PBtn label="Into the app →" onClick={onBack}/>
+  </div>
+
+  return<div style={{height:'100dvh',display:'flex',flexDirection:'column',animation:'up 0.35s ease'}}>
+    <div style={{padding:'52px 20px 10px',flexShrink:0,borderBottom:`1px solid ${BD}`}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:8}}>← Later</button>
+      <div style={{fontSize:18,fontWeight:800,color:TX}}>Placement</div>
+      <div style={{fontSize:11,color:MU}}>~5 min chat with Luna. Skip the stuff you already know.</div>
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:'14px 20px'}}>
+      {messages.map((m,i)=>{
+        const isLuna=m.role==='assistant'
+        return<div key={i} style={{display:'flex',flexDirection:'column',alignItems:isLuna?'flex-start':'flex-end',marginBottom:8}}>
+          <div style={{maxWidth:'84%',padding:'11px 15px',borderRadius:isLuna?'16px 16px 16px 4px':'16px 16px 4px 16px',background:isLuna?S:'#7c6ef7',border:isLuna?`1px solid ${BD}`:'none',fontSize:14,lineHeight:1.6,color:isLuna?TX:'#fff'}}>{m.content}</div>
+        </div>
+      })}
+      {loading&&<div style={{padding:'6px 0'}}><Spinner size={14}/></div>}
+      <div ref={endRef}/>
+    </div>
+    <div style={{padding:'10px 20px 28px',flexShrink:0,display:'flex',gap:8,borderTop:`1px solid ${BD}`}}>
+      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')send()}}
+        placeholder="Responde aí…"
+        style={{flex:1,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px',color:TX,fontSize:14,outline:'none',fontFamily:FONT,minWidth:0}}/>
+      <button onClick={send} disabled={!input.trim()||loading}
+        style={{background:AC,color:'#fff',border:'none',borderRadius:12,padding:'12px 16px',fontSize:16,cursor:'pointer',opacity:input.trim()&&!loading?1:0.4,fontFamily:FONT,flexShrink:0}}>→</button>
+    </div>
+  </div>
+}
+
+// ── ConstellationView — memory graph rendered as living network ─────
+function ConstellationView({scaffolds,memState,edges}){
+  // Radial layout by category; node brightness = live retrievability
+  const cats=[...new Set((scaffolds||[]).map(s=>s.category))]
+  const W=340,H=420,cx=W/2,cy=H/2
+  const nodePos={}
+  ;(scaffolds||[]).forEach((s,i)=>{
+    const catIdx=cats.indexOf(s.category)
+    const catAngle=(catIdx/Math.max(1,cats.length))*Math.PI*2-Math.PI/2
+    const inCat=(scaffolds||[]).filter(x=>x.category===s.category)
+    const j=inCat.findIndex(x=>x.id===s.id)
+    const ring=60+(j%5)*32
+    const jitter=(j/inCat.length)*1.1-0.55
+    nodePos[s.id]={
+      x:cx+Math.cos(catAngle+jitter)*ring,
+      y:cy+Math.sin(catAngle+jitter)*ring
+    }
+  })
+  const memBySc={}
+  ;(memState||[]).forEach(m=>{
+    if(m.skill!=='production')return
+    if(!memBySc[m.scaffold_id]||m.live_r>memBySc[m.scaffold_id])memBySc[m.scaffold_id]=m.live_r
+  })
+  const catColor={social_foundation:'#7c6ef7',dating_register:'#f97066',personality_humour:'#34d399',deep_fluency:'#fbbf24'}
+
+  return<svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+    {/* Edges — faint threads between related nodes */}
+    {(edges||[]).slice(0,300).map((e,i)=>{
+      const a=nodePos[e.from_scaffold],b=nodePos[e.to_scaffold]
+      if(!a||!b)return null
+      return<line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+        stroke="#ffffff" strokeOpacity={0.04+e.strength*0.06} strokeWidth={0.6}/>
+    })}
+    {/* Nodes — glow by retrievability */}
+    {(scaffolds||[]).map(s=>{
+      const p=nodePos[s.id];if(!p)return null
+      const r=memBySc[s.id]??null
+      const color=catColor[s.category]||'#8888aa'
+      const lit=r!==null
+      const glow=lit?Math.max(0.15,r):0.08
+      return<g key={s.id}>
+        {lit&&r>0.5&&<circle cx={p.x} cy={p.y} r={7+r*5} fill={color} opacity={r*0.14}/>}
+        <circle cx={p.x} cy={p.y} r={lit?3.5:2}
+          fill={color} opacity={glow}
+          stroke={lit&&r>0.85?color:'none'} strokeWidth={0.8} strokeOpacity={0.5}/>
+      </g>
+    })}
+    {/* Category labels */}
+    {cats.map((c,i)=>{
+      const a=(i/Math.max(1,cats.length))*Math.PI*2-Math.PI/2
+      return<text key={c} x={cx+Math.cos(a)*185} y={cy+Math.sin(a)*195}
+        fill={catColor[c]||'#888'} fontSize={8} textAnchor="middle" opacity={0.7}
+        fontFamily="system-ui">{c.replace('_',' ')}</text>
+    })}
+  </svg>
+}
+
+
 function NGHome({isOnline,go,active=true}){
+  const[coachNote,setCoachNote]=useState('')
   const[profile,setProfile]=useState(null)
   const[frontier,setFrontier]=useState([])
   const[review,setReview]=useState([])
@@ -3772,6 +4283,12 @@ function NGHome({isOnline,go,active=true}){
   </div>
 
   return<div style={{padding:'0 0 100px',animation:'up 0.4s ease'}}>
+
+    {/* Coach's note — from the nightly brain */}
+    {coachNote&&<div onClick={()=>go&&go('ng-today')} style={{margin:'20px 20px 0',background:`${AC}0d`,border:`1px solid ${AC}33`,borderRadius:14,padding:'13px 15px',cursor:'pointer'}}>
+      <div style={{fontSize:9,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:5}}>Coach's note · tap for today</div>
+      <div style={{fontSize:13,color:TX,lineHeight:1.65}}>{coachNote}</div>
+    </div>}
 
     {/* Phase ring + stats */}
     <div style={{padding:'32px 24px 24px',display:'flex',alignItems:'center',gap:20,background:`linear-gradient(180deg,${AC}06 0%,transparent 100%)`}}>
@@ -3890,60 +4407,120 @@ function NGHome({isOnline,go,active=true}){
 // ── NGFieldReport ─────────────────────────────────────────────────
 function NGFieldReport({isOnline,onBack}){
   const[text,setText]=useState('')
-  const[saving,setSaving]=useState(false)
-  const[saved,setSaved]=useState(false)
+  const[phase,setPhase]=useState('input') // input|mining|review|done
+  const[suggestions,setSuggestions]=useState([])
+  const[decisions,setDecisions]=useState({})
+  const[unlockScaffold,setUnlockScaffold]=useState(null)
+  const[addedCount,setAddedCount]=useState(0)
 
   const submit=async()=>{
     if(!text.trim()||!isOnline)return
-    setSaving(true)
+    setPhase('mining')
     try{
-      await ngFetch('ng-profile-update',{
-        update:{
-          field_reports:[{
-            date:new Date().toISOString().slice(0,10),
-            text:text.trim(),
-            summary:text.trim().slice(0,120)
-          }]
-        }
-      })
-      setSaved(true)
-      setTimeout(()=>onBack(),1500)
-    }catch{}
-    setSaving(false)
+      const data=await ngFetch('ng-field-report',{text:text.trim()})
+      if(data.suggestions?.length){
+        setSuggestions(data.suggestions)
+        setDecisions({})
+        setPhase('review')
+      }else{
+        setPhase('done')
+      }
+    }catch{setPhase('done')}
   }
 
-  if(saved)return<div style={{padding:'60px 24px',textAlign:'center',animation:'up 0.3s ease'}}>
+  const confirmDecisions=async()=>{
+    const approved=suggestions.filter((_,i)=>decisions[i]===true)
+    if(approved.length){
+      await ngFetch('ng-field-report',{approvedScaffolds:approved}).catch(()=>{})
+      setAddedCount(approved.length)
+      if(approved[0])setUnlockScaffold(approved[0])
+    }
+    setPhase('done')
+  }
+
+  const allDecided=suggestions.length>0&&suggestions.every((_,i)=>decisions[i]!==undefined)
+
+  if(phase==='mining')return<div style={{padding:'80px 24px',textAlign:'center'}}>
+    <Spinner size={24}/>
+    <div style={{fontSize:14,color:TX,fontWeight:600,marginTop:16}}>Reading your report…</div>
+    <div style={{fontSize:12,color:MU,marginTop:6}}>Mining for patterns worth learning</div>
+  </div>
+
+  if(phase==='review')return<div style={{padding:'52px 24px 100px',animation:'up 0.35s ease'}}>
+    {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
+    <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:4}}>Found {suggestions.length} pattern{suggestions.length!==1?'s':''} from the street</div>
+    <div style={{fontSize:13,color:MU,marginBottom:20}}>Real conversations are the best teacher. Add the ones worth learning.</div>
+    {suggestions.map((sc,i)=><div key={i} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',marginBottom:10}}>
+      <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:2}}>{sc.base_portuguese}</div>
+      <div style={{fontSize:12,color:MU,marginBottom:6}}>{sc.base_english}</div>
+      {sc.reason&&<div style={{fontSize:11,color:YE,marginBottom:8,fontStyle:'italic'}}>{sc.reason}</div>}
+      {sc.stages?.slice(0,2).map((st,j)=><div key={j} style={{fontSize:11,color:MU,paddingLeft:8,borderLeft:`2px solid ${BD}`,marginBottom:3}}>
+        Stage {st.stage}: {st.pt}
+      </div>)}
+      <div style={{display:'flex',gap:8,marginTop:10}}>
+        <button onClick={()=>setDecisions(d=>({...d,[i]:true}))}
+          style={{flex:1,padding:'9px',background:decisions[i]===true?`${GR}20`:S2,border:`1px solid ${decisions[i]===true?GR+'44':BD}`,borderRadius:10,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===true?GR:TX,fontWeight:600}}>
+          {decisions[i]===true?'✓ Learn it':'Learn it'}
+        </button>
+        <button onClick={()=>setDecisions(d=>({...d,[i]:false}))}
+          style={{flex:1,padding:'9px',background:decisions[i]===false?`${RE}12`:S2,border:`1px solid ${decisions[i]===false?RE+'33':BD}`,borderRadius:10,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===false?RE:MU}}>
+          {decisions[i]===false?'✗ Skip':'Skip'}
+        </button>
+      </div>
+    </div>)}
+    {allDecided&&<PBtn label="Confirm" onClick={confirmDecisions}/>}
+  </div>
+
+  if(phase==='done')return<div style={{padding:'60px 24px',textAlign:'center',animation:'up 0.3s ease'}}>
+    {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
     <div style={{fontSize:40,marginBottom:16}}>✓</div>
-    <div style={{fontSize:18,fontWeight:700,color:TX}}>Saved</div>
-    <div style={{fontSize:13,color:MU,marginTop:8}}>Luna will know about this next session</div>
+    <div style={{fontSize:18,fontWeight:700,color:TX}}>Report saved</div>
+    <div style={{fontSize:13,color:MU,marginTop:8}}>
+      {addedCount>0?`${addedCount} new pattern${addedCount!==1?'s':''} added to your bank. `:''}Luna will know about this next session.
+    </div>
+    <div style={{marginTop:24}}>
+      <PBtn label="Done" onClick={onBack}/>
+    </div>
   </div>
 
   return<div style={{padding:'52px 24px 100px',animation:'up 0.35s ease'}}>
     <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:20,padding:0}}>← Back</button>
     <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:6}}>Field Report</div>
-    <div style={{fontSize:13,color:MU,marginBottom:24,lineHeight:1.7}}>Had a real conversation in Portuguese? What happened? What did you try to say? What couldn't you say? Luna reads this before your next session.</div>
+    <div style={{fontSize:13,color:MU,marginBottom:24,lineHeight:1.7}}>Had a real conversation in Portuguese? What happened? What did you try to say? What couldn't you say? I'll mine it for patterns worth learning — and Luna reads it before your next session.</div>
     <textarea
       value={text}
       onChange={e=>setText(e.target.value)}
-      placeholder="I was at a bar last night and tried to use 'onde você tá indo depois' but forgot the ending... she asked me something I didn't understand..."
-      style={{width:'100%',minHeight:180,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'16px',color:TX,fontSize:14,lineHeight:1.7,outline:'none',resize:'vertical',fontFamily:FONT}}
+      placeholder={"Tonight at the bar I tried to ask for the bill but froze — ended up pointing. The bartender said something like 'fechou a conta' and I didn't know how to respond…"}
+      style={{width:'100%',minHeight:180,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',color:TX,fontSize:14,outline:'none',resize:'none',fontFamily:FONT,lineHeight:1.7,marginBottom:14}}
     />
-    <div style={{marginTop:12}}>
-      <PBtn
-        label={saving?'Saving…':'Save field report'}
-        onClick={submit}
-        disabled={!text.trim()||saving||!isOnline}
-      />
-    </div>
-    {!isOnline&&<div style={{fontSize:12,color:RE,marginTop:8,textAlign:'center'}}>Needs connection to save</div>}
+    <PBtn label={isOnline?'Save + mine for patterns →':'Needs connection'} onClick={submit} disabled={!text.trim()||!isOnline}/>
   </div>
 }
-
-// ── NGIntelligence ────────────────────────────────────────────────
 function NGIntelligence({isOnline,onBack}){
-  const[messages,setMessages]=useState([
-    {role:'assistant',content:"Hey. I'm Luna — the intelligence layer. Ask me anything about your learning. Where you are, what you're struggling with, what I'm planning. I'll be straight with you."}
-  ])
+  const GREETING={role:'assistant',content:"Hey. I'm Luna — the intelligence layer. Ask me anything about your learning. Where you are, what you're struggling with, what I'm planning. I'll be straight with you."}
+  const[messages,setMessages]=useState([GREETING])
+  const[historyLoaded,setHistoryLoaded]=useState(false)
+
+  // Restore last conversation on mount — Intel remembers
+  useEffect(()=>{
+    if(!isOnline||historyLoaded)return
+    setHistoryLoaded(true)
+    ngFetch('ng-intelligence',{action:'loadHistory'}).then(d=>{
+      if(Array.isArray(d.messages)&&d.messages.length){
+        setMessages([
+          ...d.messages.slice(-20),
+          {role:'system',content:'— new conversation —'}
+        ])
+      }
+    }).catch(()=>{})
+  },[isOnline])
+
+  // Persist conversation after every exchange
+  const persistConversation=(msgs)=>{
+    if(!isOnline)return
+    const toSave=msgs.filter(m=>m.role!=='system')
+    ngFetch('ng-intelligence',{action:'saveSession',messages:toSave}).catch(()=>{})
+  }
   const[input,setInput]=useState('')
   const[loading,setLoading]=useState(false)
   const scrollRef=useRef()
@@ -3965,7 +4542,11 @@ function NGIntelligence({isOnline,onBack}){
         messages:newMessages.map(m=>({role:m.role,content:m.content})),
         extractInsights:newMessages.length>=6
       })
-      setMessages(prev=>[...prev,{role:'assistant',content:data.reply||'Something went wrong.'}])
+      setMessages(prev=>{
+        const updated=[...prev,{role:'assistant',content:data.reply||'Something went wrong.'}]
+        persistConversation(updated)
+        return updated
+      })
     }catch{
       setMessages(prev=>[...prev,{role:'assistant',content:'Could not reach the server. Try again.'}])
     }
@@ -3988,6 +4569,27 @@ function NGIntelligence({isOnline,onBack}){
     setHealthLoading(false)
   }
 
+  const[v2Running,setV2Running]=useState(false)
+  const runV2Setup=async()=>{
+    if(v2Running)return
+    setV2Running(true)
+    setMessages(prev=>[...prev,{role:'assistant',content:'Running V2 setup: memory backfill from your event history, then knowledge graph generation. This takes a couple of minutes…'}])
+    try{
+      const bf=await ngFetch('ng-memory',{action:'backfill'})
+      setMessages(prev=>[...prev,{role:'assistant',content:`Memory engine: ${bf.backfilled||0} memory states built from your history.`}])
+      let batch=0,totalEdges=0
+      while(batch!==null&&batch<12){
+        const g=await ngFetch('ng-graph-generate',{batch})
+        totalEdges+=(g.edges_written||0)
+        batch=g.next_batch??null
+      }
+      setMessages(prev=>[...prev,{role:'assistant',content:`Knowledge graph: ${totalEdges} relationships mapped. The Constellation view (✦ on the Map) is now live, reviews are scheduled per-pattern, and tonight the nightly brain runs its first full analysis. V2 is on.`}])
+    }catch(e){
+      setMessages(prev=>[...prev,{role:'assistant',content:'Setup hit an error: '+e.message+'. Safe to run again — everything is idempotent.'}])
+    }
+    setV2Running(false)
+  }
+
   const doReset=async()=>{
     setResetting(true)
     try{
@@ -4008,6 +4610,7 @@ function NGIntelligence({isOnline,onBack}){
           <div style={{fontSize:11,color:MU,marginTop:1}}>Talk to Luna about your learning</div>
         </div>
         <div style={{display:'flex',gap:8}}>
+          <button onClick={runV2Setup} disabled={v2Running} style={{fontSize:11,color:v2Running?MU:AC,background:`${AC}12`,border:`1px solid ${AC}33`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT,opacity:v2Running?0.5:1}}>{v2Running?'…':'✦ V2 Setup'}</button>
           <button onClick={loadHealth} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>⚡ Health</button>
           <button onClick={()=>setShowReset(true)} style={{fontSize:11,color:RE,background:`${RE}12`,border:`1px solid ${RE}33`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>↺ Reset</button>
         </div>
@@ -4047,6 +4650,7 @@ function NGIntelligence({isOnline,onBack}){
 
     <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:12}}>
       {messages.map((m,i)=>{
+        if(m.role==='system')return<div key={i} style={{textAlign:'center',padding:'8px 0',fontSize:11,color:MU,opacity:0.5}}>{m.content}</div>
         const isLuna=m.role==='assistant'
         return<div key={i} style={{display:'flex',flexDirection:'column',alignItems:isLuna?'flex-start':'flex-end'}}>
           <div style={{maxWidth:'88%',padding:'12px 16px',borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',background:isLuna?S:AC,border:isLuna?`1px solid ${BD}`:'none',fontSize:14,lineHeight:1.65,color:isLuna?TX:'#fff'}}>
@@ -4087,6 +4691,14 @@ export default function App(){
   const[ngMode,setNgMode]=useState(()=>localStorage.getItem(NG_MODE_KEY)||null)
   const[ngScreen,setNgScreen]=useState('ng-home')
   const[showMore,setShowMore]=useState(false)
+
+  // Always-on brain: heartbeat ping on load + every 5 min while app is open
+  useEffect(()=>{
+    if(ngMode!=='nextgen'||!isOnline)return
+    ngFetch('ng-heartbeat',{}).catch(()=>{})
+    const hb=setInterval(()=>{ngFetch('ng-heartbeat',{}).catch(()=>{})},5*60*1000)
+    return()=>clearInterval(hb)
+  },[ngMode,isOnline])
   const[loaded,setLoaded]=useState(false)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
 
@@ -4290,11 +4902,15 @@ export default function App(){
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-shuffle'&&<NGShuffle isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-import'&&<NGImport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-today'&&<NGToday isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} goTo={setNgScreen}/>}
+      {ngScreen==='ng-radio'&&<NGRadio isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-placement'&&<NGPlacementChat isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-brain'&&<NGBrain isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       </ErrorBoundary>
       {/* Next Gen Nav — 5 primary + More sheet */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
-        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'},{k:'ng-phrase',i:'◇',l:'Phrase'}].map(t=>
+        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
           <button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
             <span style={{fontSize:20,opacity:ngScreen===t.k&&!showMore?1:0.3,filter:ngScreen===t.k&&!showMore?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
             <span style={{fontSize:10,color:ngScreen===t.k&&!showMore?AC:MU,fontWeight:ngScreen===t.k&&!showMore?700:400}}>{t.l}</span>
@@ -4311,11 +4927,16 @@ export default function App(){
         <div style={{width:36,height:4,background:BD,borderRadius:2,margin:'0 auto 16px'}}/>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
           {[
+            {k:'ng-radio',i:'📻',l:'Rádio',d:'Chico & Bia, live'},
+            {k:'ng-phrase',i:'◇',l:'Phrase',d:'Scenario practice'},
             {k:'ng-shuffle',i:'◈',l:'Shuffle',d:'Combine patterns'},
             {k:'ng-say-it',i:'💬',l:'Say It',d:'Carioca translator'},
             {k:'ng-map',i:'⊞',l:'Map',d:'Scaffold progress'},
             {k:'ng-intelligence',i:'◎',l:'Intel',d:'Talk to Luna'},
             {k:'ng-import',i:'📥',l:'Import',d:"Victor's notes"},
+            {k:'ng-field-report',i:'🌴',l:'Field Report',d:'Real-world log'},
+            {k:'ng-placement',i:'✦',l:'Placement',d:'Map what you know'},
+            {k:'ng-brain',i:'🧠',l:'The Brain',d:'Watch it think'},
           ].map(t=><button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
             <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
             <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
