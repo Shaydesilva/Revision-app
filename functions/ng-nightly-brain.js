@@ -121,7 +121,8 @@ Analyse the last 24h of learning events. Return JSON only:
       const dRaw=await claude(
 `Write today's 90-second Radio Carioca dialogue: two hosts, Chico (cynical, dry) and Bia (chaotic, warm), Cariocas.
 Humorous, natural street register, swallowed syllables implied in word choice.
-~85% of language from KNOWN patterns, ~10% from FRONTIER (these are being taught by stealth), 5% natural glue.
+FRONTIER BUDGET — STRICT: weave in AT MOST 2 frontier patterns total, each ONCE, only where a Carioca would genuinely say it. Never contort scenes to fit a phrase; most lines contain no target pattern.
+FRESH: a brand-new story or format (listener message / mock news / debate / game). Show-bible items are one-line callbacks only, never retellings.
 12-16 lines. Return JSON only:
 {"lines":[{"speaker":"echo","pt":"","en":""},{"speaker":"shimmer","pt":"","en":""}],"patterns_used":["frontier patterns woven in"],"bible_update":"one line: any new running joke or callback established"}
 speaker "echo"=Chico, "shimmer"=Bia.`,
