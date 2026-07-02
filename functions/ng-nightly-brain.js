@@ -118,15 +118,21 @@ Analyse the last 24h of learning events. Return JSON only:
     try{
       const showBible=profile?.show_bible||''
       const stationPrompt=profile?.radio_station_prompt||''
+      const{data:recentSegsNB}=await sb.from('ng_radio_segments').select('lines')
+        .eq('user_id',UID).order('created_at',{ascending:false}).limit(12)
+      const recentBeatsNB=(recentSegsNB||[]).map(s=>{
+        const ls=Array.isArray(s.lines)?s.lines.slice(0,2):[]
+        return ls.map(l=>l.pt).join(' / ')
+      }).filter(Boolean).map(b=>'- '+b.slice(0,140)).join('\n')
       const dRaw=await claude(
 `Write today's 90-second Radio Carioca dialogue: two hosts, Chico (cynical, dry) and Bia (chaotic, warm), Cariocas.
 Humorous, natural street register, swallowed syllables implied in word choice.
 FRONTIER BUDGET — STRICT: weave in AT MOST 2 frontier patterns total, each ONCE, only where a Carioca would genuinely say it. Never contort scenes to fit a phrase; most lines contain no target pattern.
-FRESH: a brand-new story or format (listener message / mock news / debate / game). Show-bible items are one-line callbacks only, never retellings.
+FRESH — STRICT: OPEN WITH A COMPLETELY NEW TOPIC. Never open with a running gag or anything from RECENT BEATS. Pick a format: brand-new story / listener message / mock news / debate / game. Show-bible items are one-line callbacks only — never retellings, never openers.
 12-16 lines. Return JSON only:
 {"lines":[{"speaker":"echo","pt":"","en":""},{"speaker":"shimmer","pt":"","en":""}],"patterns_used":["frontier patterns woven in"],"bible_update":"one line: any new running joke or callback established"}
 speaker "echo"=Chico, "shimmer"=Bia.`,
-`KNOWN: ${controlledPatterns.slice(0,40).join(', ')}\nFRONTIER: ${frontierPatterns.join(', ')}\nSHOW BIBLE (running jokes/callbacks):\n${showBible.slice(0,600)}\nTOPIC SEED: ${stationPrompt||'daily life in Rio, gossip, beach, absurd situations'}\nRECENT LEARNER CONTEXT: ${lunaNotes.slice(0,300)}`,
+`KNOWN: ${controlledPatterns.slice(0,40).join(', ')}\nFRONTIER: ${frontierPatterns.join(', ')}\nSHOW BIBLE (callbacks only, never openers):\n${showBible.slice(0,600)}\nRECENT BEATS — never retell or open with these:\n${recentBeatsNB||'(none yet)'}\nTOPIC SEED: ${stationPrompt||'daily life in Rio, gossip, beach, absurd situations'}\nRECENT LEARNER CONTEXT: ${lunaNotes.slice(0,300)}`,
       1600)
       dialogue=JSON.parse(dRaw)
       // Update show bible
