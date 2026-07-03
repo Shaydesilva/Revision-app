@@ -12,6 +12,9 @@ const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-colo
 @keyframes confettiFall{0%{transform:translateY(-10vh) rotate(0deg);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0.6}}
 @keyframes ringGlow{0%,100%{box-shadow:0 0 12px rgba(124,110,247,0.35)}50%{box-shadow:0 0 26px rgba(124,110,247,0.7)}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes eq{0%,100%{transform:scaleY(0.25)}50%{transform:scaleY(1)}}
+button{transition:transform 0.08s ease}
+button:active{transform:scale(0.96)}
 @keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
 
 
@@ -1674,7 +1677,9 @@ function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
     {isLuna&&!showTl&&<div style={{fontSize:10,color:MU,marginTop:2,opacity:0.3}}>tap word to translate</div>}
   </div>
 }
-function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
+function VoiceMode({
+  const LU='#fb7185' // Luna's coral — her own color
+cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   // ── State ──────────────────────────────────────────────────────────────
   const[phase,setPhase]=useState('idle')
   const[spectrum,setSpectrum]=useState(0.35)
@@ -2204,7 +2209,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
       {(summary.boostWords||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${GR}18`,color:GR,fontSize:12,fontWeight:600}}>{w} ✓</span>)}
       {(summary.struggleWords||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${RE}18`,color:RE,fontSize:12,fontWeight:600}}>{w} ⭐</span>)}
-      {(summary.newCardsAdded||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${AC}18`,color:AC,fontSize:12,fontWeight:600}}>+{w}</span>)}
+      {(summary.newCardsAdded||[]).map(w=><span key={w} style={{padding:'4px 12px',borderRadius:20,background:`${LU}18`,color:LU,fontSize:12,fontWeight:600}}>+{w}</span>)}
     </div>
     {(summary.newCardsAdded||[]).length>0&&<div style={{fontSize:12,color:MU,marginBottom:20}}>{summary.newCardsAdded.length} new word{summary.newCardsAdded.length!==1?'s':''} added to deck.</div>}
     <PBtn label="Talk again" onClick={()=>{phaseRef.current='idle';setPhase('idle');setSummary(null);setElapsed(0);setMessages([])}}/>
@@ -2241,19 +2246,19 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     {!ngMode&&<div style={{padding:'12px 20px 8px',borderBottom:`1px solid ${BD}`,flexShrink:0}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👋 Amigo</span>
-        <input type="range" min={0} max={1} step={0.01} value={spectrum} onChange={e=>setSpectrum(parseFloat(e.target.value))} style={{flex:1,height:3,WebkitAppearance:'none',appearance:'none',borderRadius:2,background:`linear-gradient(to right,${GR} 0%,${AC} ${spectrum*100}%,${BD} ${spectrum*100}%)`,outline:'none',cursor:'pointer'}}/>
+        <input type="range" min={0} max={1} step={0.01} value={spectrum} onChange={e=>setSpectrum(parseFloat(e.target.value))} style={{flex:1,height:3,WebkitAppearance:'none',appearance:'none',borderRadius:2,background:`linear-gradient(to right,${GR} 0%,${LU} ${spectrum*100}%,${BD} ${spectrum*100}%)`,outline:'none',cursor:'pointer'}}/>
         <span style={{fontSize:11,color:MU,fontWeight:600}}>👩‍🏫 Tutor</span>
         <button onClick={()=>setShowDebug(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,opacity:0.3,padding:'2px',lineHeight:1,flexShrink:0}}>⚙️</button>
       </div>
       <div style={{display:'flex',gap:8,marginTop:8,justifyContent:'center'}}>
-        {[['slow','🐢 Slow'],['normal','⚡ Normal']].map(([k,l])=><button key={k} onClick={()=>setSpeed(k)} style={{padding:'6px 14px',borderRadius:20,background:speed===k?AC:S2,color:speed===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:FONT}}>{l}</button>)}
+        {[['slow','🐢 Slow'],['normal','⚡ Normal']].map(([k,l])=><button key={k} onClick={()=>setSpeed(k)} style={{padding:'6px 14px',borderRadius:20,background:speed===k?LU:S2,color:speed===k?'#fff':MU,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:FONT}}>{l}</button>)}
       </div>
     </div>}
     {ngMode&&<div style={{padding:'8px 16px',borderBottom:`1px solid ${BD}`,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
       <div style={{fontSize:12,color:MU}}>Luna</div>
       <div style={{display:'flex',gap:6,alignItems:'center'}}>
         {['shimmer','echo','nova','onyx'].map(v=><button key={v} onClick={()=>{setLunaVoice(v);localStorage.setItem('luna_voice',v)}}
-          style={{padding:'4px 10px',background:lunaVoice===v?AC:S2,border:`1px solid ${lunaVoice===v?AC:BD}`,borderRadius:20,color:lunaVoice===v?'#fff':MU,fontFamily:FONT,fontSize:10,cursor:'pointer'}}>
+          style={{padding:'4px 10px',background:lunaVoice===v?LU:S2,border:`1px solid ${lunaVoice===v?LU:BD}`,borderRadius:20,color:lunaVoice===v?'#fff':MU,fontFamily:FONT,fontSize:10,cursor:'pointer'}}>
           {v}
         </button>)}
         <button onClick={()=>setShowDebug(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,opacity:0.3,padding:'2px',lineHeight:1}}>⚙️</button>
@@ -2272,14 +2277,14 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       <div ref={chatEndRef}/>
       {liveText&&<div style={{alignSelf:'flex-start',maxWidth:'85%'}}>
         <div style={{padding:'12px 16px',borderRadius:'18px 18px 18px 4px',background:S,border:`1px solid ${BD}`,fontSize:15,lineHeight:1.6,color:MU,fontStyle:'italic'}}>
-          {liveText}<span style={{display:'inline-block',width:7,height:13,background:AC,borderRadius:1,marginLeft:3,animation:'pulse 0.7s ease-in-out infinite',verticalAlign:'middle'}}/>
+          {liveText}<span style={{display:'inline-block',width:7,height:13,background:LU,borderRadius:1,marginLeft:3,animation:'pulse 0.7s ease-in-out infinite',verticalAlign:'middle'}}/>
         </div>
       </div>}
     </div>
 
     {/* Status bar */}
     <div style={{flexShrink:0,padding:'8px 20px',borderTop:`1px solid ${BD}`,display:'flex',alignItems:'center',gap:10,minHeight:40}}>
-      <div style={{width:8,height:8,borderRadius:'50%',flexShrink:0,background:dotMode==='speak'?AC:dotMode==='listen'?GR:BD,transition:'background 0.2s',animation:dotMode?'pulse 1.5s ease-in-out infinite':'none'}}/>
+      <div style={{width:8,height:8,borderRadius:'50%',flexShrink:0,background:dotMode==='speak'?LU:dotMode==='listen'?GR:BD,transition:'background 0.2s',animation:dotMode?'pulse 1.5s ease-in-out infinite':'none'}}/>
       <span style={{fontSize:13,color:MU,flex:1}}>{status}</span>
       {phase==='live'&&<span style={{fontSize:12,color:MU,fontVariantNumeric:'tabular-nums',fontFamily:'monospace'}}>{fmtTime(elapsed)}</span>}
       {phase==='live'&&<button onClick={togglePtt} style={{fontSize:11,color:ptt?GR:MU,background:ptt?`${GR}18`:S2,border:`1px solid ${ptt?GR:BD}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:FONT,flexShrink:0}}>{ptt?'Hold to talk':'Auto'}</button>}
@@ -2323,7 +2328,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
           // Track this test
           testsGivenRef.current=[...given,{scaffold_id:target.scaffold_id,stage:target.stage,type:target.testType,timestamp:Date.now(),result:'pending'}]
           testInProgress.current=true
-        }} style={{flex:1,padding:'14px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:AC,WebkitTapHighlightColor:'transparent'}}>
+        }} style={{flex:1,padding:'14px',background:`${LU}15`,border:`1px solid ${LU}44`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:12,fontWeight:700,color:LU,WebkitTapHighlightColor:'transparent'}}>
           Testa aí →
         </button>}
       </div>}
@@ -2334,13 +2339,13 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
           onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendText()}}}
           placeholder="Type to Luna…"
           autoFocus
-          style={{flex:1,background:S,border:`1px solid ${AC}55`,borderRadius:12,padding:'12px 14px',color:TX,fontSize:14,outline:'none',fontFamily:FONT,WebkitUserSelect:'text',userSelect:'text'}}
+          style={{flex:1,background:S,border:`1px solid ${LU}55`,borderRadius:12,padding:'12px 14px',color:TX,fontSize:14,outline:'none',fontFamily:FONT,WebkitUserSelect:'text',userSelect:'text'}}
         />
         <button
           onClick={sendText}
           disabled={!textInput.trim()||sendingText}
           onMouseDown={()=>SND.init()}
-          style={{background:AC,color:'#fff',border:'none',borderRadius:12,padding:'12px 16px',fontSize:16,cursor:'pointer',opacity:textInput.trim()&&!sendingText?1:0.4,fontFamily:FONT,flexShrink:0}}
+          style={{background:LU,color:'#fff',border:'none',borderRadius:12,padding:'12px 16px',fontSize:16,cursor:'pointer',opacity:textInput.trim()&&!sendingText?1:0.4,fontFamily:FONT,flexShrink:0}}
         >→</button>
       </div>}
     </div>}
@@ -2370,10 +2375,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
 
     <div style={{padding:'8px 20px 20px',flexShrink:0}}>
-      {phase==='idle'&&!ngMode&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline}/>}
-      {phase==='idle'&&ngMode&&<PBtn label={isOnline?'◉  Start Luna':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline} color={AC}/>}
-      {phase==='connecting'&&<PBtn label="Connecting…" disabled/>}
-      {phase==='ending'&&<PBtn label="Saving…" disabled/>}
+      {phase==='idle'&&!ngMode&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline} color={LU}/>}
+      {phase==='idle'&&ngMode&&<PBtn label={isOnline?'◉  Start Luna':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline} color={LU}/>}
+      {phase==='connecting'&&<PBtn label="Connecting…" disabled color={LU}/>}
+      {phase==='ending'&&<PBtn label="Saving…" disabled color={LU}/>}
     </div>
   </div>
 }
@@ -2390,6 +2395,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
   const[sessionEvents,setSessionEvents]=useState([])
   const[deckPhase,setDeckPhase]=useState('pick') // pick | session
   const[syncMsg,setSyncMsg]=useState(null) // {ok,text} — live write receipt
+  const gainsRef=useRef([]) // session memory deltas → today's-gains end screen
   const[activeDeck,setActiveDeck]=useState(null)
   const[allCats,setAllCats]=useState([])
   const[dueCount,setDueCount]=useState(0)
@@ -2456,6 +2462,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
     setActiveDeck(deck==='category'?category:deck)
     setDeckPhase('session')
     setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({})
+    gainsRef.current=[]
     loadFrontier(deck,category)
   }
 
@@ -2569,7 +2576,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
         .then(r=>{
           // Live receipt: proof the memory engine got it — or the exact error
           if(r.memory_error)setSyncMsg({ok:false,text:'⚠ save failed: '+r.memory_error})
-          else if(r.memory?.length){const w=r.memory[0];setSyncMsg({ok:true,text:`🧠 ${w.skill==='recognition'?'recog':'prod'} memory ${w.before}d → ${w.after}d`})}
+          else if(r.memory?.length){const w=r.memory[0];gainsRef.current.push(...r.memory);setSyncMsg({ok:true,text:`🧠 ${w.skill==='recognition'?'recog':'prod'} memory ${w.before}d → ${w.after}d`})}
           else if(r.error)setSyncMsg({ok:false,text:'⚠ '+r.error})
           setTimeout(()=>setSyncMsg(null),2600)
           if(r.newly_acquired?.length)setSummary(s=>({...s,acquired:(s.acquired||0)+r.newly_acquired.length,total_controlled:r.total_controlled||0}))
@@ -2602,7 +2609,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
     <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Home</button>
     </div>
-    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:4}}>Study</div>
+    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:4,fontFamily:FONTD}}>Study</div>
     <div style={{fontSize:13,color:MU,marginBottom:22}}>What are you in the mood for?</div>
     {[
       {k:'fresh',i:'🔥',t:'Fresh',d:"Newest additions — today's lesson, latest imports"},
@@ -2668,6 +2675,23 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
       </div>
     </div>}
 
+    {gainsRef.current.length>0&&(()=>{
+      const g=gainsRef.current
+      const total=g.reduce((s,w)=>s+Math.max(0,(w.after||0)-(w.before||0)),0)
+      const uniq=[...new Set(g.map(w=>w.scaffold_id))].length
+      const top=[...g].sort((a,b)=>(b.after-b.before)-(a.after-a.before)).slice(0,3)
+      return<div style={{background:'#141426',border:`1px solid ${AC}33`,borderRadius:18,padding:'18px',marginBottom:16}}>
+        <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>✦ Ganhos de hoje</div>
+        <div style={{display:'flex',gap:18,marginBottom:12}}>
+          <div><div style={{fontSize:24,fontWeight:900,color:AC,fontFamily:FONTD}}>{uniq}</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>PATTERNS</div></div>
+          <div><div style={{fontSize:24,fontWeight:900,color:GR,fontFamily:FONTD}}>+{Math.round(total*10)/10}d</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>MEMÓRIA</div></div>
+        </div>
+        {top.map((w,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderTop:`1px solid ${BD}`}}>
+          <span style={{fontSize:10,color:MU,flex:1}}>{w.scaffold_id} · s{w.stage} · {w.skill==='recognition'?'recog':'prod'}</span>
+          <span style={{fontSize:11,fontWeight:700,color:GR}}>{w.before}d → {w.after}d</span>
+        </div>)}
+      </div>
+    })()}
     <PBtn label="Back to home" onClick={onBack}/>
     <div style={{height:10}}/>
     <GBtn label="Another deck" onClick={()=>setDeckPhase('pick')}/>
@@ -2701,8 +2725,11 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
 
     {/* Card — Flip or Write It based on mode */}
     {getCardMode(card)==='flip'?
+      <div style={{position:'relative'}}>
+      <div style={{position:'absolute',inset:0,transform:'translate(7px,7px)',background:'#141426',border:`1px solid ${BD}`,borderRadius:20,zIndex:0}}/>
+      <div style={{position:'absolute',inset:0,transform:'translate(3.5px,3.5px)',background:'#181830',border:`1px solid ${BD}`,borderRadius:20,zIndex:0}}/>
       <div onClick={()=>!flipped&&setFlipped(true)}
-        style={{background:S,border:`1px solid ${flipped?AC+'44':BD}`,borderRadius:20,padding:'28px 24px',minHeight:200,cursor:flipped?'default':'pointer',transition:'border 0.2s',animation:'up 0.25s ease',marginBottom:16}}>
+        style={{position:'relative',zIndex:1,background:S,border:`1px solid ${flipped?AC+'44':BD}`,borderRadius:20,padding:'28px 24px',minHeight:200,cursor:flipped?'default':'pointer',transition:'border 0.2s',animation:'up 0.25s ease',marginBottom:16}}>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
           <div style={{fontSize:11,color:card.isReview?YE:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase'}}>
             {card.isReview?'Review — '+card.category?.replace(/_/g,' '):card.category?.replace(/_/g,' ')}
@@ -2724,6 +2751,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
           <div style={{fontSize:15,color:MU,marginBottom:8}}>{card.en}</div>
           <div style={{fontSize:11,color:MU}}>How did you do?</div>
         </div>}
+      </div>
       </div>
     :
       <div style={{background:S,border:`1px solid ${writeResult?(writeResult.correct?GR+'44':RE+'33'):BD}`,borderRadius:20,padding:'24px',animation:'up 0.25s ease',marginBottom:16}}>
@@ -3882,6 +3910,18 @@ const NG_ONBOARDED_KEY='carioca_ng_onboarded'
 
 // ═══ SFX — synthesized sound design, zero assets, app-wide ═══════════
 // Toggle: localStorage 'sfx' = 'off' disables. Default on.
+// Display font: Sora for titles & big numbers — runtime-injected,
+// offline falls back to system gracefully.
+try{
+  if(typeof document!=='undefined'&&!document.getElementById('carioca-font')){
+    const l=document.createElement('link')
+    l.id='carioca-font';l.rel='stylesheet'
+    l.href='https://fonts.googleapis.com/css2?family=Sora:wght@700;800&display=swap'
+    document.head.appendChild(l)
+  }
+}catch(_){}
+const FONTD="'Sora',"+"system-ui,-apple-system,sans-serif"
+
 const SFX=(()=>{
   let ctx=null
   const on=()=>{try{return localStorage.getItem('sfx')!=='off'}catch(_){return true}}
@@ -3903,7 +3943,24 @@ const SFX=(()=>{
     flip:()=>{if(on())tone(520,0.07,'triangle',0.09)},
     good:()=>{if(!on())return;tone(659,0.09,'sine',0.11);tone(880,0.13,'sine',0.11,0.08)},
     bad:()=>{if(on())tone(196,0.16,'sine',0.1)},
-    complete:()=>{if(!on())return;[523,659,784,1047].forEach((f,i)=>tone(f,0.18,'triangle',0.13,i*0.09))},
+    acende:()=>{if(!on())return;tone(440,0.26,'sine',0.12,0);tone(554.37,0.26,'sine',0.12,0.11);tone(659.25,0.3,'sine',0.12,0.22);tone(880,0.32,'triangle',0.05,0.24)},
+    cuica:()=>{
+      if(!on())return
+      try{
+        ctx=ctx||new(window.AudioContext||window.webkitAudioContext)()
+        if(ctx.state==='suspended')ctx.resume()
+        const o=ctx.createOscillator(),v=ctx.createGain()
+        o.type='sawtooth';o.connect(v);v.connect(ctx.destination)
+        const s=ctx.currentTime
+        o.frequency.setValueAtTime(420,s)
+        o.frequency.exponentialRampToValueAtTime(950,s+0.16)
+        o.frequency.exponentialRampToValueAtTime(480,s+0.34)
+        v.gain.setValueAtTime(0.07,s)
+        v.gain.exponentialRampToValueAtTime(0.001,s+0.4)
+        o.start(s);o.stop(s+0.42)
+      }catch(_){}
+    },
+    complete:()=>{if(!on())return;SFX.acende();setTimeout(()=>{try{SFX.cuica()}catch(_){}},260)},
     unlock:()=>{if(!on())return;[784,988,1175,1568].forEach((f,i)=>tone(f,0.22,'sine',0.09,i*0.06))}
   }
 })()
@@ -4020,7 +4077,7 @@ function NGBrain({isOnline,onBack}){
     <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:16,padding:0}}>← Back</button>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
       <div style={{fontSize:24}}>🧠</div>
-      <div style={{fontSize:22,fontWeight:900,color:TX}}>The Brain</div>
+      <div style={{fontSize:22,fontWeight:900,color:TX,fontFamily:FONTD}}>The Brain</div>
       <div style={{width:7,height:7,background:GR,borderRadius:'50%',animation:'pulse 1.6s infinite',marginTop:2}}/>
     </div>
     <div style={{fontSize:12,color:MU,marginBottom:20}}>Live stream of everything the system is thinking and doing.</div>
@@ -4056,6 +4113,15 @@ function NGBrain({isOnline,onBack}){
 
 // ── NGLearn — the Trilha. Duolingo-class path: winding nodes, progress
 // rings, celebrations, sound. Defensive: every state renders something. ──
+// O Poste — the brand mark: a memory, lit, above the city
+function Poste({size=28}){
+  return<svg width={size} height={size*0.82} viewBox="0 0 40 33" style={{display:'block'}}>
+    <circle cx="20" cy="8" r="6.5" fill="#f0b429" opacity="0.16"/>
+    <circle cx="20" cy="8" r="3.1" fill="#f0b429"/>
+    <path d="M2 25 Q8 18 14 25 T26 25 T38 25" fill="none" stroke="#e8e8f0" strokeWidth="2.6" strokeLinecap="round" opacity="0.92"/>
+  </svg>
+}
+
 function Confetti(){
   const bits=Array.from({length:26},(_,i)=>i)
   const cols=['#7c6ef7','#34d399','#fbbf24','#f97066','#60a5fa','#f472b6']
@@ -4157,7 +4223,7 @@ function NGLearn({isOnline,onBack,startUnit}){
 
   return<div style={{padding:'52px 0 110px',animation:'up 0.35s ease',minHeight:'70vh'}}>
     <div style={{padding:'0 20px'}}>
-      <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Learn</div>
+      <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2,fontFamily:FONTD}}>Learn</div>
       <div style={{fontSize:12,color:MU,marginBottom:8}}>A trilha — clustered by your knowledge graph, verified by your memory.</div>
     </div>
 
@@ -4172,19 +4238,22 @@ function NGLearn({isOnline,onBack,startUnit}){
 
     {status==='empty'&&<div style={{textAlign:'center',padding:'50px 24px'}}>
       <div style={{fontSize:40,marginBottom:12,opacity:0.5}}>⛰</div>
-      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>The trilha needs patterns first</div>
+      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>Sem padrões, sem trilha. Lógico.</div>
       <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Your content bank is empty. Import a lesson or add patterns via Say It, then come back — the path builds itself.</div>
     </div>}
 
     {status==='error'&&<div style={{margin:'20px',background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'14px 16px'}}>
-      <div style={{fontSize:13,fontWeight:700,color:RE,marginBottom:4}}>Learn couldn't load</div>
+      <div style={{fontSize:13,fontWeight:700,color:RE,marginBottom:4}}>A trilha apagou a luz</div>
       <div style={{fontSize:12,color:TX,lineHeight:1.6,marginBottom:10}}>{errMsg}</div>
       <PBtn label="Try again" onClick={()=>{setStatus('loading');load()}}/>
     </div>}
 
-    {status==='ready'&&<div style={{position:'relative',marginTop:10}}>
-      {/* The spine */}
-      <div style={{position:'absolute',top:0,bottom:0,left:'50%',width:2,background:`linear-gradient(${BD},${BD} 70%,transparent)`,transform:'translateX(-1px)'}}/>
+    {status==='ready'&&<div style={{position:'relative',marginTop:10,background:'linear-gradient(180deg,rgba(124,110,247,0.05),transparent 28%,transparent 72%,rgba(212,160,23,0.06))',borderRadius:24}}>
+      {/* The spine — a gentle S winding through the city */}
+      <svg style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',pointerEvents:'none'}} viewBox="0 0 100 100" preserveAspectRatio="none">
+        <path d="M50 0 C 26 8, 26 14, 50 22 S 74 32, 50 42 S 26 52, 50 62 S 74 72, 50 82 S 26 92, 50 100"
+          fill="none" stroke={BD} strokeWidth="0.7" strokeDasharray="2.4 2" vectorEffect="non-scaling-stroke" opacity="0.9"/>
+      </svg>
       {units.map((u,i)=>{
         const left=i%2===0
         return<div key={u.unit_id} style={{position:'relative',display:'flex',justifyContent:left?'flex-start':'flex-end',padding:left?'0 0 26px 12%':'0 12% 26px 0'}}>
@@ -4222,7 +4291,9 @@ function NGLearn({isOnline,onBack,startUnit}){
           <div style={{fontSize:17,fontWeight:800,color:sheet.status==='complete'?GR:AC}}>{sheet.status==='complete'?'✓':sheet.pct+'%'}</div>
         </div>
         <div style={{height:5,background:BD,borderRadius:5,overflow:'hidden',margin:'10px 0 16px'}}>
-          <div style={{height:'100%',width:`${sheet.pct}%`,background:sheet.status==='complete'?GR:`linear-gradient(to right,${AC},${GD})`,borderRadius:5,transition:'width 0.8s ease'}}/>
+          <div style={{height:'100%',width:`${sheet.pct}%`,borderRadius:5,transition:'width 0.8s ease',
+            backgroundImage:`url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='5'><path d='M0 2.5 Q6.5 0 13 2.5 T26 2.5' fill='none' stroke='white' stroke-opacity='0.4' stroke-width='1.4'/></svg>"),linear-gradient(to right,${sheet.status==='complete'?GR:AC},${sheet.status==='complete'?GR:GD})`,
+            backgroundRepeat:'repeat-x,no-repeat',backgroundSize:'26px 5px,100% 100%'}}/>
         </div>
         {(sheet.patterns||[]).map(p=><div key={p.scaffold_id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderTop:`1px solid ${BD}`}}>
           <span style={{fontSize:13,flexShrink:0,color:p.solid?GR:MU,width:14}}>{p.solid?'✓':'·'}</span>
@@ -4245,9 +4316,9 @@ function NGLearn({isOnline,onBack,startUnit}){
     {celebrate&&<div onClick={()=>setCelebrate(null)} style={{position:'fixed',inset:0,background:'rgba(10,10,20,0.88)',zIndex:400,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:30}}>
       <Confetti/>
       <div style={{fontSize:74,animation:'popIn 0.6s cubic-bezier(0.34,1.56,0.64,1)'}}>{celebrate.emoji}</div>
-      <div style={{fontSize:13,color:GD,fontWeight:700,letterSpacing:3,textTransform:'uppercase',marginTop:18,animation:'up 0.5s ease 0.2s both'}}>Unidade completa</div>
+      <div style={{fontSize:13,color:GD,fontWeight:700,letterSpacing:3,textTransform:'uppercase',marginTop:18,animation:'up 0.5s ease 0.2s both'}}>Unidade completa · every pattern memory-verified</div>
       <div style={{fontSize:26,fontWeight:900,color:'#fff',marginTop:6,textAlign:'center',animation:'up 0.5s ease 0.3s both'}}>{celebrate.title}</div>
-      <div style={{fontSize:13,color:'#aab',marginTop:8,textAlign:'center',animation:'up 0.5s ease 0.4s both'}}>Every pattern memory-verified. It's yours — for now. 😏</div>
+      <div style={{fontSize:13,color:'#aab',marginTop:8,textAlign:'center',animation:'up 0.5s ease 0.4s both'}}>AI SIM! Registra no cartório! 🔥</div>
       <div style={{fontSize:11,color:'#778',marginTop:26,animation:'up 0.5s ease 0.6s both'}}>tap anywhere</div>
     </div>}
   </div>
@@ -4294,7 +4365,7 @@ function NGToday({isOnline,onBack,goTo}){
 
   return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
     <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,marginBottom:16,padding:0}}>← Back</button>
-    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Today</div>
+    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2,fontFamily:FONTD}}>Today</div>
     <div style={{fontSize:12,color:MU,marginBottom:18}}>{d.is_today?'Assembled overnight by the brain':isEmpty?'':'Latest available plan'}</div>
 
     {err&&<div style={{background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'13px 15px',marginBottom:14}}>
@@ -4363,7 +4434,9 @@ function NGToday({isOnline,onBack,goTo}){
 }
 
 // ── NGRadio — Radio Carioca: tune in, infinite buffered show ────────
-function NGRadio({isOnline,onBack}){
+function NGRadio({
+  const RADIO_A='#fbbf24' // amber — the radio's own accent
+isOnline,onBack}){
   const[phase,setPhase]=useState('off') // off|tuning|playing
   const[paused,setPaused]=useState(false)
   const[speed,setSpeed]=useState(1)
@@ -4600,14 +4673,19 @@ function NGRadio({isOnline,onBack}){
         <button onClick={()=>{stop();onBack()}} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Back</button>
         <button onClick={exportTranscript} style={{marginLeft:'auto',background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT,fontSize:11,color:MU}}>↗ Export</button>
       </div>
-      {exportMsg&&<div style={{fontSize:11,color:AC,marginBottom:8}}>{exportMsg}</div>}
+      {exportMsg&&<div style={{fontSize:11,color:RADIO_A,marginBottom:8}}>{exportMsg}</div>}
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <div style={{fontSize:24}}>📻</div>
         <div>
-          <div style={{fontSize:20,fontWeight:900,color:TX}}>Rádio Carioca</div>
+          <div style={{fontSize:20,fontWeight:900,color:TX,fontFamily:FONTD}}>Rádio Carioca</div>
           <div style={{fontSize:11,color:MU}}>{phase==='playing'?(paused?'⏸ Pausado':'● AO VIVO — Chico & Bia'):phase==='tuning'?'Sintonizando…':'Toca aí'}</div>
         </div>
-        {phase==='playing'&&!paused&&<div style={{marginLeft:'auto',width:8,height:8,background:RE,borderRadius:'50%',animation:'pulse 1.2s infinite'}}/>}
+        {phase==='playing'&&<div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
+          {!paused&&<div style={{display:'flex',gap:2.5,alignItems:'flex-end',height:16}}>
+            {[0,1,2,3,4].map(i=><div key={i} style={{width:3,height:16,background:'#fbbf24',borderRadius:2,transformOrigin:'bottom',animation:`eq ${0.55+i*0.13}s ease-in-out ${i*0.09}s infinite`}}/>)}
+          </div>}
+          <div style={{background:'#3a2a10',border:'1px solid #fbbf2466',borderRadius:6,padding:'3px 9px',fontSize:9,fontWeight:800,letterSpacing:1.5,color:'#fbbf24'}}>{paused?'PAUSA':'ON AIR'}</div>
+        </div>}
       </div>
     </div>
 
@@ -4615,6 +4693,7 @@ function NGRadio({isOnline,onBack}){
     <div ref={feedRef} onScroll={onFeedScroll} style={{flex:1,overflowY:'auto',padding:'8px 20px',position:'relative'}}>
       {phase==='off'&&<div style={{textAlign:'center',padding:'60px 20px'}}>
         <div style={{fontSize:44,marginBottom:14,opacity:0.5}}>📻</div>
+        <div style={{display:'flex',justifyContent:'center',marginBottom:10}}><Poste size={34}/></div>
         <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:6}}>Two Cariocas. Infinite conversation.</div>
         <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Tune in whenever. It's always mid-show.<br/>Tap any bubble for the translation.</div>
       </div>}
@@ -4627,9 +4706,9 @@ function NGRadio({isOnline,onBack}){
             maxWidth:'82%',padding:'10px 14px',
             borderRadius:isChico?'16px 16px 16px 4px':'16px 16px 4px 16px',
             background:isChico?S:'#2a4a3a',
-            border:active?`1.5px solid ${isChico?AC:GR}`:`1px solid ${BD}`,
+            border:active?`1.5px solid ${isChico?RADIO_A:GR}`:`1px solid ${BD}`,
             fontSize:14,lineHeight:1.6,color:TX,cursor:'pointer',
-            boxShadow:active?`0 0 12px ${isChico?AC:GR}22`:'none'
+            boxShadow:active?`0 0 12px ${isChico?RADIO_A:GR}22`:'none'
           }}>{highlightLine(l.pt)}</div>
           {showTl[i]&&<div style={{maxWidth:'82%',marginTop:3,padding:'6px 10px',background:S2,border:`1px solid ${BD}`,borderRadius:8,fontSize:12,color:MU}}>{l.en}</div>}
         </div>
@@ -4676,7 +4755,7 @@ function NGRadio({isOnline,onBack}){
           })}
         </div>}
         {!patternPopup.loading&&!patternPopup.scaffold&&<div style={{fontSize:12,color:MU,textAlign:'center',padding:'12px'}}>Couldn't load details</div>}
-        <button onClick={closePattern} style={{width:'100%',marginTop:6,padding:'12px',background:`${AC}15`,border:`1px solid ${AC}44`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:700,color:AC}}>
+        <button onClick={closePattern} style={{width:'100%',marginTop:6,padding:'12px',background:`${RADIO_A}15`,border:`1px solid ${RADIO_A}44`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:700,color:RADIO_A}}>
           ▶ Voltar pro programa
         </button>
       </div>
@@ -4695,7 +4774,7 @@ function NGRadio({isOnline,onBack}){
         <div style={{display:'flex',gap:6,marginBottom:10,alignItems:'center'}}>
           <span style={{fontSize:10,color:MU,flexShrink:0}}>Velocidade</span>
           {SPEEDS.map(v=><button key={v} onClick={()=>setSpeedLive(v)}
-            style={{flex:1,padding:'7px 0',background:speed===v?`${AC}20`:S2,border:`1px solid ${speed===v?AC+'55':BD}`,borderRadius:9,cursor:'pointer',fontFamily:FONT,fontSize:11,fontWeight:speed===v?700:400,color:speed===v?AC:MU}}>
+            style={{flex:1,padding:'7px 0',background:speed===v?`${RADIO_A}20`:S2,border:`1px solid ${speed===v?RADIO_A+'55':BD}`,borderRadius:9,cursor:'pointer',fontFamily:FONT,fontSize:11,fontWeight:speed===v?700:400,color:speed===v?RADIO_A:MU}}>
             {v===1?'1×':v+'×'}
           </button>)}
         </div>
@@ -4895,20 +4974,26 @@ function NGHome({isOnline,go,active=true}){
   if(loading)return<div style={{padding:'100px 24px',textAlign:'center'}}><Spinner size={24}/></div>
 
   return<div style={{padding:'0 0 100px',animation:'up 0.4s ease'}}>
+    {/* Brand row — o poste */}
+    <div style={{padding:'54px 20px 0',display:'flex',alignItems:'center',gap:9,animation:'popIn 0.55s cubic-bezier(0.34,1.56,0.64,1)'}}>
+      <Poste size={26}/>
+      <span style={{fontSize:10.5,letterSpacing:4.5,color:MU,fontWeight:700,fontFamily:FONTD}}>CARIOCA</span>
+    </div>
+
     {/* Milestone toast */}
-    {milestone&&<div onClick={dismissMilestone} style={{margin:'56px 20px 0',background:`${GD}10`,border:`1px solid ${GD}44`,borderRadius:16,padding:'14px 16px',cursor:'pointer',animation:'popIn 0.5s ease'}}>
+    {milestone&&<div onClick={dismissMilestone} style={{margin:'14px 20px 0',background:`${GD}10`,border:`1px solid ${GD}44`,borderRadius:16,padding:'14px 16px',cursor:'pointer',animation:'popIn 0.5s ease'}}>
       <div style={{fontSize:11,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>★ {milestone.title||'Milestone'}</div>
       <div style={{fontSize:13,color:TX,lineHeight:1.6}}>{milestone.message||milestone.description||''}</div>
     </div>}
 
     {/* Header: greeting + phase */}
-    <div style={{padding:`${milestone?'20':'60'}px 20px 6px`,display:'flex',alignItems:'center',gap:14}}>
+    <div style={{padding:'14px 20px 6px',display:'flex',alignItems:'center',gap:14}}>
       <div style={{flex:1}}>
-        <div style={{fontSize:26,fontWeight:900,color:TX}}>E aí, Shay</div>
+        <div style={{fontSize:26,fontWeight:900,color:TX,fontFamily:FONTD}}>E aí, Shay</div>
         <div style={{fontSize:12,color:MU,marginTop:2}}>Fase {phase.n} · {phase.name}</div>
       </div>
       <div style={{textAlign:'center',flexShrink:0}}>
-        <div style={{fontSize:22,fontWeight:900,color:AC}}>{phase.controlled}</div>
+        <div style={{fontSize:22,fontWeight:900,color:AC,fontFamily:FONTD}}>{phase.controlled}</div>
         <div style={{fontSize:9,color:MU,letterSpacing:1}}>CONTROLLED</div>
       </div>
     </div>
@@ -4922,7 +5007,7 @@ function NGHome({isOnline,go,active=true}){
     {/* CONTINUE — the one big button */}
     <div style={{margin:'16px 20px 0'}}>
       <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
-        style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#5a4fd0)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:'ringGlow 3s ease-in-out infinite'}}>
+        style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#5a4fd0)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:`ringGlow ${phase.due>=8?1.6:phase.due>=4?2.2:3.2}s ease-in-out infinite`}}>
         <span style={{display:'block',fontSize:10,color:'#ffffffaa',fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>Continue</span>
         <span style={{display:'block',fontSize:16,color:'#fff',fontWeight:800}}>{continueTarget.label}</span>
       </button>
@@ -4941,7 +5026,7 @@ function NGHome({isOnline,go,active=true}){
       <div onClick={()=>go&&go('ng-study')} style={{background:S,border:`1px solid ${phase.due?YE+'44':BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
         <div style={{fontSize:20,marginBottom:6}}>◌</div>
         <div style={{fontSize:13,fontWeight:800,color:TX}}>Reviews</div>
-        <div style={{fontSize:11,color:phase.due?YE:MU,marginTop:2}}>{phase.due?`${phase.due} at the forgetting edge`:'All caught up ✓'}</div>
+        <div style={{fontSize:11,color:phase.due?YE:MU,marginTop:2}}>{phase.due?`${phase.due} luzes piscando — Chico duvida de você`:'Nada vencendo. Até eu tô surpreso ✓'}</div>
       </div>
       <div onClick={()=>go&&go('ng-radio')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
         <div style={{fontSize:20,marginBottom:6}}>📻</div>
