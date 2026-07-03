@@ -2327,6 +2327,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
   const[loading,setLoading]=useState(true)
   const[sessionEvents,setSessionEvents]=useState([])
   const[deckPhase,setDeckPhase]=useState('pick') // pick | session
+  const[syncMsg,setSyncMsg]=useState(null) // {ok,text} — live write receipt
   const[activeDeck,setActiveDeck]=useState(null)
   const[allCats,setAllCats]=useState([])
   const[dueCount,setDueCount]=useState(0)
@@ -2504,6 +2505,11 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
     if(isOnline){
       ngFetch('ng-session-end',{mode:'flashcard',events:[event],duration_seconds:15})
         .then(r=>{
+          // Live receipt: proof the memory engine got it — or the exact error
+          if(r.memory_error)setSyncMsg({ok:false,text:'⚠ save failed: '+r.memory_error})
+          else if(r.memory?.length){const w=r.memory[0];setSyncMsg({ok:true,text:`🧠 ${w.skill==='recognition'?'recog':'prod'} memory ${w.before}d → ${w.after}d`})}
+          else if(r.error)setSyncMsg({ok:false,text:'⚠ '+r.error})
+          setTimeout(()=>setSyncMsg(null),2600)
           if(r.newly_acquired?.length)setSummary(s=>({...s,acquired:(s.acquired||0)+r.newly_acquired.length,total_controlled:r.total_controlled||0}))
           setSummary(s=>({...s,inserted:(s.inserted||0)+(r.events_inserted||0),events:newEvents.length}))
         }).catch(()=>{})
@@ -2615,6 +2621,9 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
       <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{activeDeck?String(activeDeck).replace(/_/g,' ')+' · ':''}{idx+1} of {frontier.length}</div>
       <button onClick={endEarly} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0,opacity:0.6}}>Done</button>
     </div>
+
+    {/* Live write receipt — memory engine proof per rep */}
+    {syncMsg&&<div style={{position:'fixed',bottom:96,left:'50%',transform:'translateX(-50%)',zIndex:80,background:syncMsg.ok?'#12261f':'#2a1416',border:`1px solid ${syncMsg.ok?GR+'55':RE+'55'}`,borderRadius:20,padding:'7px 14px',fontSize:11.5,fontWeight:600,color:syncMsg.ok?GR:RE,animation:'up 0.25s ease',whiteSpace:'nowrap'}}>{syncMsg.text}</div>}
 
     {/* Live coach hint — the brain watching in real time */}
     {coachHint&&<div style={{background:`${GR}0d`,border:`1px solid ${GR}33`,borderRadius:12,padding:'10px 13px',marginBottom:14,display:'flex',gap:10,alignItems:'flex-start',animation:'up 0.3s ease'}}>
@@ -4080,7 +4089,7 @@ function NGLearn({isOnline,onBack,startUnit}){
       background:`conic-gradient(${ring} ${deg}deg, ${BD} ${deg}deg)`,
       opacity:u.status==='locked'?0.45:1,
       animation:u.status==='current'?'float 2.6s ease-in-out infinite':'none',
-      boxShadow:u.status==='current'?`0 0 22px ${AC}55`:u.status==='complete'?`0 0 14px ${GR}33`:'none'
+      boxShadow:u.status==='current'?`0 0 22px ${AC}55`:u.status==='complete'?`0 0 14px ${GR}33`:u.status==='in_progress'?`0 0 12px ${AC}33`:'none'
     }
   }
 
