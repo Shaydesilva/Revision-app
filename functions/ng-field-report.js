@@ -13,7 +13,7 @@ exports.handler=async(event)=>{
 async function brainLog(sb,proc,thought,data=null,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process:proc,thought,data,importance})}catch(_){}
 }
-    const{text='',approvedScaffolds=null}=JSON.parse(event.body||'{}')
+    const{text='',approvedScaffolds=null,mine_only=false,source='field_report'}=JSON.parse(event.body||'{}')
 
     // ── Approval path: write approved scaffolds to bank ────────────────
     if(Array.isArray(approvedScaffolds)&&approvedScaffolds.length){
@@ -27,7 +27,7 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
         category:sc.category||'field_learned',
         context:sc.context||'real_world',
         is_hybrid:false,
-        source:'field_report'
+        source:source||'field_report'
       }))
       const{error}=await sb.from('ng_scaffolds').insert(rows)
       if(error)return{statusCode:500,body:JSON.stringify({error:error.message})}
@@ -44,7 +44,8 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
 
     const existingPatterns=(scaffolds||[]).map(s=>s.base_portuguese).join('\n')
 
-    // ── Save the report to profile ──────────────────────────────────────
+    // ── Save the report to profile (skipped for mine_only e.g. Luna transcripts) ──
+    if(!mine_only){
     const newReport={
       date:new Date().toISOString().slice(0,10),
       text:text.trim(),
@@ -56,6 +57,7 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
       version:(profile?.version||0)+1,
       last_updated:new Date().toISOString()
     }).eq('user_id',UID)
+    }
 
     // ── Mine the report for scaffold suggestions ─────────────────────────
     let suggestions=[]
