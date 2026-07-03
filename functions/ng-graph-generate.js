@@ -65,6 +65,14 @@ Return JSON only: {"edges":[{"from":"id","to":"id","type":"synonym","strength":0
     }
 
     const isLast=(batch+1)*batchSize>=scaffolds.length
+    // Self-chain: fire the next batch automatically — the graph builds itself
+    if(!isLast){
+      const siteUrl=process.env.URL||process.env.DEPLOY_URL||''
+      if(siteUrl)fetch(`${siteUrl}/.netlify/functions/ng-graph-generate`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({batch:batch+1})
+      }).catch(()=>{})
+    }
     await brainLog(sb,'graph',isLast
       ?`Knowledge graph complete: final batch wrote ${rows.length} edges. The constellation is fully mapped.`
       :`Graph batch ${batch}: ${rows.length} relationships mapped (synonyms, collocations, register pairs).`,
