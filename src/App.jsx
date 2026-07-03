@@ -1677,9 +1677,7 @@ function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
     {isLuna&&!showTl&&<div style={{fontSize:10,color:MU,marginTop:2,opacity:0.3}}>tap word to translate</div>}
   </div>
 }
-function VoiceMode({
-  const LU='#fb7185' // Luna's coral — her own color
-cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
+function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   // ── State ──────────────────────────────────────────────────────────────
   const[phase,setPhase]=useState('idle')
   const[spectrum,setSpectrum]=useState(0.35)
@@ -3921,6 +3919,8 @@ try{
   }
 }catch(_){}
 const FONTD="'Sora',"+"system-ui,-apple-system,sans-serif"
+const LU='#fb7185'      // Luna's coral — her accent everywhere
+const RADIO_A='#fbbf24' // Radio amber — the station's accent
 
 const SFX=(()=>{
   let ctx=null
@@ -4434,9 +4434,7 @@ function NGToday({isOnline,onBack,goTo}){
 }
 
 // ── NGRadio — Radio Carioca: tune in, infinite buffered show ────────
-function NGRadio({
-  const RADIO_A='#fbbf24' // amber — the radio's own accent
-isOnline,onBack}){
+function NGRadio({isOnline,onBack}){
   const[phase,setPhase]=useState('off') // off|tuning|playing
   const[paused,setPaused]=useState(false)
   const[speed,setSpeed]=useState(1)
