@@ -97,6 +97,8 @@ Return JSON only.`},
       }))
 
     // Feed memory engine — direct writes, no internal HTTP
+    const memoryWrites=[]
+    let memoryError=null
     try{
       for(const ev of eventRows){
         const skill=(ev.mode==='flashcard')?'recognition':'production'
@@ -107,10 +109,12 @@ Return JSON only.`},
         const rFn=(S,el)=>S<=0?0:Math.exp(Math.log(0.9)*el/S)
         if(!mrow){
           const S0=success?(ev.quality>=4?3:1.5):0.5
-          await sb.from('ng_memory').insert({user_id:UID,scaffold_id:ev.scaffold_id,stage:ev.stage,skill,
+          const{error:insErr}=await sb.from('ng_memory').insert({user_id:UID,scaffold_id:ev.scaffold_id,stage:ev.stage,skill,
             stability:S0,retrievability:1,difficulty:Math.min(10,Math.max(1,5+(3-(ev.quality||3))*0.35)),
             reps:1,lapses:success?0:1,last_review:nowM,
-            next_due:new Date(Date.now()+S0*24*3600*1000).toISOString(),updated_at:nowM}).catch?.(()=>{})
+            next_due:new Date(Date.now()+S0*24*3600*1000).toISOString(),updated_at:nowM})
+          if(insErr)memoryError=insErr.message
+          else memoryWrites.push({scaffold_id:ev.scaffold_id,stage:ev.stage,skill,before:0,after:Math.round(S0*10)/10})
         }else{
           const elapsed=mrow.last_review?(Date.now()-new Date(mrow.last_review).getTime())/(24*3600*1000):0
           const R=rFn(mrow.stability,elapsed)
@@ -121,14 +125,16 @@ Return JSON only.`},
             difficulty:Math.min(10,Math.max(1,mrow.difficulty+(3-(ev.quality||3))*0.35)),
             reps:mrow.reps+1,lapses:mrow.lapses+(success?0:1),last_review:nowM,
             next_due:new Date(Date.now()+S*24*3600*1000).toISOString(),updated_at:nowM}).eq('id',mrow.id)
+          memoryWrites.push({scaffold_id:ev.scaffold_id,stage:ev.stage,skill,before:Math.round(mrow.stability*10)/10,after:Math.round(S*10)/10})
         }
       }
-    }catch(memErr){console.log('memory update skipped:',memErr.message)}
+    }catch(memErr){memoryError=memErr.message;console.log('memory update FAILED:',memErr.message)}
 
     let eventsInserted=0
     if(eventRows.length&&!skip_insert){
       const{error:insertErr}=await sb.from('ng_scaffold_events').insert(eventRows)
       if(insertErr){
+        memoryError=(memoryError?memoryError+' | ':'')+'events: '+insertErr.message
         console.log('Insert error:',insertErr.message)
       }else{
         eventsInserted=eventRows.length
@@ -305,6 +311,8 @@ Return JSON only.`},
         events_inserted:eventsInserted,
         newly_acquired:newlyAcquired,
         total_controlled:updatedControlled.length,
+        memory:memoryWrites,          // proof: every stability change this call
+        memory_error:memoryError,     // never silent again
         summary:sessionSummary
       })
     }
