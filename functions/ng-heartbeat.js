@@ -98,6 +98,22 @@ exports.handler=async(event)=>{
       actions.push('speculative_radio')
     }
 
+    // ── 3b. Knowledge graph missing? Build it automatically. ─────────
+    try{
+      const{count:edgeCount}=await sb.from('ng_graph_edges')
+        .select('id',{count:'exact',head:true}).eq('user_id',UID)
+      const{count:scCount}=await sb.from('ng_scaffolds')
+        .select('id',{count:'exact',head:true}).eq('user_id',UID)
+      if((edgeCount||0)===0&&(scCount||0)>0){
+        if(siteUrl)fetch(`${siteUrl}/.netlify/functions/ng-graph-generate`,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({batch:0})
+        }).catch(()=>{})
+        await brainLog(sb,'graph','No knowledge graph yet — building it automatically in the background. Batches self-chain; the ✦ Live map lights up as edges land.',null,2)
+        actions.push('graph_bootstrap')
+      }
+    }catch(_){}
+
     // ── 4. Review pressure observation ───────────────────────────────
     const dueCount=(dueMem||[]).length
     if(dueCount>=10){
