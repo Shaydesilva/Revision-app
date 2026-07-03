@@ -63,7 +63,7 @@ exports.handler=async(event)=>{
 
     // ── 1. Nightly brain missing? Dispatch. ──────────────────────────
     if(!daily?.workout&&rioNow.getUTCHours()>=4){
-      if(siteUrl)fetch(`${siteUrl}/.netlify/functions/ng-nightly-brain`,{method:'POST'}).catch(()=>{})
+      if(siteUrl){try{const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-nightly-brain`,{method:'POST',signal:_ac.signal}).catch(()=>{});clearTimeout(_tm)}catch(_){}}
       actions.push('dispatched_nightly_brain')
       await brainLog(sb,'heartbeat','Nightly brain hasn\'t run today — dispatching the deep analysis now.',null,2)
     }
