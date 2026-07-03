@@ -193,6 +193,36 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
       }
     }catch(e){console.log('missions fail:',e.message)}
 
+    // ── Path maintenance: side-quests from fresh imports + weakness reorder ──
+    try{
+      const twoDaysAgo=new Date(Date.now()-48*3600000).toISOString()
+      const{data:freshImports}=await sb.from('ng_scaffolds')
+        .select('id,base_portuguese').eq('user_id',UID).eq('source','import')
+        .gte('created_at',twoDaysAgo)
+      if((freshImports||[]).length>=3){
+        const sqId='sidequest_'+today.replace(/-/g,'')
+        await sb.from('ng_path_units').upsert({
+          user_id:UID,unit_id:sqId,title:'Aula do Victor',emoji:'📓',
+          situation:"Fresh from your latest lesson — strike while it's hot",
+          scaffold_ids:freshImports.map(s=>s.id).slice(0,7),
+          sort_order:-1,is_side_quest:true
+        },{onConflict:'user_id,unit_id'})
+        await brainLog(sb,'path',`Side-quest injected: "${'Aula do Victor'}" with ${Math.min(7,freshImports.length)} patterns from your latest import, placed at the top of the Trilha.`,null,2)
+      }
+      // Weakness reorder: units containing struggle scaffolds move up
+      const struggles=(profile?.struggle_patterns?.by_scaffold)||{}
+      if(Object.keys(struggles).length){
+        const{data:pUnits}=await sb.from('ng_path_units').select('id,unit_id,scaffold_ids,sort_order,is_side_quest').eq('user_id',UID)
+        const scored=(pUnits||[]).filter(u=>!u.is_side_quest).map(u=>({
+          ...u,pain:(Array.isArray(u.scaffold_ids)?u.scaffold_ids:[]).reduce((s,id)=>s+(struggles[id]||0),0)
+        }))
+        const reordered=[...scored].sort((a,b)=>b.pain-a.pain||a.sort_order-b.sort_order)
+        for(let i=0;i<reordered.length;i++){
+          if(reordered[i].sort_order!==i)await sb.from('ng_path_units').update({sort_order:i}).eq('id',reordered[i].id)
+        }
+      }
+    }catch(pathErr){console.log('path maintenance skipped:',pathErr.message)}
+
     // ── Write the daily row ──────────────────────────────────────────
     await sb.from('ng_daily').insert({
       user_id:UID,date:today,
