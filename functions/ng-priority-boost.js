@@ -21,7 +21,8 @@ exports.handler=async(event)=>{
       boosts[scaffold_id]=Math.min(current+(BOOST[boost_type]||4),20) // cap at 20
     }
 
-    await sb.from('ng_learner_profile').update({priority_boosts:boosts}).eq('user_id',UID)
+    const{error:wErr}=await sb.from('ng_learner_profile').update({priority_boosts:boosts}).eq('user_id',UID)
+    if(wErr)return{statusCode:500,body:JSON.stringify({error:wErr.message})}
 
     return{statusCode:200,headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ok:true,boosts,scaffold_id,action:remove?'removed':boost_type})}
