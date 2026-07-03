@@ -2315,7 +2315,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
 
 // ── NGFlashCards ──────────────────────────────────────────────────
-function NGFlashCards({isOnline,onBack,reviewItems=[]}){
+function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
   const[frontier,setFrontier]=useState([])
   const[idx,setIdx]=useState(0)
   const[flipped,setFlipped]=useState(false)
@@ -2373,6 +2373,17 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     }).catch(()=>{})
   },[isOnline])
 
+  useEffect(()=>{
+    // Arriving from Learn with a unit seed → straight into that unit's session
+    if(seed?.deck==='unit'&&seed.unit_id){
+      setActiveDeck(seed.title||'unit')
+      setDeckPhase('session')
+      setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({})
+      loadFrontier('unit',null,seed.unit_id)
+      clearSeed&&clearSeed()
+    }
+  },[seed])
+
   const startDeck=(deck,category)=>{
     setActiveDeck(deck==='category'?category:deck)
     setDeckPhase('session')
@@ -2380,10 +2391,10 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     loadFrontier(deck,category)
   }
 
-  const loadFrontier=async(deck,category)=>{
+  const loadFrontier=async(deck,category,unitId)=>{
     setLoading(true)
     try{
-      const data=await ngFetch('ng-frontier',deck&&deck!=='focus'&&deck!=='due'?{deck,category}:{})
+      const data=await ngFetch('ng-frontier',deck&&deck!=='focus'&&deck!=='due'?{deck,category,unit_id:unitId}:{})
       if(data.error)throw new Error(data.error)
       ngFetch('ng-today',{action:'get'}).then(t=>{if(t?.coach_note)setCoachNote(t.coach_note)}).catch(()=>{})
       const reviewCards=(data.review||[]).map(r=>({...r,isReview:true}))
@@ -3935,6 +3946,71 @@ function NGBrain({isOnline,onBack}){
   </div>
 }
 
+
+// ── NGLearn — the Trilha: graph-clustered units, memory-verified gates ──
+function NGLearn({isOnline,onBack,startUnit}){
+  const[units,setUnits]=useState(null)
+  const[expanded,setExpanded]=useState(null)
+  const[err,setErr]=useState(null)
+  useEffect(()=>{
+    if(!isOnline)return
+    ngFetch('ng-path',{action:'get'}).then(d=>{
+      if(d.error)setErr(d.error)
+      setUnits(d.units||[])
+    }).catch(e=>setErr('Could not reach ng-path — is ng-path.js uploaded? '+(e?.message||'')))
+  },[isOnline])
+
+  const statusStyle=s=>s==='complete'?{border:`1.5px solid ${GR}66`,glow:`0 0 14px ${GR}22`,dim:1}
+    :s==='current'?{border:`1.5px solid ${AC}77`,glow:`0 0 16px ${AC}33`,dim:1}
+    :s==='in_progress'?{border:`1px solid ${AC}44`,glow:'none',dim:1}
+    :{border:`1px solid ${BD}`,glow:'none',dim:0.45}
+
+  return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Learn</div>
+    <div style={{fontSize:12,color:MU,marginBottom:20}}>A trilha — built from your knowledge graph, verified by your memory. Units reopen if they fade.</div>
+    {err&&<div style={{background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'13px 15px',marginBottom:14,fontSize:12,color:RE,lineHeight:1.6}}>{err}</div>}
+    {units===null&&!err&&<div style={{textAlign:'center',padding:'50px'}}><Spinner size={22}/><div style={{fontSize:12,color:MU,marginTop:14}}>Building your trilha from the knowledge graph…<br/>(first time takes ~20s)</div></div>}
+    {units&&units.map((u,i)=>{
+      const st=statusStyle(u.status)
+      const open=expanded===u.unit_id
+      return<div key={u.unit_id} style={{marginBottom:12,opacity:st.dim,position:'relative'}}>
+        {i>0&&<div style={{position:'absolute',top:-12,left:34,width:2,height:12,background:BD}}/>}
+        <div onClick={()=>setExpanded(open?null:u.unit_id)} style={{background:u.is_side_quest?`${YE}08`:S,border:u.is_side_quest?`1.5px solid ${YE}55`:st.border,borderRadius:18,padding:'14px 16px',cursor:'pointer',boxShadow:st.glow}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{fontSize:26,flexShrink:0}}>{u.emoji}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:15,fontWeight:800,color:TX}}>{u.title}{u.is_side_quest&&<span style={{fontSize:9,color:YE,fontWeight:700,marginLeft:8,letterSpacing:1}}>SIDE QUEST</span>}</div>
+              <div style={{fontSize:11,color:MU,marginTop:1}}>{u.situation}</div>
+            </div>
+            <div style={{textAlign:'right',flexShrink:0}}>
+              <div style={{fontSize:14,fontWeight:800,color:u.status==='complete'?GR:u.pct>0?AC:MU}}>{u.status==='complete'?'✓':u.pct+'%'}</div>
+              <div style={{fontSize:9,color:MU}}>{(u.patterns||[]).length} patterns</div>
+            </div>
+          </div>
+          <div style={{height:4,background:BD,borderRadius:4,overflow:'hidden',marginTop:10}}>
+            <div style={{height:'100%',width:`${u.pct}%`,background:u.status==='complete'?GR:AC,borderRadius:4,transition:'width 0.8s ease'}}/>
+          </div>
+          {open&&<div style={{marginTop:12,animation:'up 0.25s ease'}}>
+            {(u.patterns||[]).map(p=><div key={p.scaffold_id} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderTop:`1px solid ${BD}`}}>
+              <span style={{fontSize:12,flexShrink:0,color:p.solid?GR:MU}}>{p.solid?'✓':'·'}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:TX}}>{p.pt}</div>
+                <div style={{fontSize:10,color:MU}}>{p.en}</div>
+              </div>
+              <div style={{width:52,height:3,background:BD,borderRadius:3,overflow:'hidden',flexShrink:0}}>
+                <div style={{height:'100%',width:`${Math.min(100,Math.round(p.stability/u.threshold_days*100))}%`,background:p.solid?GR:GD,borderRadius:3}}/>
+              </div>
+            </div>)}
+            <div style={{marginTop:12}}>
+              <PBtn label={u.status==='complete'?'↻ Revisar mesmo assim':'▶ Praticar esta unidade'} onClick={e=>{e&&e.stopPropagation&&e.stopPropagation();startUnit(u)}}/>
+            </div>
+          </div>}
+        </div>
+      </div>
+    })}
+  </div>
+}
+
 // ── NGToday — coach note + prescribed workout + dials + missions ────
 function NGToday({isOnline,onBack,goTo}){
   const[data,setData]=useState(null)
@@ -5000,6 +5076,7 @@ export default function App(){
   const[ngMode,setNgMode]=useState(()=>localStorage.getItem(NG_MODE_KEY)||null)
   const[ngScreen,setNgScreen]=useState('ng-home')
   const[showMore,setShowMore]=useState(false)
+  const[studySeed,setStudySeed]=useState(null) // {deck:'unit',unit_id,title} from Learn
   const[loaded,setLoaded]=useState(false)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
 
@@ -5207,7 +5284,7 @@ export default function App(){
       {/* Conditional — fresh each visit */}
       {ngScreen==='ng-voice'&&<VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true} ngMode={true}/>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
-      {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} seed={studySeed} clearSeed={()=>setStudySeed(null)}/>}
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-shuffle'&&<NGShuffle isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-import'&&<NGImport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
@@ -5215,11 +5292,13 @@ export default function App(){
       {ngScreen==='ng-radio'&&<NGRadio isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-placement'&&<NGPlacementChat isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-brain'&&<NGBrain isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-learn'&&<NGLearn isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}
+        startUnit={u=>{setStudySeed({deck:'unit',unit_id:u.unit_id,title:u.title});setNgScreen('ng-study')}}/>}
       <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       </ErrorBoundary>
       {/* Next Gen Nav — 5 primary + More sheet */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
-        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
+        {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-learn',i:'⛰',l:'Learn'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
           <button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
             <span style={{fontSize:20,opacity:ngScreen===t.k&&!showMore?1:0.3,filter:ngScreen===t.k&&!showMore?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
             <span style={{fontSize:10,color:ngScreen===t.k&&!showMore?AC:MU,fontWeight:ngScreen===t.k&&!showMore?700:400}}>{t.l}</span>
