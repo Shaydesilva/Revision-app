@@ -7,8 +7,8 @@ exports.handler=async(event)=>{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
-    let deck=null,deckCategory=null
-    try{const b=JSON.parse(event.body||'{}');deck=b.deck||null;deckCategory=b.category||null}catch(_){}
+    let deck=null,deckCategory=null,deckUnitId=null
+    try{const b=JSON.parse(event.body||'{}');deck=b.deck||null;deckCategory=b.category||null;deckUnitId=b.unit_id||null}catch(_){}
     console.log('ng-frontier: start deck=',deck)
 
     const[
@@ -198,6 +198,11 @@ exports.handler=async(event)=>{
           deckItems=[...deckItems,...frontier.filter(it=>it.practice_count>0&&!inSet.has(it.scaffold_id))
             .sort((a,b)=>a.avg_quality-b.avg_quality)].slice(0,12)
         }
+      }else if(deck==='unit'&&deckUnitId){
+        const{data:unit}=await sb.from('ng_path_units').select('scaffold_ids,title')
+          .eq('user_id',UID).eq('unit_id',deckUnitId).single()
+        const uids=new Set(Array.isArray(unit?.scaffold_ids)?unit.scaffold_ids:[])
+        deckItems=frontier.filter(it=>uids.has(it.scaffold_id)).slice(0,12)
       }else if(deck==='category'&&deckCategory){
         const pool=frontier.filter(it=>(it.category||'social_foundation')===deckCategory)
         const practiced=pool.filter(it=>it.practice_count>0)
