@@ -7,7 +7,9 @@ exports.handler=async(event)=>{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
-    console.log('ng-frontier: start')
+    let deck=null,deckCategory=null
+    try{const b=JSON.parse(event.body||'{}');deck=b.deck||null;deckCategory=b.category||null}catch(_){}
+    console.log('ng-frontier: start deck=',deck)
 
     const[
       {data:profile,error:profileErr},
@@ -16,7 +18,7 @@ exports.handler=async(event)=>{
     ]=await Promise.all([
       sb.from('ng_learner_profile').select('*').eq('user_id',UID).single(),
       sb.from('ng_scaffolds')
-        .select('id,base_portuguese,base_english,stages,current_stage,phase,category,context,source,last_practiced')
+        .select('id,base_portuguese,base_english,stages,current_stage,phase,category,context,source,last_practiced,created_at')
         .eq('user_id',UID),
       sb.from('ng_scaffold_events')
         .select('scaffold_id,stage,mode,quality,created_at')
@@ -158,6 +160,58 @@ exports.handler=async(event)=>{
 
     frontier.sort((a,b)=>b.urgency-a.urgency)
 
+    const allCategories=[...new Set(scaffolds.map(s=>s.category||'social_foundation'))]
+    const dateById={};scaffolds.forEach(s=>{dateById[s.id]=s.created_at||''})
+
+    // ═══ DECKS — alternative session drivers ═══════════════════════
+    if(deck){
+      let deckItems=[]
+      if(deck==='fresh'){
+        // Newest additions first — today's Victor import IS this deck
+        deckItems=[...frontier].sort((a,b)=>(dateById[b.scaffold_id]||'').localeCompare(dateById[a.scaffold_id]||'')).slice(0,12)
+      }else if(deck==='mix'){
+        // A little of everything — round-robin across categories, shuffled
+        const byCat={}
+        frontier.forEach(it=>{const c=it.category||'social_foundation';(byCat[c]=byCat[c]||[]).push(it)})
+        Object.values(byCat).forEach(arr=>arr.sort(()=>Math.random()-0.5))
+        const cats=Object.keys(byCat).sort(()=>Math.random()-0.5)
+        let added=true
+        while(deckItems.length<12&&added){
+          added=false
+          for(const c of cats){
+            if(deckItems.length>=12)break
+            const it=byCat[c].shift()
+            if(it){deckItems.push(it);added=true}
+          }
+        }
+      }else if(deck==='weak'){
+        // Struggles + low recent quality + starred failures
+        const scored=frontier.map(it=>{
+          const st=(profile?.struggle_patterns?.by_scaffold||{})[it.scaffold_id]||0
+          const lowQ=(it.practice_count>=2&&it.avg_quality<3)?(3-it.avg_quality)*4:0
+          const boost=(profile?.priority_boosts||{})[it.scaffold_id]||0
+          return{...it,weak_score:st*3+lowQ+boost}
+        }).filter(it=>it.weak_score>0).sort((a,b)=>b.weak_score-a.weak_score)
+        deckItems=scored.slice(0,12)
+        if(deckItems.length<6){
+          const inSet=new Set(deckItems.map(d=>d.scaffold_id))
+          deckItems=[...deckItems,...frontier.filter(it=>it.practice_count>0&&!inSet.has(it.scaffold_id))
+            .sort((a,b)=>a.avg_quality-b.avg_quality)].slice(0,12)
+        }
+      }else if(deck==='category'&&deckCategory){
+        const pool=frontier.filter(it=>(it.category||'social_foundation')===deckCategory)
+        const practiced=pool.filter(it=>it.practice_count>0)
+        const fresh=pool.filter(it=>it.practice_count===0).sort(()=>Math.random()-0.5)
+        deckItems=[...practiced,...fresh].slice(0,12)
+      }
+      return{statusCode:200,headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          deck,frontier:deckItems,review:reviewQueue.slice(0,8),
+          review_count:reviewQueue.length,all_categories:allCategories,
+          total_controlled:controlled.size,phase:profile?.phase||1
+        })}
+    }
+
     // Category rotation — cap any single category at 6/12
     const rawPool=frontier.slice(0,32)
     const workingFrontier=[]
@@ -279,7 +333,8 @@ exports.handler=async(event)=>{
         hybrid_eligible_ids:hybridEligibleIds,
         pending_hybrids_count:pendingHybrids.length,
         pending_hybrids:pendingHybrids,
-        priority_boosts:profile?.priority_boosts||{}
+        priority_boosts:profile?.priority_boosts||{},
+        all_categories:allCategories
       })
     }
 
