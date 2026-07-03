@@ -28,8 +28,9 @@ exports.handler=async(event)=>{
     const today=new Date(Date.now()-3*3600000).toISOString().slice(0,10) // Rio date
 
     // Skip if already ran today
-    const{data:existing}=await sb.from('ng_daily').select('id').eq('user_id',UID).eq('date',today).single()
-    if(existing?.id)return{statusCode:200,body:JSON.stringify({ok:true,already_ran:true})}
+    const{data:existing}=await sb.from('ng_daily').select('id,workout').eq('user_id',UID).eq('date',today).single()
+    if(existing?.workout)return{statusCode:200,body:JSON.stringify({ok:true,already_ran:true})}
+    // A row without a workout = a previous run was killed mid-flight — resume it.
 
     // ── Load everything ─────────────────────────────────────────────
     const yesterday=new Date(Date.now()-27*3600000).toISOString()
@@ -82,6 +83,14 @@ Analyse the last 24h of learning events. Return JSON only:
       await brainLog(sb,'nightly_brain',`Interference detected: ${(analysis.interference.spanish_bleed||[]).length} Spanish, ${(analysis.interference.english_bleed||[]).length} English bleed patterns. Contrast drills queued.`,analysis.interference,2)
     }
 
+    // Progressive write #1 — coach note + autopsy land even if we're killed later
+    await sb.from('ng_daily').upsert({
+      user_id:UID,date:today,
+      coach_note:analysis.coach_note||'',
+      error_autopsy:analysis.error_autopsy||{},
+      interference:analysis.interference||{}
+    },{onConflict:'user_id,date'})
+
     // ── 2. TOMORROW'S WORKOUT (pre-assembled) ────────────────────────
     // Due reviews (from memory engine), frontier picks, listening drill, composition, luna seed
     const nowIso=new Date().toISOString()
@@ -111,6 +120,21 @@ Analyse the last 24h of learning events. Return JSON only:
       composition,
       luna_seed:focus.length?`Weave these into conversation: ${focus.join(', ')}`:'Free conversation',
       estimated_mins:Math.min(15,3+due.length+frontierPick.length*1.5)
+    }
+
+    // Progressive write #2 — the workout is the highest-value output; bank it now
+    {
+      const prodMemP=mem.filter(m=>m.skill==='production')
+      const recMemP=mem.filter(m=>m.skill==='recognition')
+      const avgStabP=arr=>arr.length?arr.reduce((s,m)=>s+m.stability,0)/arr.length:0
+      const dialsP={
+        comprehension:Math.min(100,Math.round(avgStabP(recMemP)*2.2)),
+        production:Math.min(100,Math.round(avgStabP(prodMemP)*2.0)),
+        speed:Math.min(100,Math.round((strongSet.size/197)*140)),
+        register:Math.min(100,Math.round(Object.keys(errorFingerprint).length?70-Object.keys(errorFingerprint).length*4:75)),
+        projection_weeks:Math.max(1,Math.round((197-strongSet.size)/Math.max(1,(strongSet.size||4)/8)))
+      }
+      await sb.from('ng_daily').update({workout,fluency_dials:dialsP}).eq('user_id',UID).eq('date',today)
     }
 
     // ── 3. DAILY RADIO DIALOGUE (script only; TTS on demand) ─────────
@@ -223,16 +247,10 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
       }
     }catch(pathErr){console.log('path maintenance skipped:',pathErr.message)}
 
-    // ── Write the daily row ──────────────────────────────────────────
-    await sb.from('ng_daily').insert({
-      user_id:UID,date:today,
-      coach_note:analysis.coach_note||'',
-      error_autopsy:analysis.error_autopsy||{},
-      interference:analysis.interference||{},
-      workout,dialogue:dialogue||{},
-      fluency_dials:dials,
-      week_recap:weekRecap
-    })
+    // ── Final update — remaining fields (row was created progressively) ──
+    await sb.from('ng_daily').update({
+      dialogue:dialogue||{},fluency_dials:dials,week_recap:weekRecap
+    }).eq('user_id',UID).eq('date',today)
 
     await brainLog(sb,'nightly_brain',`Deep run complete for ${today}: workout assembled (${due.length} reviews + ${frontierPick.length} frontier), radio dialogue written (${dialogue?.lines?.length||0} lines), dials computed. Coach note is on the home screen.`,{date:today},3)
 
