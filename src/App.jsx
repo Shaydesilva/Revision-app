@@ -3952,12 +3952,28 @@ function NGLearn({isOnline,onBack,startUnit}){
   const[units,setUnits]=useState(null)
   const[expanded,setExpanded]=useState(null)
   const[err,setErr]=useState(null)
+  const[building,setBuilding]=useState(false)
+  const pollRef=useRef(null)
+  const load=()=>{
+    ngFetch('ng-path',{action:'get'}).then(d=>{
+      if(d.error){setErr(d.error);setBuilding(false);return}
+      if(d.bootstrapping){
+        setBuilding(true)
+        // Poll — units land chunk by chunk as the build self-chains
+        if(!pollRef.current)pollRef.current=setInterval(load,8000)
+        return
+      }
+      setUnits(d.units||[])
+      if((d.units||[]).length){setBuilding(false)}
+      // Keep polling briefly even with partial units (later chunks still landing)
+      if(!pollRef.current&&(d.units||[]).length&&(d.units||[]).length<6)pollRef.current=setInterval(load,8000)
+      if((d.units||[]).length>=6&&pollRef.current){clearInterval(pollRef.current);pollRef.current=null}
+    }).catch(e=>{setErr('Could not reach ng-path ('+(e?.message||'fetch failed')+'). If this mentions a pattern/JSON error, the function likely timed out or crashed — check the Netlify function log.');setBuilding(false)})
+  }
   useEffect(()=>{
     if(!isOnline)return
-    ngFetch('ng-path',{action:'get'}).then(d=>{
-      if(d.error)setErr(d.error)
-      setUnits(d.units||[])
-    }).catch(e=>setErr('Could not reach ng-path — is ng-path.js uploaded? '+(e?.message||'')))
+    load()
+    return()=>{if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null}}
   },[isOnline])
 
   const statusStyle=s=>s==='complete'?{border:`1.5px solid ${GR}66`,glow:`0 0 14px ${GR}22`,dim:1}
@@ -3969,7 +3985,11 @@ function NGLearn({isOnline,onBack,startUnit}){
     <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Learn</div>
     <div style={{fontSize:12,color:MU,marginBottom:20}}>A trilha — built from your knowledge graph, verified by your memory. Units reopen if they fade.</div>
     {err&&<div style={{background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'13px 15px',marginBottom:14,fontSize:12,color:RE,lineHeight:1.6}}>{err}</div>}
-    {units===null&&!err&&<div style={{textAlign:'center',padding:'50px'}}><Spinner size={22}/><div style={{fontSize:12,color:MU,marginTop:14}}>Building your trilha from the knowledge graph…<br/>(first time takes ~20s)</div></div>}
+    {(units===null||building)&&!err&&<div style={{textAlign:'center',padding:building?'30px 20px':'50px'}}>
+      <Spinner size={22}/>
+      <div style={{fontSize:13,fontWeight:700,color:TX,marginTop:14}}>{building?'Building your trilha…':'Loading…'}</div>
+      {building&&<div style={{fontSize:12,color:MU,marginTop:6,lineHeight:1.7}}>Clustering your bank into situation units, category by category.<br/>Units appear below as they're built — about a minute total.</div>}
+    </div>}
     {units&&units.map((u,i)=>{
       const st=statusStyle(u.status)
       const open=expanded===u.unit_id
