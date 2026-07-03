@@ -1,4 +1,4 @@
-const CACHE='carioca-v3'
+const CACHE='carioca-v4-brasil'
 const ASSETS=['/','index.html','/src/main.jsx']
 
 self.addEventListener('install',e=>{
