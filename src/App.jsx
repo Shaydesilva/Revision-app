@@ -1621,7 +1621,14 @@ function Import({cards,onImport,isOnline=true,active,onBack}){
 const PT_RE_V=/[ãõâêîôûçáéíóúàü]/i
 const PT_SET_V=new Set(['tá','né','tô','cê','cara','gente','assim','então','tipo','nossa','oi','tchau','obrigado','obrigada','legal','saudade','praia','poxa','beleza','valeu','falou','não','sim','muito','mais','uma','isso','bom','boa','bem','tudo','você','mas','cadê','também','porque','pô','bora','mano','irmão','aqui','ali','lá','fome','sede','calor','frio'])
 function isPtWord(w){const c=(w||'').toLowerCase().replace(/[.,!?;:'"()—\-]/g,'');return!!c&&(PT_RE_V.test(c)||PT_SET_V.has(c))}
-const GOODBYE_V=['bye','tchau','até mais','gotta go','see you','boa noite','falou','goodbye','ciao']
+const GOODBYE_V=['tchau','até mais','até logo','boa noite','goodbye','bye bye','gotta go','vou nessa','falou então']
+const isGoodbye=(t)=>{
+  const s=(t||'').toLowerCase().replace(/[.!?,…]/g,'').trim()
+  if(!s)return false
+  const words=s.split(/\s+/)
+  if(words.length>4)return false // a real goodbye is short — never a mid-story mention
+  return GOODBYE_V.some(g=>s===g||s.endsWith(' '+g)||s.startsWith(g+' '))
+}
 
 function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
   const[showTl,setShowTl]=useState(false)
@@ -1713,6 +1720,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const transcriptRef=useRef([])
   const lunaLiveRef=useRef('')
   const shouldEndRef=useRef(false)
+  const respActiveRef=useRef(false)
   const phaseRef=useRef('idle')
   const spectrumRef=useRef(0.35)
   const pttRef=useRef(true)
@@ -1860,7 +1868,11 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         break
       }
 
+      case 'response.created':
+        respActiveRef.current=true
+        break
       case 'response.done':
+        respActiveRef.current=false
         // Response cycle complete — commit any orphaned live text (safety net only)
         if(lunaLiveRef.current.trim()){
           const text=lunaLiveRef.current.trim()
@@ -1878,15 +1890,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         }
         break
 
-      case 'conversation.item.input_audio_transcription.completed':{
-        // User spoke — show in chat
-        const text=(ev.transcript||'').trim()
-        if(!text)break
-        transcriptRef.current.push({role:'user',text})
-        setMessages(prev=>[...prev,{role:'user',text,id:Date.now()}])
-        if(GOODBYE_V.some(g=>text.toLowerCase().includes(g)))shouldEndRef.current=true
+      case 'conversation.item.input_audio_transcription.completed':
+        // Dead on WebRTC (transcription config rejected) — and if OpenAI ever
+        // enables it, this would DUPLICATE the Whisper bubble. Deliberate no-op.
         break
-      }
 
       case 'conversation.item.done':
         // Log full content — check if transcript is embedded here
@@ -1912,6 +1919,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         break
 
       case 'input_audio_buffer.speech_started':
+        if(pttRef.current){setDotMode('');break} // appended PTT audio — recorder already ran
         setDotMode('listen');setStatus('Listening…')
         // Start capturing for Whisper transcription
         if(recorderRef.current&&recorderRef.current.state==='inactive'){
@@ -1920,6 +1928,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         }
         break
       case 'input_audio_buffer.speech_stopped':
+        if(pttRef.current){setStatus('Thinking…');break}
         setDotMode('');setStatus('Thinking…')
         // Stop recorder — onstop will transcribe via Whisper
         if(recorderRef.current&&recorderRef.current.state==='recording'){
@@ -1933,9 +1942,10 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const transcribeAudio=async(blob)=>{
     if(!blob||blob.size<1000)return
     try{
-      const r=await fetch('/.netlify/functions/ng-transcribe',{
+      const r=await fetch('/.netlify/functions/ng-transcribe?hint='+encodeURIComponent(
+        ((frontierRef.current||[]).slice(0,10).map(f=>f.pt).filter(Boolean).join(', ')).slice(0,350)),{
         method:'POST',
-        headers:{'Content-Type':'audio/webm'},
+        headers:{'Content-Type':blob.type||'audio/webm'},
         body:blob
       })
       const d=await r.json()
@@ -1944,7 +1954,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         transcriptRef.current.push({role:'user',text})
         setMessages(prev=>[...prev,{role:'user',text,id:Date.now()}])
         if(testInProgress.current)testInProgress.current='answered'
-        if(GOODBYE_V.some(g=>text.toLowerCase().includes(g)))shouldEndRef.current=true
+        if(isGoodbye(text))shouldEndRef.current=true
       }
     }catch(e){log('Transcribe error: '+e.message)}
   }
@@ -1994,14 +2004,18 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         log('Data channel open — sending session.update…')
         // Init MediaRecorder for user speech transcription via Whisper
         try{
-          const mimeType=['audio/webm;codecs=opus','audio/webm','audio/ogg'].find(m=>MediaRecorder.isTypeSupported(m))||''
+          // Safari (iPad!) supports NONE of the webm types — it records mp4/AAC.
+          const mimeType=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'].find(m=>MediaRecorder.isTypeSupported(m))||''
           const rec=new MediaRecorder(stream,mimeType?{mimeType}:{})
           rec.ondataavailable=e=>{if(e.data&&e.data.size>0)recChunksRef.current.push(e.data)}
           rec.onstop=()=>{
             const chunks=[...recChunksRef.current]
             recChunksRef.current=[]
-            const blob=new Blob(chunks,{type:mimeType||'audio/webm'})
-            transcribeAudio(blob)
+            const realType=recorderRef.current?.mimeType||mimeType||'audio/mp4'
+            const blob=new Blob(chunks,{type:realType})
+            if(blob.size<2500){setStatus('');setDotMode('');return} // accidental tap
+            transcribeAudio(blob)              // → your bubble (Whisper, exact same audio)
+            if(pttRef.current)sendBlobToRealtime(blob) // → Luna's ears (PTT only)
           }
           recorderRef.current=rec
           log('MediaRecorder ready: '+mimeType)
@@ -2070,30 +2084,78 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   },[isOnline,cleanup,log])
 
   // ── PTT ────────────────────────────────────────────────────────────────
+  // PTT audio path: decode the recorded blob → PCM16 @ 24kHz → push over
+  // the data channel. Luna hears NOTHING until release.
+  const blobToPcm16=async(blob)=>{
+    const ab=await blob.arrayBuffer()
+    const ac=new(window.AudioContext||window.webkitAudioContext)({sampleRate:24000})
+    const buf=await ac.decodeAudioData(ab)
+    let ch
+    if(buf.numberOfChannels>1){
+      const a=buf.getChannelData(0),b=buf.getChannelData(1)
+      ch=new Float32Array(buf.length)
+      for(let i=0;i<buf.length;i++)ch[i]=(a[i]+b[i])/2
+    }else ch=buf.getChannelData(0)
+    // Safari can ignore the sampleRate option — resample manually if needed,
+    // or Luna hears you slowed down and pitched into the floor.
+    const srcRate=buf.sampleRate||ac.sampleRate
+    if(srcRate!==24000){
+      const ratio=srcRate/24000
+      const outLen=Math.floor(ch.length/ratio)
+      const res=new Float32Array(outLen)
+      for(let i=0;i<outLen;i++){
+        const pos=i*ratio,i0=Math.floor(pos),i1=Math.min(i0+1,ch.length-1),f=pos-i0
+        res[i]=ch[i0]*(1-f)+ch[i1]*f
+      }
+      ch=res
+    }
+    const pcm=new Int16Array(ch.length)
+    for(let i=0;i<ch.length;i++){const s=Math.max(-1,Math.min(1,ch[i]));pcm[i]=s<0?s*0x8000:s*0x7FFF}
+    try{ac.close()}catch(_){}
+    return pcm
+  }
+  const pcmChunksB64=(pcm)=>{
+    const bytes=new Uint8Array(pcm.buffer,pcm.byteOffset,pcm.byteLength)
+    const out=[];const SZ=48000
+    for(let i=0;i<bytes.length;i+=SZ){
+      let bin='';const sl=bytes.subarray(i,Math.min(i+SZ,bytes.length))
+      for(let j=0;j<sl.length;j++)bin+=String.fromCharCode(sl[j])
+      out.push(btoa(bin))
+    }
+    return out
+  }
+  const sendBlobToRealtime=async(blob)=>{
+    try{
+      if(!dcRef.current||dcRef.current.readyState!=='open')return
+      const pcm=await blobToPcm16(blob)
+      if(pcm.length<24000*0.25){setStatus('');setDotMode('');return} // tap, not speech
+      dcRef.current.send(JSON.stringify({type:'input_audio_buffer.clear'}))
+      for(const c of pcmChunksB64(pcm))dcRef.current.send(JSON.stringify({type:'input_audio_buffer.append',audio:c}))
+      // trailing silence so server VAD closes the turn and Luna responds
+      for(const c of pcmChunksB64(new Int16Array(12000)))dcRef.current.send(JSON.stringify({type:'input_audio_buffer.append',audio:c}))
+    }catch(e){log('PTT send failed: '+e.message)}
+  }
+
   const pttOn=e=>{
     e.preventDefault()
     if(!streamRef.current)return
-    // Clear any audio that accumulated before button press
-    if(dcRef.current?.readyState==='open'){
-      dcRef.current.send(JSON.stringify({type:'input_audio_buffer.clear'}))
+    // Barge-in: cancel only if Luna is actually mid-response
+    if(respActiveRef.current&&dcRef.current?.readyState==='open'){
+      dcRef.current.send(JSON.stringify({type:'response.cancel'}))
     }
-    streamRef.current.getAudioTracks().forEach(t=>{t.enabled=true})
+    // Track stays MUTED — Luna hears nothing until release
+    streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})
+    recChunksRef.current=[]
+    if(recorderRef.current&&recorderRef.current.state==='inactive'){
+      try{recorderRef.current.start()}catch(_){}
+    }
   }
   const pttOff=e=>{
     e.preventDefault()
     if(!streamRef.current)return
-    streamRef.current.getAudioTracks().forEach(t=>{t.enabled=false})
-    // Stop recorder — Whisper will transcribe via ng-transcribe
+    // onstop delivers the blob → Whisper bubble + PCM push to Luna
     if(recorderRef.current&&recorderRef.current.state==='recording'){
       recorderRef.current.stop()
-    }
-    // Commit audio buffer and trigger response
-    if(dcRef.current?.readyState==='open'){
-      dcRef.current.send(JSON.stringify({type:'input_audio_buffer.commit'}))
-      setTimeout(()=>{
-        if(dcRef.current?.readyState==='open')
-          dcRef.current.send(JSON.stringify({type:'response.create'}))
-      },80)
     }
   }
   const togglePtt=()=>{
@@ -2114,7 +2176,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     dcRef.current.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:msg}]}}))
     setTimeout(()=>{if(dcRef.current?.readyState==='open')dcRef.current.send(JSON.stringify({type:'response.create'}))},100)
     setSendingText(false)
-    if(GOODBYE_V.some(g=>msg.toLowerCase().includes(g)))shouldEndRef.current=true
+    if(isGoodbye(msg))shouldEndRef.current=true
   },[textInput])
 
   const translateWord=useCallback(async word=>{
