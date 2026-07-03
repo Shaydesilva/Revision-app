@@ -321,7 +321,7 @@ exports.handler=async(event)=>{
       const nowRioNB=new Date(Date.now()-3*3600000)
       if(nowRioNB.getUTCHours()>=4){
         const siteUrlNB=process.env.URL||process.env.DEPLOY_URL||''
-        if(siteUrlNB)fetch(`${siteUrlNB}/.netlify/functions/ng-nightly-brain`,{method:'POST'}).catch(()=>{})
+        if(siteUrlNB){try{const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200);await fetch(`${siteUrlNB}/.netlify/functions/ng-nightly-brain`,{method:'POST',signal:_ac.signal}).catch(()=>{});clearTimeout(_tm)}catch(_){}}
       }
     }catch(_){}
 
