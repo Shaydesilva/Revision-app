@@ -39,7 +39,7 @@ exports.handler=async(event)=>{
       sb.from('ng_scaffold_events').select('scaffold_id,mode,quality,created_at')
         .eq('user_id',UID).gte('created_at',new Date(now-3600000).toISOString())
         .order('created_at',{ascending:false}).limit(60),
-      sb.from('ng_daily').select('id,date').eq('user_id',UID).eq('date',today).single(),
+      sb.from('ng_daily').select('id,date,workout').eq('user_id',UID).eq('date',today).single(),
       sb.from('ng_memory').select('scaffold_id,stage').eq('user_id',UID)
         .lte('next_due',nowIso).limit(50),
       sb.from('ng_radio_segments').select('id').eq('user_id',UID).eq('is_opener',true)
@@ -62,7 +62,7 @@ exports.handler=async(event)=>{
     const activeSession=events.length&&(now-new Date(events[0].created_at).getTime())<10*60*1000
 
     // ── 1. Nightly brain missing? Dispatch. ──────────────────────────
-    if(!daily?.id&&rioNow.getUTCHours()>=4){
+    if(!daily?.workout&&rioNow.getUTCHours()>=4){
       if(siteUrl)fetch(`${siteUrl}/.netlify/functions/ng-nightly-brain`,{method:'POST'}).catch(()=>{})
       actions.push('dispatched_nightly_brain')
       await brainLog(sb,'heartbeat','Nightly brain hasn\'t run today — dispatching the deep analysis now.',null,2)
