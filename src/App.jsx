@@ -2321,6 +2321,10 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
   const[flipped,setFlipped]=useState(false)
   const[loading,setLoading]=useState(true)
   const[sessionEvents,setSessionEvents]=useState([])
+  const[deckPhase,setDeckPhase]=useState('pick') // pick | session
+  const[activeDeck,setActiveDeck]=useState(null)
+  const[allCats,setAllCats]=useState([])
+  const[dueCount,setDueCount]=useState(0)
   const[coachHint,setCoachHint]=useState(null)
   const coachCheckedAt=useRef(0)
   const[done,setDone]=useState(false)
@@ -2360,16 +2364,33 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     }catch{setCardPlaying(false)}
   }
 
-  useEffect(()=>{loadFrontier()},[])
+  useEffect(()=>{
+    // Load picker metadata only — session starts when a deck is chosen
+    if(!isOnline)return
+    ngFetch('ng-frontier').then(d=>{
+      setAllCats(d.all_categories||[])
+      setDueCount(d.review_count||0)
+    }).catch(()=>{})
+  },[isOnline])
 
-  const loadFrontier=async()=>{
+  const startDeck=(deck,category)=>{
+    setActiveDeck(deck==='category'?category:deck)
+    setDeckPhase('session')
+    setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({})
+    loadFrontier(deck,category)
+  }
+
+  const loadFrontier=async(deck,category)=>{
     setLoading(true)
     try{
-      const data=await ngFetch('ng-frontier')
+      const data=await ngFetch('ng-frontier',deck&&deck!=='focus'&&deck!=='due'?{deck,category}:{})
       if(data.error)throw new Error(data.error)
       ngFetch('ng-today',{action:'get'}).then(t=>{if(t?.coach_note)setCoachNote(t.coach_note)}).catch(()=>{})
       const reviewCards=(data.review||[]).map(r=>({...r,isReview:true}))
-      const allCards=[...(data.frontier||[]),...reviewCards]
+      // due = reviews only · decks = pure deck · focus/default = frontier+reviews
+      const allCards=deck==='due'?reviewCards
+        :(deck&&deck!=='focus')?(data.frontier||[])
+        :[...(data.frontier||[]),...reviewCards]
       setFrontier(allCards)
       // Pre-generate TTS for all cards in parallel — silent, best-effort
       if(isOnline&&allCards.length){
@@ -2492,6 +2513,37 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
     if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
   }
 
+  if(deckPhase==='pick')return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Home</button>
+    </div>
+    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:4}}>Study</div>
+    <div style={{fontSize:13,color:MU,marginBottom:22}}>What are you in the mood for?</div>
+    {[
+      {k:'fresh',i:'🔥',t:'Fresh',d:"Newest additions — today's lesson, latest imports"},
+      {k:'mix',i:'🎲',t:'Mix',d:'A little of everything, across all categories'},
+      {k:'weak',i:'🎯',t:'Weak spots',d:'What you struggle with — the data decides'},
+      {k:'due',i:'◌',t:'Due'+(dueCount?` · ${dueCount}`:''),d:'Reviews at the forgetting edge'},
+      {k:'focus',i:'◈',t:'Focus',d:'The classic frontier — highest priority 12'},
+    ].map(dk=><button key={dk.k} onClick={()=>startDeck(dk.k)}
+      style={{width:'100%',textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'15px 16px',marginBottom:10,cursor:'pointer',fontFamily:FONT,display:'flex',gap:14,alignItems:'center'}}>
+      <span style={{fontSize:22,flexShrink:0}}>{dk.i}</span>
+      <span>
+        <span style={{display:'block',fontSize:15,fontWeight:700,color:TX}}>{dk.t}</span>
+        <span style={{display:'block',fontSize:12,color:MU,marginTop:2}}>{dk.d}</span>
+      </span>
+    </button>)}
+    {allCats.length>0&&<>
+      <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',margin:'14px 0 10px'}}>Or pick a category</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+        {allCats.map(c=><button key={c} onClick={()=>startDeck('category',c)}
+          style={{background:S2,border:`1px solid ${BD}`,borderRadius:20,padding:'8px 14px',cursor:'pointer',fontFamily:FONT,fontSize:12,color:TX}}>
+          {c.replace(/_/g,' ')}
+        </button>)}
+      </div>
+    </>}
+  </div>
+
   if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
     <Spinner size={24}/>
     <div style={{color:MU,fontSize:13,marginTop:16}}>Loading your frontier…</div>
@@ -2533,7 +2585,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
 
     <PBtn label="Back to home" onClick={onBack}/>
     <div style={{height:10}}/>
-    <GBtn label="Study again" onClick={()=>{setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({});loadFrontier()}}/>
+    <GBtn label="Another deck" onClick={()=>setDeckPhase('pick')}/>
   </div>
 
   // Find previous stage for anchor display
@@ -2542,8 +2594,8 @@ function NGFlashCards({isOnline,onBack,reviewItems=[]}){
 
   return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
     <div style={{display:'flex',alignItems:'center',marginBottom:24}}>
-      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Home</button>
-      <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{idx+1} of {frontier.length}</div>
+      <button onClick={()=>setDeckPhase('pick')} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>‹ Decks</button>
+      <div style={{flex:1,textAlign:'center',fontSize:13,color:MU}}>{activeDeck?String(activeDeck).replace(/_/g,' ')+' · ':''}{idx+1} of {frontier.length}</div>
       <button onClick={endEarly} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0,opacity:0.6}}>Done</button>
     </div>
 
@@ -4848,35 +4900,6 @@ function NGIntelligence({isOnline,onBack}){
     setHealthLoading(false)
   }
 
-  const[v2Running,setV2Running]=useState(false)
-  const runV2Setup=async()=>{
-    if(v2Running)return
-    setV2Running(true)
-    setMessages(prev=>[...prev,{role:'assistant',content:'V2 Setup does two things: (1) Memory backfill — replays your entire study history through the new memory engine so every pattern gets its own forgetting curve and review schedule. (2) Knowledge graph — maps how all your patterns relate (synonyms, collocations, register pairs), which powers the ✦ Live map. Running now — takes a couple of minutes…'}])
-    try{
-      // Preflight: are the V2 tables actually there?
-      const pre=await sb.from('ng_memory').select('id').limit(1)
-      if(pre.error){
-        setMessages(p=>[...p,{role:'assistant',content:'Stopped — the V2 database tables are missing. Open the Supabase SQL editor and run ng_v2_schema.sql, then ng_brain_schema.sql, then tap ✦ V2 Setup again. (Raw error: '+pre.error.message+')'}])
-        setV2Running(false);return
-      }
-      const bf=await ngFetch('ng-memory',{action:'backfill'})
-      if(bf?.error)throw new Error('ng-memory: '+bf.error)
-      setMessages(prev=>[...prev,{role:'assistant',content:`Memory engine: ${bf.backfilled||0} memory states built from your history.`}])
-      let batch=0,totalEdges=0
-      while(batch!==null&&batch<12){
-        const g=await ngFetch('ng-graph-generate',{batch})
-        totalEdges+=(g.edges_written||0)
-        batch=g.next_batch??null
-      }
-      setMessages(prev=>[...prev,{role:'assistant',content:`Knowledge graph: ${totalEdges} relationships mapped. The Constellation view (✦ on the Map) is now live, reviews are scheduled per-pattern, and tonight the nightly brain runs its first full analysis. V2 is on.`}])
-    }catch(e){
-      const hint=/Unexpected token|not valid JSON|Failed to fetch/i.test(e.message)?' This usually means a function file (ng-memory.js / ng-graph-generate.js) is not uploaded to your functions/ folder.':''
-      setMessages(prev=>[...prev,{role:'assistant',content:'Setup hit an error: '+e.message+'.'+hint+' Safe to run again — everything is idempotent.'}])
-    }
-    setV2Running(false)
-  }
-
   const doReset=async()=>{
     setResetting(true)
     try{
@@ -4897,7 +4920,6 @@ function NGIntelligence({isOnline,onBack}){
           <div style={{fontSize:11,color:MU,marginTop:1}}>Talk to Luna about your learning</div>
         </div>
         <div style={{display:'flex',gap:8}}>
-          <button onClick={runV2Setup} disabled={v2Running} style={{fontSize:11,color:v2Running?MU:AC,background:`${AC}12`,border:`1px solid ${AC}33`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT,opacity:v2Running?0.5:1}}>{v2Running?'…':'✦ V2 Setup'}</button>
           <button onClick={loadHealth} style={{fontSize:11,color:MU,background:S2,border:`1px solid ${BD}`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>⚡ Health</button>
           <button onClick={()=>setShowReset(true)} style={{fontSize:11,color:RE,background:`${RE}12`,border:`1px solid ${RE}33`,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:FONT}}>↺ Reset</button>
         </div>
