@@ -26,12 +26,15 @@ exports.handler=async(event)=>{
 
     // Build FormData for Whisper API
     const{FormData,Blob,fetch:nodeFetch}=globalThis
-    const blob=new Blob([body],{type:'audio/webm'})
+    const ct=(event.headers&&(event.headers['content-type']||event.headers['Content-Type']))||'audio/webm'
+    const ext=/mp4/.test(ct)?'mp4':/ogg/.test(ct)?'ogg':'webm'
+    const blob=new Blob([body],{type:ct.split(';')[0]})
     const form=new FormData()
-    form.append('file',blob,'speech.webm')
+    form.append('file',blob,'speech.'+ext)
     form.append('model','whisper-1')
     // No language lock — learner mixes PT/EN, auto-detect is more accurate
     // Prompt primes Whisper for Carioca vocabulary and contractions
+    const _hint=decodeURIComponent((event.queryStringParameters&&event.queryStringParameters.hint)||'').slice(0,400)
     form.append('prompt',
       'Conversa em português brasileiro, estilo carioca. ' +
       'Palavras comuns: bora, tamo, tá, né, cara, galera, beleza, saudade, ' +
@@ -39,7 +42,7 @@ exports.handler=async(event)=>{
       'tô, você, vc, aqui, lá, isso, esse, essa, ' +
       'obrigado, obrigada, por favor, com licença, desculpa, ' +
       'oi, olá, tchau, até logo, até mais.'
-    )
+    +(_hint?' Padrões desta sessão: '+_hint+'.':''))
     form.append('temperature','0') // deterministic — reduces hallucination
 
     const r=await fetch('https://api.openai.com/v1/audio/transcriptions',{
