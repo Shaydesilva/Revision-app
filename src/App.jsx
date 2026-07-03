@@ -1684,6 +1684,9 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const recorderRef=useRef(null)
   const recChunksRef=useRef([])
   const[summary,setSummary]=useState(null)
+  const[lunaCandidates,setLunaCandidates]=useState([])
+  const[lunaDecisions,setLunaDecisions]=useState({})
+  const[unlockScaffold,setUnlockScaffold]=useState(null)
   const[wordMenu,setWordMenu]=useState(null)
   const[textInput,setTextInput]=useState('')
   const[showTextInput,setShowTextInput]=useState(false)
@@ -1784,6 +1787,13 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       setSummary(result)
     }catch{
       setSummary({summary:'Session complete.',score:0,boostWords:[],struggleWords:[],newCardsAdded:[]})
+    }
+    // Luna unlock pathway: mine the conversation for patterns worth learning
+    if(ngMode&&tr.length>=6){
+      const txt=tr.map(t=>`${t.role==='assistant'?'Luna':'Me'}: ${t.text}`).join('\n')
+      ngFetch('ng-field-report',{text:txt,mine_only:true,source:'luna'})
+        .then(d=>{if(Array.isArray(d.suggestions)&&d.suggestions.length){setLunaCandidates(d.suggestions);setLunaDecisions({})}})
+        .catch(()=>{})
     }
     phaseRef.current='done';setPhase('done')
     // In NG mode: auto-reset after brief pause so chat stays accessible
@@ -2267,6 +2277,30 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         >→</button>
       </div>}
     </div>}
+
+    {/* Luna unlock pathway — patterns mined from this conversation */}
+    {ngMode&&lunaCandidates.length>0&&<div style={{padding:'10px 20px',flexShrink:0,borderTop:`1px solid ${BD}`,maxHeight:'42vh',overflowY:'auto',background:S2}}>
+      <div style={{fontSize:11,color:GD,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8}}>◈ Luna spotted {lunaCandidates.length} pattern{lunaCandidates.length!==1?'s':''} worth learning</div>
+      {lunaCandidates.map((sc,i)=><div key={i} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'10px 12px',marginBottom:8}}>
+        <div style={{fontSize:14,fontWeight:700,color:TX}}>{sc.base_portuguese}</div>
+        <div style={{fontSize:11,color:MU,marginBottom:2}}>{sc.base_english}</div>
+        {sc.reason&&<div style={{fontSize:10,color:YE,fontStyle:'italic',marginBottom:6}}>{sc.reason}</div>}
+        <div style={{display:'flex',gap:6}}>
+          <button onClick={()=>setLunaDecisions(d=>({...d,[i]:true}))} style={{flex:1,padding:'7px',background:lunaDecisions[i]===true?`${GR}20`:S2,border:`1px solid ${lunaDecisions[i]===true?GR+'44':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:11,fontWeight:600,color:lunaDecisions[i]===true?GR:TX}}>{lunaDecisions[i]===true?'✓ Learn it':'Learn it'}</button>
+          <button onClick={()=>setLunaDecisions(d=>({...d,[i]:false}))} style={{flex:1,padding:'7px',background:lunaDecisions[i]===false?`${RE}12`:S2,border:`1px solid ${lunaDecisions[i]===false?RE+'33':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:11,color:lunaDecisions[i]===false?RE:MU}}>Skip</button>
+        </div>
+      </div>)}
+      {lunaCandidates.every((_,i)=>lunaDecisions[i]!==undefined)&&<PBtn label="Confirm" onClick={async()=>{
+        const appr=lunaCandidates.filter((_,i)=>lunaDecisions[i]===true)
+        if(appr.length){
+          await ngFetch('ng-field-report',{approvedScaffolds:appr,source:'luna'}).catch(()=>{})
+          if(appr[0])setUnlockScaffold(appr[0])
+        }
+        setLunaCandidates([])
+      }}/>}
+    </div>}
+
+    {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
 
     <div style={{padding:'8px 20px 20px',flexShrink:0}}>
       {phase==='idle'&&!ngMode&&<PBtn label={isOnline?'Start talking':'Needs connection'} onClick={isOnline?connect:undefined} disabled={!isOnline}/>}
@@ -2849,7 +2883,7 @@ Return JSON:
 
 // ── NGScaffoldMap ─────────────────────────────────────────────────
 function NGScaffoldMap({isOnline,onBack}){
-  const[mapView,setMapView]=useState('grid') // grid | constellation
+  const[mapView,setMapView]=useState('constellation') // constellation | grid
   const[memState,setMemState]=useState([])
   const[graphEdges,setGraphEdges]=useState([])
   const[constFetched,setConstFetched]=useState(false)
@@ -2964,6 +2998,13 @@ function NGScaffoldMap({isOnline,onBack}){
       </button>}
     </div>
 
+    {/* View switch — Live constellation / classic grid */}
+    <div style={{padding:'0 20px 14px',display:'flex',gap:8}}>
+      {[['constellation','✦ Live map'],['grid','⊞ Grid']].map(([k,l])=>
+        <button key={k} onClick={()=>setMapView(k)}
+          style={{flex:1,padding:'10px',background:mapView===k?`${AC}18`:S2,border:`1px solid ${mapView===k?AC+'55':BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:mapView===k?700:400,color:mapView===k?AC:MU}}>{l}</button>)}
+    </div>
+
     {/* Overall progress bar */}
     <div style={{padding:'0 20px 24px'}}>
       <div style={{height:4,background:BD,borderRadius:4,overflow:'hidden'}}>
@@ -2995,8 +3036,9 @@ function NGScaffoldMap({isOnline,onBack}){
           </div>
           <div style={{display:'flex',gap:8,alignItems:'center'}}>
             <button onClick={async()=>{
-              await ngFetch('ng-priority-boost',{scaffold_id:selected.id,boost_type:'star',remove:starredScaffolds.has(selected.id)})
-              setStarredScaffolds(prev=>{const n=new Set(prev);n.has(selected.id)?n.delete(selected.id):n.add(selected.id);return n})
+              const bd=await ngFetch('ng-priority-boost',{scaffold_id:selected.id,boost_type:'star',remove:starredScaffolds.has(selected.id)})
+              if(bd?.boosts)setStarredScaffolds(new Set(Object.keys(bd.boosts).filter(k=>bd.boosts[k]>0)))
+              else if(bd?.error)alert('Star failed: '+bd.error)
             }} style={{background:starredScaffolds.has(selected.id)?`${YE}20`:S2,border:`1px solid ${starredScaffolds.has(selected.id)?YE+'44':BD}`,borderRadius:10,padding:'6px 10px',cursor:'pointer',fontSize:16,fontFamily:FONT}}>
               {starredScaffolds.has(selected.id)?'★':'☆'}
             </button>
@@ -4810,9 +4852,16 @@ function NGIntelligence({isOnline,onBack}){
   const runV2Setup=async()=>{
     if(v2Running)return
     setV2Running(true)
-    setMessages(prev=>[...prev,{role:'assistant',content:'Running V2 setup: memory backfill from your event history, then knowledge graph generation. This takes a couple of minutes…'}])
+    setMessages(prev=>[...prev,{role:'assistant',content:'V2 Setup does two things: (1) Memory backfill — replays your entire study history through the new memory engine so every pattern gets its own forgetting curve and review schedule. (2) Knowledge graph — maps how all your patterns relate (synonyms, collocations, register pairs), which powers the ✦ Live map. Running now — takes a couple of minutes…'}])
     try{
+      // Preflight: are the V2 tables actually there?
+      const pre=await sb.from('ng_memory').select('id').limit(1)
+      if(pre.error){
+        setMessages(p=>[...p,{role:'assistant',content:'Stopped — the V2 database tables are missing. Open the Supabase SQL editor and run ng_v2_schema.sql, then ng_brain_schema.sql, then tap ✦ V2 Setup again. (Raw error: '+pre.error.message+')'}])
+        setV2Running(false);return
+      }
       const bf=await ngFetch('ng-memory',{action:'backfill'})
+      if(bf?.error)throw new Error('ng-memory: '+bf.error)
       setMessages(prev=>[...prev,{role:'assistant',content:`Memory engine: ${bf.backfilled||0} memory states built from your history.`}])
       let batch=0,totalEdges=0
       while(batch!==null&&batch<12){
@@ -4822,7 +4871,8 @@ function NGIntelligence({isOnline,onBack}){
       }
       setMessages(prev=>[...prev,{role:'assistant',content:`Knowledge graph: ${totalEdges} relationships mapped. The Constellation view (✦ on the Map) is now live, reviews are scheduled per-pattern, and tonight the nightly brain runs its first full analysis. V2 is on.`}])
     }catch(e){
-      setMessages(prev=>[...prev,{role:'assistant',content:'Setup hit an error: '+e.message+'. Safe to run again — everything is idempotent.'}])
+      const hint=/Unexpected token|not valid JSON|Failed to fetch/i.test(e.message)?' This usually means a function file (ng-memory.js / ng-graph-generate.js) is not uploaded to your functions/ folder.':''
+      setMessages(prev=>[...prev,{role:'assistant',content:'Setup hit an error: '+e.message+'.'+hint+' Safe to run again — everything is idempotent.'}])
     }
     setV2Running(false)
   }
