@@ -2,7 +2,20 @@ import React,{useState,useEffect,useRef,useCallback,useMemo} from 'react'
 import{createClient}from'@supabase/supabase-js'
 
 const USER_ID='00000000-0000-0000-0000-000000000001'
-const BG='#07070a',S='#0d0d18',S2='#111120',BD='#1c1c30',AC='#7c6ef7',TX='#f0f0f8',MU='#5a5a80',GR='#34d399',RE='#f87171',YE='#fbbf24',GD='#f59e0b',CORAL='#f97066'
+// ═══ BRASIL GLOBAL — floresta night canvas, ouro hero, verde earned ═══
+const BG='#07130c'        // floresta at night — the canvas
+const S='#0e2015'         // panel — deep jungle green
+const S2='#0b1a11'        // recessed panel
+const BD='#1e4530'        // green-tinted borders
+const AC='#ffd52e'        // OURO — the hero accent
+const TX='#f4f8ef'        // warm white
+const MU='#8fb3a0'        // sage muted
+const GR='#2ee56f'        // verde bandeira — EARNED only
+const RE='#ff6b5e'
+const YE='#ffcf3f'
+const GD='#f0a92c'        // frontier gold — deeper than ouro, same family
+const CORAL='#fb7185'
+const BZ='#3d7bff'        // globo blue
 const FONT="-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif"
 const TIERS=[{name:'Turista',min:0},{name:'Comunicador',min:15},{name:'Carioca',min:35},{name:'Carioca Honorario',min:60}]
 const getTier=n=>TIERS.reduce((a,t)=>n>=t.min?t:a,TIERS[0])
@@ -10,7 +23,7 @@ const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-colo
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes popIn{0%{transform:scale(0.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
 @keyframes confettiFall{0%{transform:translateY(-10vh) rotate(0deg);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0.6}}
-@keyframes ringGlow{0%,100%{box-shadow:0 0 12px rgba(124,110,247,0.35)}50%{box-shadow:0 0 26px rgba(124,110,247,0.7)}}
+@keyframes ringGlow{0%,100%{box-shadow:0 0 12px rgba(255,213,46,0.35)}50%{box-shadow:0 0 26px rgba(255,213,46,0.7)}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes eq{0%,100%{transform:scaleY(0.25)}50%{transform:scaleY(1)}}
 button{transition:transform 0.08s ease}
@@ -480,7 +493,7 @@ async function evalShuffle(targetWords,sentence,cards){
 
 function Spinner({size=20}){return<div style={{width:size,height:size,border:`2px solid ${BD}`,borderTopColor:AC,borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>}
 function Tag({text,color}){const c=color||AC;return<span style={{fontSize:11,padding:'3px 9px',borderRadius:6,background:`${c}22`,color:c,fontWeight:500}}>{text}</span>}
-function PBtn({label,onClick,disabled,full=true,small,color}){const bg=color||(disabled?S2:AC);return<button onClick={disabled?null:onClick} onMouseDown={e=>{SND.init();if(!disabled)e.currentTarget.style.opacity='0.8'}} onMouseUp={e=>e.currentTarget.style.opacity='1'} style={{width:full?'100%':undefined,background:bg,color:disabled?MU:'#fff',border:'none',borderRadius:13,padding:small?'10px 18px':'15px 24px',fontSize:small?13:15,fontWeight:700,cursor:disabled?'not-allowed':'pointer',opacity:disabled?0.5:1,fontFamily:FONT}}>{label}</button>}
+function PBtn({label,onClick,disabled,full=true,small,color}){const bg=color||(disabled?S2:AC);return<button onClick={disabled?null:onClick} onMouseDown={e=>{SND.init();if(!disabled)e.currentTarget.style.opacity='0.8'}} onMouseUp={e=>e.currentTarget.style.opacity='1'} style={{width:full?'100%':undefined,background:bg,color:disabled?MU:(color?'#fff':'#16240f'),border:'none',borderRadius:13,padding:small?'10px 18px':'15px 24px',fontSize:small?13:15,fontWeight:700,cursor:disabled?'not-allowed':'pointer',opacity:disabled?0.5:1,fontFamily:FONT}}>{label}</button>}
 function GBtn({label,onClick,small}){return<button onClick={onClick} style={{background:S2,border:`1px solid ${BD}`,color:MU,borderRadius:13,padding:small?'10px 18px':'14px 24px',fontSize:small?13:14,fontWeight:600,cursor:'pointer',fontFamily:FONT,width:'100%'}}>{label}</button>}
 function MasteryDots({mastery,size=8}){return<div style={{display:'flex',gap:3}}>{[1,2,3,4,5].map(i=><div key={i} style={{width:size,height:size,borderRadius:'50%',background:i<=mastery?(mastery>=4?GR:mastery>=2?AC:YE):BD}}/>)}</div>}
 
@@ -1665,9 +1678,9 @@ function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
     <div onClick={tap} style={{
       maxWidth:'82%',padding:'10px 14px',
       borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',
-      background:isLuna?S:'#7c6ef7',
+      background:isLuna?S:AC,
       border:evalBorder?('2px solid '+evalBorder):isLuna?('1px solid '+BD):'none',
-      fontSize:15,lineHeight:1.6,color:isLuna?TX:'#fff',
+      fontSize:15,lineHeight:1.6,color:isLuna?TX:'#16240f',
       cursor:isLuna?'pointer':'default',wordBreak:'break-word'
     }}>
       {isLuna?words(msg.text):<span>{msg.text}</span>}
@@ -2678,7 +2691,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
       const total=g.reduce((s,w)=>s+Math.max(0,(w.after||0)-(w.before||0)),0)
       const uniq=[...new Set(g.map(w=>w.scaffold_id))].length
       const top=[...g].sort((a,b)=>(b.after-b.before)-(a.after-a.before)).slice(0,3)
-      return<div style={{background:'#141426',border:`1px solid ${AC}33`,borderRadius:18,padding:'18px',marginBottom:16}}>
+      return<div style={{background:'#0a1a11',border:`1px solid ${AC}33`,borderRadius:18,padding:'18px',marginBottom:16}}>
         <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>✦ Ganhos de hoje</div>
         <div style={{display:'flex',gap:18,marginBottom:12}}>
           <div><div style={{fontSize:24,fontWeight:900,color:AC,fontFamily:FONTD}}>{uniq}</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>PATTERNS</div></div>
@@ -2724,8 +2737,8 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
     {/* Card — Flip or Write It based on mode */}
     {getCardMode(card)==='flip'?
       <div style={{position:'relative'}}>
-      <div style={{position:'absolute',inset:0,transform:'translate(7px,7px)',background:'#141426',border:`1px solid ${BD}`,borderRadius:20,zIndex:0}}/>
-      <div style={{position:'absolute',inset:0,transform:'translate(3.5px,3.5px)',background:'#181830',border:`1px solid ${BD}`,borderRadius:20,zIndex:0}}/>
+      <div style={{position:'absolute',inset:0,transform:'translate(7px,7px)',background:'#0a1a11',border:`1px solid ${BD}`,borderRadius:20,zIndex:0}}/>
+      <div style={{position:'absolute',inset:0,transform:'translate(3.5px,3.5px)',background:'#0f281b',border:`1px solid ${BD}`,borderRadius:20,zIndex:0}}/>
       <div onClick={()=>!flipped&&setFlipped(true)}
         style={{position:'relative',zIndex:1,background:S,border:`1px solid ${flipped?AC+'44':BD}`,borderRadius:20,padding:'28px 24px',minHeight:200,cursor:flipped?'default':'pointer',transition:'border 0.2s',animation:'up 0.25s ease',marginBottom:16}}>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
@@ -3778,7 +3791,7 @@ function ScaffoldUnlockAnimation({scaffold,onComplete}){
     return()=>[t1,t2,t3,t4,t5].forEach(clearTimeout)
   },[])
 
-  const phaseColor={'social_foundation':'#7c6ef7','dating_register':'#f97066','personality_humour':'#34d399','deep_fluency':'#fbbf24'}
+  const phaseColor={'social_foundation':'#ffd52e','dating_register':'#fb7185','personality_humour':'#2ee56f','deep_fluency':'#3d7bff'}
   const color=phaseColor[scaffold?.category]||AC
 
   return<div style={{
@@ -4038,12 +4051,12 @@ function NGBrain({isOnline,onBack}){
   const pollRef=useRef(null)
   const PROC_META={
     heartbeat:{i:'♥',c:'#f97066',l:'Heartbeat'},
-    nightly_brain:{i:'☾',c:'#7c6ef7',l:'Nightly Brain'},
+    nightly_brain:{i:'☾',c:'#2ee56f',l:'Nightly Brain'},
     coach:{i:'◉',c:'#34d399',l:'Live Coach'},
     radio:{i:'📻',c:'#fbbf24',l:'Radio'},
     memory:{i:'◌',c:'#60a5fa',l:'Memory'},
     graph:{i:'✦',c:'#c084fc',l:'Graph'},
-    placement:{i:'⊕',c:'#f472b6',l:'Placement'},
+    placement:{i:'⊕',c:'#3d7bff',l:'Placement'},
     field:{i:'🌴',c:'#4ade80',l:'Field'},
     session:{i:'▣',c:'#94a3b8',l:'Session'}
   }
@@ -4124,7 +4137,7 @@ function Poste({size=28}){
 
 function Confetti(){
   const bits=Array.from({length:26},(_,i)=>i)
-  const cols=['#7c6ef7','#34d399','#fbbf24','#f97066','#60a5fa','#f472b6']
+  const cols=['#009C3B','#ffd52e','#3d7bff','#2ee56f','#ffcf3f','#ffffff']
   return<div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:401,overflow:'hidden'}}>
     {bits.map(i=><span key={i} style={{
       position:'absolute',top:0,left:`${(i*37)%100}%`,
@@ -4248,7 +4261,7 @@ function NGLearn({isOnline,onBack,startUnit}){
       <PBtn label="Try again" onClick={()=>{setStatus('loading');load()}}/>
     </div>}
 
-    {status==='ready'&&<div style={{position:'relative',marginTop:10,background:'linear-gradient(180deg,rgba(124,110,247,0.05),transparent 28%,transparent 72%,rgba(212,160,23,0.06))',borderRadius:24}}>
+    {status==='ready'&&<div style={{position:'relative',marginTop:10,background:'linear-gradient(180deg,rgba(46,229,111,0.05),transparent 28%,transparent 72%,rgba(212,160,23,0.06))',borderRadius:24}}>
       {/* The spine — a gentle S winding through the city */}
       <svg style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',pointerEvents:'none'}} viewBox="0 0 100 100" preserveAspectRatio="none">
         <path d="M50 0 C 26 8, 26 14, 50 22 S 74 32, 50 42 S 26 52, 50 62 S 74 72, 50 82 S 26 92, 50 100"
@@ -4313,7 +4326,7 @@ function NGLearn({isOnline,onBack,startUnit}){
     </div>}
 
     {/* Unit complete — celebration */}
-    {celebrate&&<div onClick={()=>setCelebrate(null)} style={{position:'fixed',inset:0,background:'rgba(10,10,20,0.88)',zIndex:400,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:30}}>
+    {celebrate&&<div onClick={()=>setCelebrate(null)} style={{position:'fixed',inset:0,background:'rgba(4,16,9,0.9)',zIndex:400,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:30}}>
       <Confetti/>
       <div style={{fontSize:74,animation:'popIn 0.6s cubic-bezier(0.34,1.56,0.64,1)'}}>{celebrate.emoji}</div>
       <div style={{fontSize:13,color:GD,fontWeight:700,letterSpacing:3,textTransform:'uppercase',marginTop:18,animation:'up 0.5s ease 0.2s both'}}>Unidade completa · every pattern memory-verified</div>
@@ -4854,7 +4867,7 @@ function NGPlacementChat({isOnline,onBack,onComplete}){
       {messages.map((m,i)=>{
         const isLuna=m.role==='assistant'
         return<div key={i} style={{display:'flex',flexDirection:'column',alignItems:isLuna?'flex-start':'flex-end',marginBottom:8}}>
-          <div style={{maxWidth:'84%',padding:'11px 15px',borderRadius:isLuna?'16px 16px 16px 4px':'16px 16px 4px 16px',background:isLuna?S:'#7c6ef7',border:isLuna?`1px solid ${BD}`:'none',fontSize:14,lineHeight:1.6,color:isLuna?TX:'#fff'}}>{m.content}</div>
+          <div style={{maxWidth:'84%',padding:'11px 15px',borderRadius:isLuna?'16px 16px 16px 4px':'16px 16px 4px 16px',background:isLuna?S:AC,border:isLuna?`1px solid ${BD}`:'none',fontSize:14,lineHeight:1.6,color:isLuna?TX:'#16240f'}}>{m.content}</div>
         </div>
       })}
       {loading&&<div style={{padding:'6px 0'}}><Spinner size={14}/></div>}
@@ -4893,7 +4906,7 @@ function ConstellationView({scaffolds,memState,edges}){
     if(m.skill!=='production')return
     if(!memBySc[m.scaffold_id]||m.live_r>memBySc[m.scaffold_id])memBySc[m.scaffold_id]=m.live_r
   })
-  const catColor={social_foundation:'#7c6ef7',dating_register:'#f97066',personality_humour:'#34d399',deep_fluency:'#fbbf24'}
+  const catColor={social_foundation:'#ffd52e',dating_register:'#fb7185',personality_humour:'#2ee56f',deep_fluency:'#3d7bff'}
 
   return<svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
     {/* Edges — faint threads between related nodes */}
@@ -4977,6 +4990,7 @@ function NGHome({isOnline,go,active=true}){
       <Poste size={26}/>
       <span style={{fontSize:10.5,letterSpacing:4.5,color:MU,fontWeight:700,fontFamily:FONTD}}>CARIOCA</span>
     </div>
+    <div style={{margin:'10px 20px 0',height:2,borderRadius:2,background:'linear-gradient(90deg,#009C3B 0%,#ffd52e 30%,#3d7bff 50%,#ffd52e 70%,#009C3B 100%)',opacity:0.55}}/>
 
     {/* Milestone toast */}
     {milestone&&<div onClick={dismissMilestone} style={{margin:'14px 20px 0',background:`${GD}10`,border:`1px solid ${GD}44`,borderRadius:16,padding:'14px 16px',cursor:'pointer',animation:'popIn 0.5s ease'}}>
@@ -5005,9 +5019,9 @@ function NGHome({isOnline,go,active=true}){
     {/* CONTINUE — the one big button */}
     <div style={{margin:'16px 20px 0'}}>
       <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
-        style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#5a4fd0)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:`ringGlow ${phase.due>=8?1.6:phase.due>=4?2.2:3.2}s ease-in-out infinite`}}>
-        <span style={{display:'block',fontSize:10,color:'#ffffffaa',fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>Continue</span>
-        <span style={{display:'block',fontSize:16,color:'#fff',fontWeight:800}}>{continueTarget.label}</span>
+        style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#e6a900)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:`ringGlow ${phase.due>=8?1.6:phase.due>=4?2.2:3.2}s ease-in-out infinite`}}>
+        <span style={{display:'block',fontSize:10,color:'#16240fbb',fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>Continue</span>
+        <span style={{display:'block',fontSize:16,color:'#14230e',fontWeight:800}}>{continueTarget.label}</span>
       </button>
     </div>
 
@@ -5508,7 +5522,7 @@ export default function App(){
 
   // Next Gen mode — own screen stack
   if(loaded&&ngMode==='nextgen'){
-    return<div style={{background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
+    return<div style={{background:`radial-gradient(1100px 520px at 50% -8%,rgba(255,213,46,0.05),transparent 60%),linear-gradient(#0a1a10,${BG})`,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
       <ErrorBoundary>
       {/* Mount-all for screens that preserve state between visits */}
       <div style={{display:ngScreen==='ng-home'?'block':'none'}}><NGHome isOnline={isOnline} active={ngScreen==='ng-home'} go={k=>{
