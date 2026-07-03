@@ -49,9 +49,9 @@ exports.handler=async(event)=>{
       if(!eventMap[key].lastPracticed)eventMap[key].lastPracticed=ev.created_at
     })
 
-    const sessionHistory=profile?.session_history||{}
-    const lastSession=sessionHistory.last_session?new Date(sessionHistory.last_session):null
-    const lastMode=sessionHistory.last_mode||null
+    const shArr=Array.isArray(profile?.session_history)?profile.session_history:[]
+    const lastSession=shArr[0]?.date?new Date(shArr[0].date):null
+    const lastMode=shArr[0]?.mode||null
     const daysSinceSession=lastSession?(now-lastSession.getTime())/(86400000):999
 
     const frontier=[]
@@ -278,7 +278,8 @@ exports.handler=async(event)=>{
         hybrid_eligible_count:hybridEligibleIds.length,
         hybrid_eligible_ids:hybridEligibleIds,
         pending_hybrids_count:pendingHybrids.length,
-        pending_hybrids:pendingHybrids
+        pending_hybrids:pendingHybrids,
+        priority_boosts:profile?.priority_boosts||{}
       })
     }
 
