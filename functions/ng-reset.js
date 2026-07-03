@@ -43,8 +43,12 @@ exports.handler=async(event)=>{
     if(!hybErr)wiped.push('earned scaffolds (hybrid/self-extend)')
 
     // ── Profile: zero every progress field, keep prefs ─────────────────
-    const{error:profileErr}=await sb.from('ng_learner_profile').upsert({
-      user_id:UID,
+    // Schema-aware: read the actual row and only reset columns that exist —
+    // one unknown column would silently fail the ENTIRE update.
+    const{data:existingProfile}=await sb.from('ng_learner_profile')
+      .select('*').eq('user_id',UID).single()
+    const have=new Set(Object.keys(existingProfile||{}))
+    const resetFields={
       phase:1,phase_name:'Survival → Social',phase_progress:0,
       frontier:[],controlled:[],
       error_fingerprint:{},avoided_patterns:[],scaffold_avoidance:[],
@@ -57,9 +61,20 @@ exports.handler=async(event)=>{
       last_hybrid_date:null,
       version:0,last_updated:new Date().toISOString()
       // radio_station_prompt intentionally kept — it's a preference
-    },{onConflict:'user_id'})
-    if(profileErr)console.log('Profile reset error:',profileErr.message)
-    else wiped.push('profile progress fields')
+    }
+    const applied={user_id:UID}
+    const skippedCols=[]
+    for(const[k,v]of Object.entries(resetFields)){
+      if(k==='user_id'||have.has(k))applied[k]=v
+      else skippedCols.push(k)
+    }
+    const{error:profileErr}=await sb.from('ng_learner_profile')
+      .upsert(applied,{onConflict:'user_id'})
+    if(profileErr){
+      console.log('Profile reset error:',profileErr.message)
+      return{statusCode:500,body:JSON.stringify({error:'Profile reset FAILED: '+profileErr.message,wiped})}
+    }
+    wiped.push('profile ('+(Object.keys(applied).length-1)+' fields'+(skippedCols.length?', skipped missing: '+skippedCols.join(','):'')+')')
 
     // ── Scaffold stage flags — keep content, clear acquisition markers ──
     const{data:scaffolds}=await sb.from('ng_scaffolds').select('id,stages').eq('user_id',UID)
