@@ -56,11 +56,16 @@ exports.handler=async(event)=>{
       })).filter(r=>r.scaffold_ids.length)
       if(rows.length)await sb.from('ng_path_units').upsert(rows,{onConflict:'user_id,unit_id'})
       await brainLog(sb,'path',`Trilha chunk ${chunk+1}/${cats.length} ("${cat}"): ${rows.length} units built.`,null,1)
-      // Self-chain the next category
-      if(siteUrl)fetch(`${siteUrl}/.netlify/functions/ng-path`,{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({action:'generate',chunk:chunk+1})
-      }).catch(()=>{})
+      // Best-effort self-chain with awaited send (client also drives the chain)
+      if(siteUrl){
+        try{
+          const ac=new AbortController();const tm=setTimeout(()=>ac.abort(),1200)
+          await fetch(`${siteUrl}/.netlify/functions/ng-path`,{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({action:'generate',chunk:chunk+1}),signal:ac.signal
+          }).catch(()=>{});clearTimeout(tm)
+        }catch(_){}
+      }
       return{statusCode:200,body:JSON.stringify({ok:true,chunk,units_written:rows.length,next:chunk+1<cats.length?chunk+1:null})}
     }
 
@@ -74,13 +79,10 @@ exports.handler=async(event)=>{
       const{data:recentGen}=await sb.from('ng_brain_log').select('id')
         .eq('user_id',UID).eq('process','path').gte('created_at',threeMin).limit(1)
       if(!(recentGen||[]).length){
-        await brainLog(sb,'path','Building the Trilha: clustering the bank into situation units, one category at a time. Units appear as chunks complete.',null,2)
-        if(siteUrl)fetch(`${siteUrl}/.netlify/functions/ng-path`,{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({action:'generate',chunk:0})
-        }).catch(()=>{})
+        await brainLog(sb,'path','Building the Trilha: the app will walk the build chunk by chunk. Units appear as each category completes.',null,2)
       }
-      return{statusCode:200,body:JSON.stringify({units:[],bootstrapping:true})}
+      // Client drives the chain (Lambda freeze drops un-awaited dispatches)
+      return{statusCode:200,body:JSON.stringify({units:[],bootstrapping:true,client_should_build:true})}
     }
 
     const[{data:mem},{data:scaffolds}]=await Promise.all([
