@@ -165,9 +165,13 @@ Return JSON only.`},
     const newlyAcquired=[]
     Object.entries(stageMap).forEach(([key,data])=>{
       if(existingControlled.has(key))return
-      const avgQuality=data.qualities.reduce((a,b)=>a+b,0)/data.qualities.length
-      // Acquire after: 3 sessions avgQ≥3, OR 2 modes+2 sessions avgQ≥3.5
-      const acquired=(data.total>=3&&avgQuality>=3)||(data.modes.size>=2&&data.total>=2&&avgQuality>=3.5)
+      // RECENCY WINDOW — lifetime averages create a death spiral: early
+      // fumbles permanently poison the average and the stage can NEVER
+      // acquire no matter how good you get. Judge recent performance only.
+      // (qualities[0] is newest — events loaded DESC)
+      const recent=data.qualities.slice(0,4)
+      const recentAvg=recent.reduce((a,b)=>a+b,0)/recent.length
+      const acquired=(data.total>=3&&recentAvg>=3)||(data.modes.size>=2&&data.total>=2&&recentAvg>=3.5)
       if(acquired){
         // CORRECT split: scaffold_id uses pipe separator
         const pipeIdx=key.indexOf('|')
@@ -183,10 +187,14 @@ Return JSON only.`},
     // ── Track struggle patterns + auto failure boost ───────────────────
     const dontKnowEvents=analysedEvents.filter(ev=>Number(ev.quality)<=1&&ev.mode==='write')
     if(dontKnowEvents.length){
-      const existingStruggles=profile?.struggle_patterns||{by_scaffold:{},by_category:{},total:0}
+      // Fresh read right before write — a stale copy here silently wipes
+      // stars set on the Map while a study session is in flight
+      const{data:pbFresh}=await sb.from('ng_learner_profile')
+        .select('priority_boosts,struggle_patterns').eq('user_id',UID).single()
+      const existingStruggles=pbFresh?.struggle_patterns||{by_scaffold:{},by_category:{},total:0}
       const byScaffold={...(existingStruggles.by_scaffold||{})}
       dontKnowEvents.forEach(ev=>{byScaffold[ev.scaffold_id]=(byScaffold[ev.scaffold_id]||0)+1})
-      const currentBoosts={...(profile?.priority_boosts||{})}
+      const currentBoosts={...(pbFresh?.priority_boosts||{})}
       dontKnowEvents.forEach(ev=>{currentBoosts[ev.scaffold_id]=Math.min((currentBoosts[ev.scaffold_id]||0)+4,20)})
       await sb.from('ng_learner_profile').update({
         struggle_patterns:{by_scaffold:byScaffold,total:(existingStruggles.total||0)+dontKnowEvents.length},
