@@ -4007,6 +4007,32 @@ function NGLearn({isOnline,onBack,startUnit}){
   const pollRef=useRef(null)
   const lastCountRef=useRef(-1)
   const stableRef=useRef(0)
+  const buildingRef=useRef(false)
+  const[buildChunk,setBuildChunk]=useState(null) // {done,total}
+
+  // The browser drives the build — sequential awaited calls, immune to
+  // Lambda freeze. Each chunk is fast (Haiku, one category).
+  const runBuildChain=async()=>{
+    if(buildingRef.current)return
+    buildingRef.current=true
+    try{
+      let chunk=0,guard=0
+      while(chunk!==null&&guard<15){
+        setBuildChunk({done:chunk,total:null})
+        const g=await ngFetch('ng-path',{action:'generate',chunk})
+        if(g?.error){setErrMsg('Build failed at chunk '+chunk+': '+g.error);setStatus('error');buildingRef.current=false;return}
+        chunk=(g?.next===0||g?.next)?g.next:null
+        if(g?.done)chunk=null
+        guard++
+      }
+    }catch(e){
+      setErrMsg('Build interrupted: '+(e?.message||'')+' — reopen Learn to resume; completed chunks are saved.')
+      setStatus('error');buildingRef.current=false;return
+    }
+    buildingRef.current=false
+    setBuildChunk(null)
+    load()
+  }
 
   const stopPoll=()=>{if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null}}
   const startPoll=()=>{if(!pollRef.current)pollRef.current=setInterval(load,8000)}
@@ -4019,7 +4045,8 @@ function NGLearn({isOnline,onBack,startUnit}){
       const us=Array.isArray(d?.units)?d.units:[]
       if(d?.bootstrapping||(!us.length&&d?.bootstrapping!==false)){
         setStatus(us.length?'ready':'building')
-        startPoll()
+        if(d?.client_should_build&&!buildingRef.current)runBuildChain()
+        else startPoll()
       }
       if(us.length){
         // Celebration check — did any unit cross 100% since last visit?
@@ -4068,7 +4095,7 @@ function NGLearn({isOnline,onBack,startUnit}){
     {status==='building'&&<div style={{textAlign:'center',padding:'40px 24px'}}>
       <div style={{fontSize:40,marginBottom:12,animation:'float 2s ease-in-out infinite'}}>🏗️</div>
       <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>Building your trilha…</div>
-      <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Clustering your patterns into Rio situations,<br/>category by category. Units appear as they're built — about a minute.</div>
+      <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Clustering your patterns into Rio situations,{buildChunk?` chunk ${(buildChunk.done||0)+1} in progress`:''}<br/>Keep this screen open — about a minute total.</div>
       <div style={{marginTop:16}}><Spinner size={18}/></div>
     </div>}
 
@@ -4755,205 +4782,115 @@ function ConstellationView({scaffolds,memState,edges}){
 
 function NGHome({isOnline,go,active=true}){
   const[coachNote,setCoachNote]=useState('')
-  const[profile,setProfile]=useState(null)
-  const[frontier,setFrontier]=useState([])
-  const[review,setReview]=useState([])
-  const[recommendation,setRecommendation]=useState(null)
+  const[phase,setPhase]=useState({n:1,name:'Survival → Social',controlled:0,due:0})
+  const[currentUnit,setCurrentUnit]=useState(null)
+  const[brainLine,setBrainLine]=useState(null)
   const[loading,setLoading]=useState(true)
   const[milestone,setMilestone]=useState(null)
-  const[loadError,setLoadError]=useState(null)
 
   useEffect(()=>{
-    if(active&&isOnline)loadState()
+    if(!active||!isOnline){setLoading(false);return}
+    // Three light parallel reads — no frontier list, no legacy recommendation
+    ngFetch('ng-frontier').then(d=>{
+      setPhase({n:d.phase||1,name:d.phase_name||'Survival → Social',
+        controlled:d.total_controlled||0,due:d.review_count||0})
+      setLoading(false)
+    }).catch(()=>setLoading(false))
+    ngFetch('ng-today',{action:'get'}).then(t=>{if(t?.coach_note)setCoachNote(t.coach_note)}).catch(()=>{})
+    ngFetch('ng-path',{action:'get'}).then(d=>{
+      const us=Array.isArray(d?.units)?d.units:[]
+      setCurrentUnit(us.find(u=>u.status==='current'||u.status==='in_progress')||us[0]||null)
+    }).catch(()=>{})
+    if(sb)sb.from('ng_brain_log').select('process,thought,created_at')
+      .eq('user_id','00000000-0000-0000-0000-000000000001')
+      .order('created_at',{ascending:false}).limit(1)
+      .then(({data})=>{if(data?.[0])setBrainLine(data[0])})
+    if(sb)sb.from('ng_milestones').select('*')
+      .eq('user_id','00000000-0000-0000-0000-000000000001')
+      .eq('seen',false).order('created_at').limit(1)
+      .then(({data})=>{if(data?.[0])setMilestone(data[0])})
   },[active,isOnline])
 
-  const loadState=async()=>{
-    setLoading(true)
-    try{
-      const data=await ngFetch('ng-frontier')
-      if(data.error)throw new Error(data.error)
-      setFrontier(data.frontier||[])
-      setLoadError(null)
-      setReview(data.review||[])
-      setRecommendation(data.recommendation||null)
-      setProfile({
-        phase:data.phase||1,
-        phase_name:data.phase_name||'Survival → Social',
-        phase_progress:data.phase_progress||0,
-        total_controlled:data.total_controlled||0,
-        fully_controlled:data.fully_controlled_scaffolds||0
-      })
-      // Check for unseen milestones
-      if(sb){
-        const{data:ms}=await sb.from('ng_milestones')
-          .select('*').eq('user_id','00000000-0000-0000-0000-000000000001')
-          .eq('seen',false).order('created_at').limit(1)
-        if(ms?.[0]){
-          setMilestone(ms[0])
-          sb.from('ng_milestones').update({seen:true}).eq('id',ms[0].id).catch(()=>{})
-        }
-      }
-    }catch(e){
-      console.error('NGHome load failed:',e?.message||e)
-      // Show error in frontier area so we can see what's happening
-
-    }
-    setLoading(false)
+  const dismissMilestone=()=>{
+    if(milestone&&sb)sb.from('ng_milestones').update({seen:true}).eq('id',milestone.id).then(()=>{})
+    setMilestone(null)
   }
 
-  const phasePercent=Math.round((profile?.phase_progress||0)*100)
-  const phase=profile?.phase||1
-  const phaseName=profile?.phase_name||'Survival → Social'
-  const phaseNames=['','Survival','Social','Conversational','Fluent','Natural']
-  const phaseNext=phaseNames[Math.min(phase+1,5)]||'Mastery'
+  // Smart continue: due reviews → current unit → mix deck
+  const continueTarget=phase.due>=5?{label:`◌ Clear ${phase.due} reviews`,go:'ng-study'}
+    :currentUnit?{label:`▶ ${currentUnit.emoji} ${currentUnit.title}`,unit:currentUnit}
+    :{label:'🎲 Learn a bit of everything',go:'ng-study'}
 
-  if(milestone)return<NGMilestone milestone={milestone} onDismiss={()=>setMilestone(null)}/>
-
-  // Phase ring SVG
-  const PhaseRing=()=>{
-    const r=54,cx=70,cy=70
-    const circ=2*Math.PI*r
-    const filled=circ*(phasePercent/100)
-    return<svg width={140} height={140} style={{display:'block'}}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={BD} strokeWidth={6}/>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={AC}
-        strokeWidth={6} strokeDasharray={`${filled} ${circ}`}
-        strokeLinecap="round"
-        transform={`rotate(-90 ${cx} ${cy})`}
-        style={{transition:'stroke-dasharray 1s ease'}}/>
-      <text x={cx} y={cy-8} textAnchor="middle" fill={TX} fontSize={22} fontWeight={800}>{phasePercent}%</text>
-      <text x={cx} y={cy+10} textAnchor="middle" fill={MU} fontSize={10}>Phase {phase}</text>
-    </svg>
-  }
-
-  if(loading)return<div style={{padding:'60px 24px',textAlign:'center'}}>
-    <Spinner size={24}/>
-    <div style={{color:MU,fontSize:13,marginTop:16}}>Loading your frontier…</div>
-  </div>
+  if(loading)return<div style={{padding:'100px 24px',textAlign:'center'}}><Spinner size={24}/></div>
 
   return<div style={{padding:'0 0 100px',animation:'up 0.4s ease'}}>
+    {/* Milestone toast */}
+    {milestone&&<div onClick={dismissMilestone} style={{margin:'56px 20px 0',background:`${GD}10`,border:`1px solid ${GD}44`,borderRadius:16,padding:'14px 16px',cursor:'pointer',animation:'popIn 0.5s ease'}}>
+      <div style={{fontSize:11,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>★ {milestone.title||'Milestone'}</div>
+      <div style={{fontSize:13,color:TX,lineHeight:1.6}}>{milestone.message||milestone.description||''}</div>
+    </div>}
+
+    {/* Header: greeting + phase */}
+    <div style={{padding:`${milestone?'20':'60'}px 20px 6px`,display:'flex',alignItems:'center',gap:14}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:26,fontWeight:900,color:TX}}>E aí, Shay</div>
+        <div style={{fontSize:12,color:MU,marginTop:2}}>Fase {phase.n} · {phase.name}</div>
+      </div>
+      <div style={{textAlign:'center',flexShrink:0}}>
+        <div style={{fontSize:22,fontWeight:900,color:AC}}>{phase.controlled}</div>
+        <div style={{fontSize:9,color:MU,letterSpacing:1}}>CONTROLLED</div>
+      </div>
+    </div>
 
     {/* Coach's note — from the nightly brain */}
-    {coachNote&&<div onClick={()=>go&&go('ng-today')} style={{margin:'20px 20px 0',background:`${AC}0d`,border:`1px solid ${AC}33`,borderRadius:14,padding:'13px 15px',cursor:'pointer'}}>
-      <div style={{fontSize:9,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:5}}>Coach's note · tap for today</div>
-      <div style={{fontSize:13,color:TX,lineHeight:1.65}}>{coachNote}</div>
+    {coachNote&&<div onClick={()=>go&&go('ng-today')} style={{margin:'14px 20px 0',background:`${AC}0d`,border:`1px solid ${AC}33`,borderRadius:16,padding:'14px 16px',cursor:'pointer'}}>
+      <div style={{fontSize:9,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:6}}>Coach's note · tap for today</div>
+      <div style={{fontSize:13.5,color:TX,lineHeight:1.7}}>{coachNote}</div>
     </div>}
 
-    {/* Phase ring + stats */}
-    <div style={{padding:'32px 24px 24px',display:'flex',alignItems:'center',gap:20,background:`linear-gradient(180deg,${AC}06 0%,transparent 100%)`}}>
-      <PhaseRing/>
-      <div style={{flex:1}}>
-        <div style={{fontSize:11,color:MU,fontWeight:600,letterSpacing:2,textTransform:'uppercase',marginBottom:6}}>Current phase</div>
-        <div style={{fontSize:18,fontWeight:800,color:TX,lineHeight:1.2,marginBottom:4}}>{phaseName}</div>
-        <div style={{fontSize:12,color:MU}}>Next: {phaseNext}</div>
-        <div style={{marginTop:12,display:'flex',gap:16}}>
-          <div><div style={{fontSize:20,fontWeight:800,color:TX}}>{profile?.total_controlled||0}</div><div style={{fontSize:11,color:MU}}>stages</div></div>
-          <div><div style={{fontSize:20,fontWeight:800,color:GR}}>{profile?.fully_controlled||0}</div><div style={{fontSize:11,color:MU}}>scaffolds</div></div>
-        </div>
-      </div>
+    {/* CONTINUE — the one big button */}
+    <div style={{margin:'16px 20px 0'}}>
+      <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
+        style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#5a4fd0)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:'ringGlow 3s ease-in-out infinite'}}>
+        <span style={{display:'block',fontSize:10,color:'#ffffffaa',fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>Continue</span>
+        <span style={{display:'block',fontSize:16,color:'#fff',fontWeight:800}}>{continueTarget.label}</span>
+      </button>
     </div>
 
-    {/* ── DO THIS NOW — recommendation card ── */}
-    <div style={{padding:'0 20px 16px'}}>
-      {recommendation?<div style={{
-        background:recommendation.priority==='high'?`${AC}12`:`${AC}08`,
-        border:`1px solid ${recommendation.priority==='high'?AC+'44':AC+'22'}`,
-        borderRadius:18,padding:'18px 20px',cursor:'pointer'
-      }} onClick={()=>go(
-        recommendation.action==='luna'?'ng-voice':
-        recommendation.action==='phrase'?'ng-phrase':'ng-study'
-      )}>
-        <div style={{fontSize:10,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>Do this now</div>
-        <div style={{fontSize:18,fontWeight:800,color:TX,marginBottom:6}}>{recommendation.title}</div>
-        <div style={{fontSize:13,color:MU,lineHeight:1.6,marginBottom:14}}>{recommendation.reason}</div>
-        {recommendation.items?.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}}>
-          {recommendation.items.map(item=><span key={item} style={{fontSize:11,color:TX,background:S2,borderRadius:20,padding:'3px 10px',border:`1px solid ${BD}`}}>{item}</span>)}
+    {/* Live tiles */}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'14px 20px 0'}}>
+      <div onClick={()=>go&&go('ng-learn')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
+        <div style={{fontSize:20,marginBottom:6}}>⛰</div>
+        <div style={{fontSize:13,fontWeight:800,color:TX}}>Trilha</div>
+        <div style={{fontSize:11,color:MU,marginTop:2}}>{currentUnit?`${currentUnit.title} · ${currentUnit.pct||0}%`:'Building…'}</div>
+        {currentUnit&&<div style={{height:3,background:BD,borderRadius:3,overflow:'hidden',marginTop:8}}>
+          <div style={{height:'100%',width:`${currentUnit.pct||0}%`,background:AC,borderRadius:3}}/>
         </div>}
-        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:AC,borderRadius:10,padding:'10px 16px'}}>
-          <span style={{fontSize:13,fontWeight:700,color:'#fff'}}>{recommendation.cta} →</span>
-        </div>
       </div>
-      :<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'24px',textAlign:'center'}}>
-        <div style={{fontSize:13,color:MU,marginBottom:8}}>
-          {isOnline?'Computing your frontier…':'Needs connection.'}
-        </div>
-        {loadError&&<div style={{fontSize:11,color:RE,marginBottom:8,wordBreak:'break-all'}}>{loadError}</div>}
-        <button onClick={()=>{setLoadError(null);loadState()}} style={{fontSize:12,color:AC,background:`${AC}18`,border:`1px solid ${AC}33`,borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:FONT}}>Retry</button>
-      </div>}
-    </div>
-
-    {/* ── REVIEW DUE — if any ── */}
-    {review.length>0&&<div style={{padding:'0 20px 16px'}}>
-      <div style={{background:S,border:`1px solid ${YE}33`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}
-        onClick={()=>go('ng-study')}>
-        <div>
-          <div style={{fontSize:13,fontWeight:700,color:YE,marginBottom:2}}>Review due — {review.length} stage{review.length!==1?'s':''}</div>
-          <div style={{fontSize:11,color:MU}}>Acquired patterns that need a refresh to stick</div>
-        </div>
-        <div style={{fontSize:20,color:YE}}>→</div>
+      <div onClick={()=>go&&go('ng-study')} style={{background:S,border:`1px solid ${phase.due?YE+'44':BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
+        <div style={{fontSize:20,marginBottom:6}}>◌</div>
+        <div style={{fontSize:13,fontWeight:800,color:TX}}>Reviews</div>
+        <div style={{fontSize:11,color:phase.due?YE:MU,marginTop:2}}>{phase.due?`${phase.due} at the forgetting edge`:'All caught up ✓'}</div>
       </div>
+      <div onClick={()=>go&&go('ng-radio')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
+        <div style={{fontSize:20,marginBottom:6}}>📻</div>
+        <div style={{fontSize:13,fontWeight:800,color:TX}}>Rádio Carioca</div>
+        <div style={{fontSize:11,color:MU,marginTop:2}}>Chico & Bia · sempre no ar</div>
+      </div>
+      <div onClick={()=>go&&go('ng-voice')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
+        <div style={{fontSize:20,marginBottom:6}}>◉</div>
+        <div style={{fontSize:13,fontWeight:800,color:TX}}>Luna</div>
+        <div style={{fontSize:11,color:MU,marginTop:2}}>Fala comigo, vai</div>
+      </div>
+    </div>
+
+    {/* Brain ticker */}
+    {brainLine&&<div onClick={()=>go&&go('ng-brain')} style={{margin:'14px 20px 0',display:'flex',gap:10,alignItems:'flex-start',background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'11px 14px',cursor:'pointer'}}>
+      <span style={{fontSize:13,flexShrink:0}}>🧠</span>
+      <div style={{flex:1,fontSize:11.5,color:MU,lineHeight:1.55,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{brainLine.thought}</div>
     </div>}
-
-    {/* ── FRONTIER LIST ── */}
-    {frontier.length>0&&<div style={{padding:'0 20px'}}>
-      <div style={{fontSize:11,fontWeight:700,color:MU,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>Your frontier</div>
-      {frontier.slice(0,6).map((item,i)=>{
-        const pct=Math.min((item.practice_count||0)/3*100,100)
-        const modeIcons=(item.modes_used||[]).map(m=>m==='flashcard'?'▣':m==='phrase'?'◇':m==='luna'?'◉':'·').join(' ')
-        return<div key={item.scaffold_id+'_'+item.stage}
-          style={{background:i===0?`${AC}08`:S,border:`1px solid ${i===0?AC+'22':BD}`,borderRadius:12,padding:'12px 14px',marginBottom:8,cursor:'pointer'}}
-          onClick={()=>go(
-            !item.has_study?'ng-study':
-            item.has_study&&!item.has_phrase?'ng-phrase':'ng-voice'
-          )}>
-          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:6}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:700,color:TX}}>{item.pt}</div>
-              <div style={{fontSize:11,color:MU}}>{item.en}</div>
-            </div>
-            <div style={{fontSize:10,color:MU,marginLeft:8,textAlign:'right'}}>
-              <div>{modeIcons||'not started'}</div>
-              <div style={{marginTop:2}}>{item.practice_count||0}/3</div>
-            </div>
-          </div>
-          <div style={{height:2,background:BD,borderRadius:2,overflow:'hidden'}}>
-            <div style={{height:'100%',background:pct>=100?GR:AC,borderRadius:2,width:`${pct}%`,transition:'width 0.4s ease'}}/>
-          </div>
-        </div>
-      })}
-    </div>}
-
-    {/* ── QUICK NAV ── */}
-    <div style={{padding:'16px 20px 0',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-      <button onClick={()=>go('ng-study')} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 8px',cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
-        <div style={{fontSize:18,marginBottom:4}}>▣</div>
-        <div style={{fontSize:11,color:MU}}>Study</div>
-      </button>
-      <button onClick={()=>go('ng-phrase')} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 8px',cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
-        <div style={{fontSize:18,marginBottom:4}}>◇</div>
-        <div style={{fontSize:11,color:MU}}>Phrase</div>
-      </button>
-      <button onClick={()=>go('ng-map')} style={{background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 8px',cursor:'pointer',fontFamily:FONT,textAlign:'center'}}>
-        <div style={{fontSize:18,marginBottom:4}}>⊞</div>
-        <div style={{fontSize:11,color:MU}}>Map</div>
-      </button>
-    </div>
-    <div style={{padding:'10px 20px 0'}}>
-      <button onClick={()=>go('ng-field-report')} style={{width:'100%',background:'none',border:`1px dashed ${BD}`,borderRadius:12,padding:'12px',cursor:'pointer',fontSize:12,color:MU,fontFamily:FONT}}>
-        📝 Something happened in real life — file a field report
-      </button>
-    </div>
-
-    {/* Field report button */}
-    <div style={{padding:'12px 20px 0'}}>
-      <button onClick={()=>go('ng-field-report')} style={{width:'100%',background:'none',border:`1px dashed ${BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontSize:13,color:MU,fontFamily:FONT}}>
-        📝 Field report — something happened in real life
-      </button>
-    </div>
   </div>
 }
-
-// ── NGFieldReport ─────────────────────────────────────────────────
 function NGFieldReport({isOnline,onBack}){
   const[text,setText]=useState('')
   const[phase,setPhase]=useState('input') // input|mining|review|done
@@ -5420,7 +5357,14 @@ export default function App(){
     return<div style={{background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
       <ErrorBoundary>
       {/* Mount-all for screens that preserve state between visits */}
-      <div style={{display:ngScreen==='ng-home'?'block':'none'}}><NGHome isOnline={isOnline} go={setNgScreen} active={ngScreen==='ng-home'}/></div>
+      <div style={{display:ngScreen==='ng-home'?'block':'none'}}><NGHome isOnline={isOnline} active={ngScreen==='ng-home'} go={k=>{
+        if(typeof k==='string'&&k.startsWith('__unit:')){
+          const[,uid,title]=k.split(':')
+          setStudySeed({deck:'unit',unit_id:uid,title:decodeURIComponent(title||'')})
+          setNgScreen('ng-study');return
+        }
+        setNgScreen(k)
+      }}/></div>
       <div style={{display:ngScreen==='ng-intelligence'?'block':'none'}}><NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       <div style={{display:ngScreen==='ng-phrase'?'block':'none'}}><NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} active={ngScreen==='ng-phrase'}/></div>
       {/* Conditional — fresh each visit */}
