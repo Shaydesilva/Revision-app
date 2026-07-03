@@ -7,6 +7,11 @@ const FONT="-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans
 const TIERS=[{name:'Turista',min:0},{name:'Comunicador',min:15},{name:'Carioca',min:35},{name:'Carioca Honorario',min:60}]
 const getTier=n=>TIERS.reduce((a,t)=>n>=t.min?t:a,TIERS[0])
 const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes popIn{0%{transform:scale(0.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+@keyframes confettiFall{0%{transform:translateY(-10vh) rotate(0deg);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0.6}}
+@keyframes ringGlow{0%,100%{box-shadow:0 0 12px rgba(124,110,247,0.35)}50%{box-shadow:0 0 26px rgba(124,110,247,0.7)}}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
 
 
@@ -671,7 +676,7 @@ function FlashCards({cards,onRate,onRestart}){
     if(flipped||flipping)return
     if(isDeep&&phase==='front'){setPhase('typing');return}
     if(isDeep&&phase==='typing'){
-      if(!ans.trim()){doFlip(()=>{setFlipped(true);setPhase('back')});return}
+      if(!ans.trim()){doFlip(()=>{setFlipped(true);SFX.flip();setPhase('back')});return}
       setPhase('evaluating')
       const res=await evalCardAnswer(card,ans)
       doFlip(()=>{setEv(res);setFlipped(true);setPhase('back')})
@@ -848,7 +853,7 @@ function EliminationGame({cards,onRate}){
         setElimMsg(`${currentCard.portuguese} — ELIMINATED! 💥`)
         setTimeout(()=>setElimMsg(null),1800)
         const remaining=pool.length-newElim.size
-        if(remaining===0){SND.play('milestone');setDone(true);return}
+        if(remaining===0){SND.play('milestone');setDone(true);SFX.complete();return}
         // Move to next
         const newQueue=queue.filter(c=>!newElim.has(c.id))
         setQueue(newQueue);setQIdx(0);setFlipped(false);setCardKey(k=>k+1)
@@ -2446,7 +2451,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
       setWriteAnswer('')
       setWriteResult(null)
       if(idx>=frontier.length-1){
-        setDone(true)
+        setDone(true);SFX.complete()
         if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
       }else{
         setIdx(i=>i+1)
@@ -2483,6 +2488,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
     const produced=quality>=4
     const cardMode=getCardMode(card)
     const event={scaffold_id:card.scaffold_id,stage:card.stage,quality,produced,mode:cardMode==='write'?'write':'flashcard',isReview:card.isReview||false}
+    quality>=3?SFX.good():SFX.bad()
     const newEvents=[...sessionEvents,event]
     setSessionEvents(newEvents)
 
@@ -2504,7 +2510,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
     }
 
     if(idx>=frontier.length-1){
-      setDone(true)
+      setDone(true);SFX.complete()
       if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
     }else{
       setIdx(i=>i+1)
@@ -2520,7 +2526,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
     setWriteAnswer('')
     setWriteResult(null)
     if(sessionEvents.length===0){onBack();return}
-    setDone(true)
+    setDone(true);SFX.complete()
     if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
   }
 
@@ -3664,6 +3670,7 @@ function NGImport({isOnline,onBack}){
 // ── Unlock Animation ──────────────────────────────────────────────────
 // Full-screen cutscene when a scaffold is approved/unlocked
 function ScaffoldUnlockAnimation({scaffold,onComplete}){
+  useEffect(()=>{SFX.unlock()},[])
   const[phase,setPhase]=useState('fade-in') // fade-in|reveal|map|glow|fade-out
   useEffect(()=>{
     const t1=setTimeout(()=>setPhase('reveal'),400)
@@ -3801,6 +3808,35 @@ const NG_MODE_KEY='carioca_ng_mode' // 'original'|'nextgen'
 const NG_ONBOARDED_KEY='carioca_ng_onboarded'
 
 // ── Helpers ───────────────────────────────────────────────────────
+
+// ═══ SFX — synthesized sound design, zero assets, app-wide ═══════════
+// Toggle: localStorage 'sfx' = 'off' disables. Default on.
+const SFX=(()=>{
+  let ctx=null
+  const on=()=>{try{return localStorage.getItem('sfx')!=='off'}catch(_){return true}}
+  const tone=(f,d,type='sine',g=0.12,when=0)=>{
+    try{
+      ctx=ctx||new(window.AudioContext||window.webkitAudioContext)()
+      if(ctx.state==='suspended')ctx.resume()
+      const o=ctx.createOscillator(),v=ctx.createGain()
+      o.type=type;o.frequency.value=f
+      o.connect(v);v.connect(ctx.destination)
+      const s=ctx.currentTime+when
+      v.gain.setValueAtTime(g,s)
+      v.gain.exponentialRampToValueAtTime(0.001,s+d)
+      o.start(s);o.stop(s+d)
+    }catch(_){}
+  }
+  return{
+    tap:()=>{if(on())tone(700,0.05,'sine',0.06)},
+    flip:()=>{if(on())tone(520,0.07,'triangle',0.09)},
+    good:()=>{if(!on())return;tone(659,0.09,'sine',0.11);tone(880,0.13,'sine',0.11,0.08)},
+    bad:()=>{if(on())tone(196,0.16,'sine',0.1)},
+    complete:()=>{if(!on())return;[523,659,784,1047].forEach((f,i)=>tone(f,0.18,'triangle',0.13,i*0.09))},
+    unlock:()=>{if(!on())return;[784,988,1175,1568].forEach((f,i)=>tone(f,0.22,'sine',0.09,i*0.06))}
+  }
+})()
+
 const ngFetch=async(fn,body={})=>{
   const r=await fetch(`/.netlify/functions/${fn}`,{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -3947,91 +3983,177 @@ function NGBrain({isOnline,onBack}){
 }
 
 
-// ── NGLearn — the Trilha: graph-clustered units, memory-verified gates ──
-function NGLearn({isOnline,onBack,startUnit}){
-  const[units,setUnits]=useState(null)
-  const[expanded,setExpanded]=useState(null)
-  const[err,setErr]=useState(null)
-  const[building,setBuilding]=useState(false)
-  const pollRef=useRef(null)
-  const load=()=>{
-    ngFetch('ng-path',{action:'get'}).then(d=>{
-      if(d.error){setErr(d.error);setBuilding(false);return}
-      if(d.bootstrapping){
-        setBuilding(true)
-        // Poll — units land chunk by chunk as the build self-chains
-        if(!pollRef.current)pollRef.current=setInterval(load,8000)
-        return
-      }
-      setUnits(d.units||[])
-      if((d.units||[]).length){setBuilding(false)}
-      // Keep polling briefly even with partial units (later chunks still landing)
-      if(!pollRef.current&&(d.units||[]).length&&(d.units||[]).length<6)pollRef.current=setInterval(load,8000)
-      if((d.units||[]).length>=6&&pollRef.current){clearInterval(pollRef.current);pollRef.current=null}
-    }).catch(e=>{setErr('Could not reach ng-path ('+(e?.message||'fetch failed')+'). If this mentions a pattern/JSON error, the function likely timed out or crashed — check the Netlify function log.');setBuilding(false)})
-  }
-  useEffect(()=>{
-    if(!isOnline)return
-    load()
-    return()=>{if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null}}
-  },[isOnline])
-
-  const statusStyle=s=>s==='complete'?{border:`1.5px solid ${GR}66`,glow:`0 0 14px ${GR}22`,dim:1}
-    :s==='current'?{border:`1.5px solid ${AC}77`,glow:`0 0 16px ${AC}33`,dim:1}
-    :s==='in_progress'?{border:`1px solid ${AC}44`,glow:'none',dim:1}
-    :{border:`1px solid ${BD}`,glow:'none',dim:0.45}
-
-  return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
-    <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Learn</div>
-    <div style={{fontSize:12,color:MU,marginBottom:20}}>A trilha — built from your knowledge graph, verified by your memory. Units reopen if they fade.</div>
-    {err&&<div style={{background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'13px 15px',marginBottom:14,fontSize:12,color:RE,lineHeight:1.6}}>{err}</div>}
-    {(units===null||building)&&!err&&<div style={{textAlign:'center',padding:building?'30px 20px':'50px'}}>
-      <Spinner size={22}/>
-      <div style={{fontSize:13,fontWeight:700,color:TX,marginTop:14}}>{building?'Building your trilha…':'Loading…'}</div>
-      {building&&<div style={{fontSize:12,color:MU,marginTop:6,lineHeight:1.7}}>Clustering your bank into situation units, category by category.<br/>Units appear below as they're built — about a minute total.</div>}
-    </div>}
-    {units&&units.map((u,i)=>{
-      const st=statusStyle(u.status)
-      const open=expanded===u.unit_id
-      return<div key={u.unit_id} style={{marginBottom:12,opacity:st.dim,position:'relative'}}>
-        {i>0&&<div style={{position:'absolute',top:-12,left:34,width:2,height:12,background:BD}}/>}
-        <div onClick={()=>setExpanded(open?null:u.unit_id)} style={{background:u.is_side_quest?`${YE}08`:S,border:u.is_side_quest?`1.5px solid ${YE}55`:st.border,borderRadius:18,padding:'14px 16px',cursor:'pointer',boxShadow:st.glow}}>
-          <div style={{display:'flex',alignItems:'center',gap:12}}>
-            <div style={{fontSize:26,flexShrink:0}}>{u.emoji}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:15,fontWeight:800,color:TX}}>{u.title}{u.is_side_quest&&<span style={{fontSize:9,color:YE,fontWeight:700,marginLeft:8,letterSpacing:1}}>SIDE QUEST</span>}</div>
-              <div style={{fontSize:11,color:MU,marginTop:1}}>{u.situation}</div>
-            </div>
-            <div style={{textAlign:'right',flexShrink:0}}>
-              <div style={{fontSize:14,fontWeight:800,color:u.status==='complete'?GR:u.pct>0?AC:MU}}>{u.status==='complete'?'✓':u.pct+'%'}</div>
-              <div style={{fontSize:9,color:MU}}>{(u.patterns||[]).length} patterns</div>
-            </div>
-          </div>
-          <div style={{height:4,background:BD,borderRadius:4,overflow:'hidden',marginTop:10}}>
-            <div style={{height:'100%',width:`${u.pct}%`,background:u.status==='complete'?GR:AC,borderRadius:4,transition:'width 0.8s ease'}}/>
-          </div>
-          {open&&<div style={{marginTop:12,animation:'up 0.25s ease'}}>
-            {(u.patterns||[]).map(p=><div key={p.scaffold_id} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderTop:`1px solid ${BD}`}}>
-              <span style={{fontSize:12,flexShrink:0,color:p.solid?GR:MU}}>{p.solid?'✓':'·'}</span>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:600,color:TX}}>{p.pt}</div>
-                <div style={{fontSize:10,color:MU}}>{p.en}</div>
-              </div>
-              <div style={{width:52,height:3,background:BD,borderRadius:3,overflow:'hidden',flexShrink:0}}>
-                <div style={{height:'100%',width:`${Math.min(100,Math.round(p.stability/u.threshold_days*100))}%`,background:p.solid?GR:GD,borderRadius:3}}/>
-              </div>
-            </div>)}
-            <div style={{marginTop:12}}>
-              <PBtn label={u.status==='complete'?'↻ Revisar mesmo assim':'▶ Praticar esta unidade'} onClick={e=>{e&&e.stopPropagation&&e.stopPropagation();startUnit(u)}}/>
-            </div>
-          </div>}
-        </div>
-      </div>
-    })}
+// ── NGLearn — the Trilha. Duolingo-class path: winding nodes, progress
+// rings, celebrations, sound. Defensive: every state renders something. ──
+function Confetti(){
+  const bits=Array.from({length:26},(_,i)=>i)
+  const cols=['#7c6ef7','#34d399','#fbbf24','#f97066','#60a5fa','#f472b6']
+  return<div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:401,overflow:'hidden'}}>
+    {bits.map(i=><span key={i} style={{
+      position:'absolute',top:0,left:`${(i*37)%100}%`,
+      width:8,height:i%2?8:14,borderRadius:i%2?'50%':2,
+      background:cols[i%cols.length],
+      animation:`confettiFall ${2+(i%5)*0.4}s ${(i%7)*0.15}s ease-in forwards`
+    }}/>)}
   </div>
 }
 
-// ── NGToday — coach note + prescribed workout + dials + missions ────
+function NGLearn({isOnline,onBack,startUnit}){
+  const[status,setStatus]=useState('loading') // loading|building|ready|empty|error
+  const[units,setUnits]=useState([])
+  const[sheet,setSheet]=useState(null) // expanded unit
+  const[errMsg,setErrMsg]=useState('')
+  const[celebrate,setCelebrate]=useState(null) // unit that just completed
+  const pollRef=useRef(null)
+  const lastCountRef=useRef(-1)
+  const stableRef=useRef(0)
+
+  const stopPoll=()=>{if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null}}
+  const startPoll=()=>{if(!pollRef.current)pollRef.current=setInterval(load,8000)}
+
+  const load=async()=>{
+    if(!isOnline){setStatus('error');setErrMsg('Needs connection');return}
+    try{
+      const d=await ngFetch('ng-path',{action:'get'})
+      if(d?.error){setStatus('error');setErrMsg(d.error);stopPoll();return}
+      const us=Array.isArray(d?.units)?d.units:[]
+      if(d?.bootstrapping||(!us.length&&d?.bootstrapping!==false)){
+        setStatus(us.length?'ready':'building')
+        startPoll()
+      }
+      if(us.length){
+        // Celebration check — did any unit cross 100% since last visit?
+        try{
+          const prev=JSON.parse(localStorage.getItem('trilha_pcts')||'{}')
+          const justDone=us.find(u=>u.pct>=100&&prev[u.unit_id]!==undefined&&prev[u.unit_id]<100)
+          if(justDone){setCelebrate(justDone);SFX.complete()}
+          localStorage.setItem('trilha_pcts',JSON.stringify(Object.fromEntries(us.map(u=>[u.unit_id,u.pct]))))
+        }catch(_){}
+        setUnits(us)
+        setStatus('ready')
+        // Keep polling while the build is still landing chunks
+        if(us.length!==lastCountRef.current){lastCountRef.current=us.length;stableRef.current=0;startPoll()}
+        else{stableRef.current++;if(stableRef.current>=2)stopPoll()}
+      }else if(d?.bootstrapping===false&&!us.length){
+        setStatus('empty');stopPoll()
+      }
+    }catch(e){
+      setStatus('error')
+      setErrMsg((e?.message||'fetch failed')+(/pattern|JSON|token/i.test(e?.message||'')?' — the function likely returned an error page (check Netlify logs / that ng-path.js is deployed).':''))
+      stopPoll()
+    }
+  }
+  useEffect(()=>{load();return stopPoll},[isOnline])
+
+  const S_NODE=76
+  const nodeVisual=(u)=>{
+    const ring=u.status==='complete'?GR:u.is_side_quest?YE:u.pct>0?AC:BD
+    const deg=Math.round(u.pct*3.6)
+    return{
+      background:`conic-gradient(${ring} ${deg}deg, ${BD} ${deg}deg)`,
+      opacity:u.status==='locked'?0.45:1,
+      animation:u.status==='current'?'float 2.6s ease-in-out infinite':'none',
+      boxShadow:u.status==='current'?`0 0 22px ${AC}55`:u.status==='complete'?`0 0 14px ${GR}33`:'none'
+    }
+  }
+
+  return<div style={{padding:'52px 0 110px',animation:'up 0.35s ease',minHeight:'70vh'}}>
+    <div style={{padding:'0 20px'}}>
+      <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2}}>Learn</div>
+      <div style={{fontSize:12,color:MU,marginBottom:8}}>A trilha — clustered by your knowledge graph, verified by your memory.</div>
+    </div>
+
+    {status==='loading'&&<div style={{textAlign:'center',padding:'60px 20px'}}><Spinner size={22}/></div>}
+
+    {status==='building'&&<div style={{textAlign:'center',padding:'40px 24px'}}>
+      <div style={{fontSize:40,marginBottom:12,animation:'float 2s ease-in-out infinite'}}>🏗️</div>
+      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>Building your trilha…</div>
+      <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Clustering your patterns into Rio situations,<br/>category by category. Units appear as they're built — about a minute.</div>
+      <div style={{marginTop:16}}><Spinner size={18}/></div>
+    </div>}
+
+    {status==='empty'&&<div style={{textAlign:'center',padding:'50px 24px'}}>
+      <div style={{fontSize:40,marginBottom:12,opacity:0.5}}>⛰</div>
+      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>The trilha needs patterns first</div>
+      <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Your content bank is empty. Import a lesson or add patterns via Say It, then come back — the path builds itself.</div>
+    </div>}
+
+    {status==='error'&&<div style={{margin:'20px',background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'14px 16px'}}>
+      <div style={{fontSize:13,fontWeight:700,color:RE,marginBottom:4}}>Learn couldn't load</div>
+      <div style={{fontSize:12,color:TX,lineHeight:1.6,marginBottom:10}}>{errMsg}</div>
+      <PBtn label="Try again" onClick={()=>{setStatus('loading');load()}}/>
+    </div>}
+
+    {status==='ready'&&<div style={{position:'relative',marginTop:10}}>
+      {/* The spine */}
+      <div style={{position:'absolute',top:0,bottom:0,left:'50%',width:2,background:`linear-gradient(${BD},${BD} 70%,transparent)`,transform:'translateX(-1px)'}}/>
+      {units.map((u,i)=>{
+        const left=i%2===0
+        return<div key={u.unit_id} style={{position:'relative',display:'flex',justifyContent:left?'flex-start':'flex-end',padding:left?'0 0 26px 12%':'0 12% 26px 0'}}>
+          {/* connector nub to spine */}
+          <div style={{position:'absolute',top:S_NODE/2,[left?'left':'right']:'calc(12% + 76px)',width:`calc(38% - 76px)`,height:2,background:BD}}/>
+          <div style={{textAlign:'center',width:110}}>
+            <button onClick={()=>{SFX.tap();setSheet(u)}} style={{
+              width:S_NODE,height:S_NODE,borderRadius:'50%',border:'none',cursor:'pointer',
+              padding:4,...nodeVisual(u),position:'relative',margin:'0 auto',display:'block'
+            }}>
+              <div style={{width:'100%',height:'100%',borderRadius:'50%',background:S,display:'flex',alignItems:'center',justifyContent:'center',fontSize:30}}>
+                {u.status==='complete'?'✓':u.emoji}
+              </div>
+              {u.is_side_quest&&<div style={{position:'absolute',top:-6,right:-6,fontSize:14}}>📓</div>}
+            </button>
+            <div style={{fontSize:11.5,fontWeight:700,color:u.status==='locked'?MU:TX,marginTop:7,lineHeight:1.3}}>{u.title}</div>
+            <div style={{fontSize:9.5,color:u.status==='complete'?GR:u.pct>0?AC:MU,marginTop:1,fontWeight:600}}>
+              {u.status==='complete'?'completa':u.pct>0?u.pct+'%':u.status==='current'?'← começa aqui':''}
+            </div>
+          </div>
+        </div>
+      })}
+    </div>}
+
+    {/* Unit detail — bottom sheet */}
+    {sheet&&<div onClick={()=>setSheet(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:300,display:'flex',alignItems:'flex-end'}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxHeight:'78vh',overflowY:'auto',background:S,borderRadius:'22px 22px 0 0',padding:'22px 20px 30px',animation:'slideUp 0.28s ease'}}>
+        <div style={{width:38,height:4,background:BD,borderRadius:4,margin:'0 auto 16px'}}/>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
+          <div style={{fontSize:34}}>{sheet.emoji}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:18,fontWeight:900,color:TX}}>{sheet.title}</div>
+            <div style={{fontSize:12,color:MU}}>{sheet.situation}</div>
+          </div>
+          <div style={{fontSize:17,fontWeight:800,color:sheet.status==='complete'?GR:AC}}>{sheet.status==='complete'?'✓':sheet.pct+'%'}</div>
+        </div>
+        <div style={{height:5,background:BD,borderRadius:5,overflow:'hidden',margin:'10px 0 16px'}}>
+          <div style={{height:'100%',width:`${sheet.pct}%`,background:sheet.status==='complete'?GR:`linear-gradient(to right,${AC},${GD})`,borderRadius:5,transition:'width 0.8s ease'}}/>
+        </div>
+        {(sheet.patterns||[]).map(p=><div key={p.scaffold_id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderTop:`1px solid ${BD}`}}>
+          <span style={{fontSize:13,flexShrink:0,color:p.solid?GR:MU,width:14}}>{p.solid?'✓':'·'}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:600,color:TX}}>{p.pt}</div>
+            <div style={{fontSize:11,color:MU}}>{p.en}</div>
+          </div>
+          <div style={{width:56,height:4,background:BD,borderRadius:4,overflow:'hidden',flexShrink:0}}>
+            <div style={{height:'100%',width:`${Math.round((p.progress||0)*100)}%`,background:p.solid?GR:GD,borderRadius:4,transition:'width 0.6s ease'}}/>
+          </div>
+        </div>)}
+        <div style={{marginTop:16}}>
+          <PBtn label={sheet.status==='complete'?'↻ Revisar unidade':'▶ Praticar esta unidade'} onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startUnit(u)}}/>
+        </div>
+        <div style={{fontSize:10,color:MU,opacity:0.65,textAlign:'center',marginTop:10}}>Progress = real memory strength. Fades if neglected — units can reopen.</div>
+      </div>
+    </div>}
+
+    {/* Unit complete — celebration */}
+    {celebrate&&<div onClick={()=>setCelebrate(null)} style={{position:'fixed',inset:0,background:'rgba(10,10,20,0.88)',zIndex:400,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:30}}>
+      <Confetti/>
+      <div style={{fontSize:74,animation:'popIn 0.6s cubic-bezier(0.34,1.56,0.64,1)'}}>{celebrate.emoji}</div>
+      <div style={{fontSize:13,color:GD,fontWeight:700,letterSpacing:3,textTransform:'uppercase',marginTop:18,animation:'up 0.5s ease 0.2s both'}}>Unidade completa</div>
+      <div style={{fontSize:26,fontWeight:900,color:'#fff',marginTop:6,textAlign:'center',animation:'up 0.5s ease 0.3s both'}}>{celebrate.title}</div>
+      <div style={{fontSize:13,color:'#aab',marginTop:8,textAlign:'center',animation:'up 0.5s ease 0.4s both'}}>Every pattern memory-verified. It's yours — for now. 😏</div>
+      <div style={{fontSize:11,color:'#778',marginTop:26,animation:'up 0.5s ease 0.6s both'}}>tap anywhere</div>
+    </div>}
+  </div>
+}
 function NGToday({isOnline,onBack,goTo}){
   const[data,setData]=useState(null)
   const[loading,setLoading]=useState(true)
@@ -5319,7 +5441,15 @@ export default function App(){
       {/* Next Gen Nav — 5 primary + More sheet */}
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
         {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-learn',i:'⛰',l:'Learn'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
-          <button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
+          <button key={t.k} onClick={()=>{
+              if(t.k==='__sfx'){
+                const off=localStorage.getItem('sfx')==='off'
+                localStorage.setItem('sfx',off?'on':'off')
+                if(off)SFX.complete()
+                setShowMore(false);return
+              }
+              setNgScreen(t.k);setShowMore(false)
+            }} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
             <span style={{fontSize:20,opacity:ngScreen===t.k&&!showMore?1:0.3,filter:ngScreen===t.k&&!showMore?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
             <span style={{fontSize:10,color:ngScreen===t.k&&!showMore?AC:MU,fontWeight:ngScreen===t.k&&!showMore?700:400}}>{t.l}</span>
           </button>
@@ -5345,6 +5475,7 @@ export default function App(){
             {k:'ng-field-report',i:'🌴',l:'Field Report',d:'Real-world log'},
             {k:'ng-placement',i:'✦',l:'Placement',d:'Map what you know'},
             {k:'ng-brain',i:'🧠',l:'The Brain',d:'Watch it think'},
+            {k:'__sfx',i:'🔊',l:'Sound',d:'Tap to toggle effects'},
           ].map(t=><button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
             <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
             <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
