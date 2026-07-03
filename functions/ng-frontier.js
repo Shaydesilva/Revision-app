@@ -201,8 +201,32 @@ exports.handler=async(event)=>{
       }else if(deck==='unit'&&deckUnitId){
         const{data:unit}=await sb.from('ng_path_units').select('scaffold_ids,title')
           .eq('user_id',UID).eq('unit_id',deckUnitId).single()
-        const uids=new Set(Array.isArray(unit?.scaffold_ids)?unit.scaffold_ids:[])
+        const unitIds=Array.isArray(unit?.scaffold_ids)?unit.scaffold_ids:[]
+        const uids=new Set(unitIds)
         deckItems=frontier.filter(it=>uids.has(it.scaffold_id)).slice(0,12)
+        // NEVER empty: if the frontier has no rows for these scaffolds
+        // (all controlled, or zero-state edge), build items directly.
+        if(!deckItems.length&&unitIds.length){
+          const inDeck=new Set()
+          for(const uid of unitIds){
+            const sc=scaffolds.find(s=>s.id===uid)
+            if(!sc||inDeck.has(uid))continue
+            const stages=Array.isArray(sc.stages)?sc.stages:[]
+            // first uncontrolled stage, else highest stage as revision
+            const target=stages.find(st=>!controlled.has(`${sc.id}|${st.stage}`))||stages[stages.length-1]
+            if(!target)continue
+            inDeck.add(uid)
+            deckItems.push({
+              scaffold_id:sc.id,base:sc.base_portuguese,stage:target.stage,
+              pt:target.pt,en:target.en,context:sc.context,category:sc.category,
+              phase:sc.phase,urgency:0,practice_count:0,modes_used:[],
+              has_study:false,has_phrase:false,has_luna:false,
+              days_since_practice:999,avg_quality:0,
+              isRevision:controlled.has(`${sc.id}|${target.stage}`)
+            })
+          }
+          deckItems=deckItems.slice(0,12)
+        }
       }else if(deck==='category'&&deckCategory){
         const pool=frontier.filter(it=>(it.category||'social_foundation')===deckCategory)
         const practiced=pool.filter(it=>it.practice_count>0)
