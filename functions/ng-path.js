@@ -94,11 +94,12 @@ exports.handler=async(event)=>{
       const ids=Array.isArray(u.scaffold_ids)?u.scaffold_ids:[]
       const per=ids.map(id=>({
         scaffold_id:id,pt:scMap[id]?.base_portuguese||id,en:scMap[id]?.base_english||'',
-        stability:stab[id]||0,solid:(stab[id]||0)>=u.threshold_days
+        stability:stab[id]||0,solid:(stab[id]||0)>=u.threshold_days,
+        progress:Math.min(1,(stab[id]||0)/u.threshold_days)
       }))
-      const solidCount=per.filter(p=>p.solid).length
       const started=per.some(p=>p.stability>0)
-      const pct=ids.length?Math.round(solidCount/ids.length*100):0
+      // Continuous: every rep visibly moves the unit — no dead bars
+      const pct=ids.length?Math.round(per.reduce((s,p)=>s+p.progress,0)/ids.length*100):0
       let status=pct>=100?'complete':started?'in_progress':'locked'
       if(status==='locked'&&!currentAssigned){status='current';currentAssigned=true}
       if(status==='in_progress')currentAssigned=true
