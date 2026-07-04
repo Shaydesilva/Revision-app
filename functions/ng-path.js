@@ -40,8 +40,8 @@ exports.handler=async(event)=>{
       const res=await fetch('https://api.anthropic.com/v1/messages',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,
-          system:`Cluster Carioca Portuguese patterns into learning UNITS of 4-7 scaffolds. Each unit = a REAL Rio situation where those patterns live together (graph edges hint at relatedness). Order by phase. Every scaffold id appears in EXACTLY one unit. Portuguese titles, punchy. JSON only:
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2400,
+          system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nCluster Carioca Portuguese patterns into 3-6 learning UNITS of 4-7 scaffolds each. MANDATORY: EVERY scaffold id in the list appears in EXACTLY one unit — omit NONE. Create more units rather than dropping any id. Each unit = a REAL Rio situation where those patterns live together (graph edges hint at relatedness). Order by phase. Every scaffold id appears in EXACTLY one unit. Portuguese titles, punchy. JSON only:
 {"units":[{"unit_id":"snake_case_id","title":"","emoji":"🍺","situation":"one line in English","scaffold_ids":[]}]}`,
           messages:[{role:'user',content:`CATEGORY: ${cat}\nPATTERNS:\n${bank}\nRELATED PAIRS: ${catEdges||'none'}`}]})
       })
@@ -54,6 +54,18 @@ exports.handler=async(event)=>{
         scaffold_ids:(u.scaffold_ids||[]).filter(id=>catIds.has(id)),
         sort_order:chunk*100+i,is_side_quest:false
       })).filter(r=>r.scaffold_ids.length)
+      // Coverage guarantee: any id the model dropped still gets a home.
+      {
+        const placed=new Set();rows.forEach(r=>(r.scaffold_ids||[]).forEach(id=>placed.add(id)))
+        const leftovers=[...catIds].filter(id=>!placed.has(id))
+        for(let li=0;li<leftovers.length;li+=6){
+          rows.push({user_id:UID,unit_id:(cat+'_extra_'+chunk+'_'+(li/6)).slice(0,60),
+            title:'Da rua · '+cat.replace(/_/g,' '),emoji:'📦',
+            situation:'Padrões ainda sem casa — pratique; o cérebro reagrupa com o tempo',
+            scaffold_ids:leftovers.slice(li,li+6),
+            sort_order:chunk*100+60+Math.floor(li/6),is_side_quest:false})
+        }
+      }
       if(rows.length)await sb.from('ng_path_units').upsert(rows,{onConflict:'user_id,unit_id'})
       await brainLog(sb,'path',`Trilha chunk ${chunk+1}/${cats.length} ("${cat}"): ${rows.length} units built.`,null,1)
       // Best-effort self-chain with awaited send (client also drives the chain)
@@ -96,7 +108,7 @@ exports.handler=async(event)=>{
         method:'POST',
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
         body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1400,
-          system:`You evolve a Carioca Portuguese learning unit to its next level. The learner MASTERED the current patterns — design 4-5 NEW, harder ones for the SAME situation: longer chains, faster register, more idiomatic/street, weave in their weak spots. Portuguese must be authentic Rio street register — real gíria a Carioca says TODAY, never textbook-flavored or invented slang. If unsure a construction is natural, choose a simpler one that definitely is. JSON only:
+          system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nYou evolve a Carioca Portuguese learning unit to its next level. The learner MASTERED the current patterns — design 4-5 NEW, harder ones for the SAME situation: longer chains, faster register, more idiomatic/street, weave in their weak spots. Portuguese must be authentic Rio street register — real gíria a Carioca says TODAY, never textbook-flavored or invented slang. If unsure a construction is natural, choose a simpler one that definitely is. JSON only:
 {"scaffolds":[{"base_portuguese":"","base_english":"","stages":[{"pt":"","en":""},{"pt":"","en":""},{"pt":"","en":""}]}]}
 Stages escalate: 1 core → 2 extended → 3 full street flow.`,
           messages:[{role:'user',content:`UNIT: "${unit.title}" — ${unit.situation}\nEVOLVING: level ${unit.level||1} → ${(unit.level||1)+1}\nMASTERED PATTERNS:\n${current}\nLEARNER WEAK SPOTS: ${struggles}`}]})
