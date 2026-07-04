@@ -1680,6 +1680,7 @@ function VoiceBubble({msg,cardMap,translateWord,onWordPress}){
       borderRadius:isLuna?'18px 18px 18px 4px':'18px 18px 4px 18px',
       background:isLuna?S:AC,
       border:evalBorder?('2px solid '+evalBorder):isLuna?('1px solid '+BD):'none',
+      opacity:msg.pending?0.55:1,fontStyle:msg.pending?'italic':'normal',
       fontSize:15,lineHeight:1.6,color:isLuna?TX:'#16240f',
       cursor:isLuna?'pointer':'default',wordBreak:'break-word'
     }}>
@@ -1738,6 +1739,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const shouldEndRef=useRef(false)
   const respActiveRef=useRef(false)
   const recStreamRef=useRef(null)
+  const[pendingSug,setPendingSug]=useState([]) // scaffold suggestions awaiting YOUR approval
   const phaseRef=useRef('idle')
   const spectrumRef=useRef(0.35)
   const pttRef=useRef(true)
@@ -1957,7 +1959,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   }
 
   // ── Connect ────────────────────────────────────────────────────────────
-  const transcribeAudio=async(blob)=>{
+  const transcribeAudio=async(blob,phId)=>{
     if(!blob||blob.size<1000)return
     try{
       const r=await fetch('/.netlify/functions/ng-transcribe',{
@@ -1969,11 +1971,18 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       if(d.text?.trim()){
         const text=d.text.trim()
         transcriptRef.current.push({role:'user',text})
-        setMessages(prev=>[...prev,{role:'user',text,id:Date.now()}])
+        setMessages(prev=>phId&&prev.some(m=>m.id===phId)
+          ?prev.map(m=>m.id===phId?{...m,text,pending:false}:m)
+          :[...prev,{role:'user',text,id:Date.now()}])
         if(testInProgress.current)testInProgress.current='answered'
         if(isGoodbye(text))shouldEndRef.current=true
+      }else if(phId){
+        // Whisper heard nothing usable — remove the ghost bubble
+        setMessages(prev=>prev.filter(m=>m.id!==phId))
       }
-    }catch(e){log('Transcribe error: '+e.message)}
+    }catch(e){
+      if(phId)setMessages(prev=>prev.filter(m=>m.id!==phId))
+      log('Transcribe error: '+e.message)}
   }
 
   const connect=useCallback(async()=>{
@@ -2037,7 +2046,11 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
             const realType=recorderRef.current?.mimeType||mimeType||'audio/mp4'
             const blob=new Blob(chunks,{type:realType})
             if(blob.size<2500){setStatus('');setDotMode('');return} // accidental tap
-            transcribeAudio(blob)              // → your bubble (Whisper, exact same audio)
+            // Claim the chat slot NOW — Whisper is slower than Luna's realtime,
+            // so without a placeholder your words land under her reply.
+            const phId='u'+Date.now()+Math.random().toString(36).slice(2,5)
+            setMessages(prev=>[...prev,{role:'user',text:'🎙 …',pending:true,id:phId}])
+            transcribeAudio(blob,phId)         // → replaces the placeholder in place
             if(pttRef.current)sendBlobToRealtime(blob) // → Luna's ears (PTT only)
           }
           recorderRef.current=rec
@@ -2214,9 +2227,34 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   },[tlCache,cardMap])
 
   const addToDeck=useCallback(async(word,translation,sentence)=>{
+    if(ngMode){
+      // Blanket rule: Claude analyzes where this phrase sits in a stage
+      // ladder and SUGGESTS — nothing is added without your approval.
+      const pt=(sentence&&sentence.length>(word||'').length)?sentence:(word||'')
+      setWordMenu(null)
+      setStatus('Analisando padrão…')
+      try{
+        const r=await fetch('/.netlify/functions/ng-say-it',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({text:pt,forceScaffold:true})}).then(x=>x.json())
+        const sug=(r?.suggestions||[])[0]
+        setStatus('')
+        if(sug)setPendingSug(p=>[...p,{...sug,_id:'sug'+Date.now()}])
+        else log('No scaffold suggestion returned')
+      }catch(e){setStatus('');log('Scaffold analysis failed: '+e.message)}
+      return
+    }
     await onAddCard(mk(`voice-${Date.now()}`,word||'',translation||'','vocab',{exampleSentence:sentence||null}))
     setWordMenu(null)
-  },[onAddCard])
+  },[onAddCard,ngMode])
+
+  const approveSug=useCallback(async(sug)=>{
+    try{
+      await fetch('/.netlify/functions/ng-say-it',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({approvedScaffolds:[sug]})})
+      SFX.unlock()
+      setPendingSug(p=>p.filter(x=>x._id!==sug._id))
+    }catch(e){log('Approve failed: '+e.message)}
+  },[])
 
   // ── Done screen ────────────────────────────────────────────────────────
   if(phase==='done'&&summary&&!ngMode)return<div style={{padding:'40px 24px 100px',animation:'up 0.4s ease'}}>
@@ -2241,7 +2279,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:wordMenu.y,left:Math.min(wordMenu.x,window.innerWidth-210),background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'8px',minWidth:200,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',animation:'up 0.15s ease'}}>
         <div style={{fontSize:15,fontWeight:700,color:YE,padding:'6px 12px',borderBottom:`1px solid ${BD}`,marginBottom:4}}>{wordMenu.word}</div>
         {wordMenu.translation&&<div style={{fontSize:12,color:MU,padding:'2px 12px 8px'}}>{wordMenu.translation}</div>}
-        <button onClick={()=>addToDeck(wordMenu.word,wordMenu.translation,wordMenu.sentence)} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',padding:'10px 12px',cursor:'pointer',fontSize:13,color:GR,fontFamily:FONT,borderRadius:8}}>＋ Add to deck</button>
+        <button onClick={()=>addToDeck(wordMenu.word,wordMenu.translation,wordMenu.sentence)} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',padding:'10px 12px',cursor:'pointer',fontSize:13,color:GR,fontFamily:FONT,borderRadius:8}}>{ngMode?'✦ Analisar padrão':'＋ Add to deck'}</button>
         <button onClick={()=>setWordMenu(null)} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',padding:'10px 12px',cursor:'pointer',fontSize:13,color:MU,fontFamily:FONT,borderRadius:8}}>Cancel</button>
       </div>
     </div>}
@@ -2292,6 +2330,22 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
       </div>}
       {messages.length>20&&<button onClick={()=>{}} style={{background:'none',border:`1px solid ${BD}`,borderRadius:8,color:MU,fontSize:11,cursor:'pointer',fontFamily:FONT,padding:'6px 12px',margin:'0 auto 8px',display:'block'}}>↑ Load older</button>}
       {messages.map(msg=><VoiceBubble key={msg.id} msg={msg} cardMap={cardMap} translateWord={translateWord} onWordPress={(w,t,s,x,y)=>setWordMenu({word:w,translation:t,sentence:s,x,y})}/>)}
+
+      {/* Scaffold suggestions — Claude's analysis, YOUR approval */}
+      {pendingSug.map(sug=><div key={sug._id} style={{margin:'10px 0',background:S2,border:`1.5px solid ${GD}55`,borderRadius:16,padding:'14px 15px',animation:'up 0.3s ease'}}>
+        <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>✦ Padrão sugerido{sug.anchor_stage?` · sua frase = etapa ${sug.anchor_stage}`:''}</div>
+        <div style={{fontSize:15,fontWeight:800,color:TX}}>{sug.base_portuguese}</div>
+        <div style={{fontSize:11,color:MU,marginBottom:8}}>{sug.base_english}</div>
+        {(sug.stages||[]).map((st,i)=><div key={i} style={{display:'flex',gap:8,padding:'4px 0',borderTop:`1px solid ${BD}`,alignItems:'baseline'}}>
+          <span style={{fontSize:9,color:(sug.anchor_stage===i+1)?GD:MU,fontWeight:800,flexShrink:0,width:16}}>{(sug.anchor_stage===i+1)?'★':i+1}</span>
+          <span style={{flex:1,fontSize:12.5,color:TX}}>{st.pt}<span style={{color:MU,fontSize:10.5}}> — {st.en}</span></span>
+        </div>)}
+        {sug.reason&&<div style={{fontSize:10.5,color:MU,fontStyle:'italic',marginTop:8}}>{sug.reason}</div>}
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button onClick={()=>approveSug(sug)} style={{flex:1,padding:'11px',background:`${GR}15`,border:`1px solid ${GR}55`,borderRadius:11,color:GR,fontSize:12.5,fontWeight:800,cursor:'pointer',fontFamily:FONT}}>✓ Adicionar à trilha</button>
+          <button onClick={()=>setPendingSug(p=>p.filter(x=>x._id!==sug._id))} style={{flex:1,padding:'11px',background:'none',border:`1px solid ${BD}`,borderRadius:11,color:MU,fontSize:12.5,fontWeight:700,cursor:'pointer',fontFamily:FONT}}>Dispensar</button>
+        </div>
+      </div>)}
       <div ref={chatEndRef}/>
       {liveText&&<div style={{alignSelf:'flex-start',maxWidth:'85%'}}>
         <div style={{padding:'12px 16px',borderRadius:'18px 18px 18px 4px',background:S,border:`1px solid ${BD}`,fontSize:15,lineHeight:1.6,color:MU,fontStyle:'italic'}}>
@@ -3585,11 +3639,17 @@ function NGSayIt({isOnline,onBack}){
 
   const addToBank=async()=>{
     if(!result||!isOnline)return
-    await ngFetch('ng-say-it',{
-      addToBank:true,
-      cardData:{portuguese:result.carioca,english:result.original}
-    })
-    setAddedToBank(true)
+    // Blanket rule: NOTHING enters the stack unapproved. Claude analyzes the
+    // phrase, places it at its true rung of a 4-stage ladder, and SUGGESTS.
+    setAddedToBank(true) // disables button while analysing
+    try{
+      const r=await ngFetch('ng-say-it',{text:result.carioca,forceScaffold:true})
+      const sug=(r?.suggestions||[]).slice(0,1)
+      if(sug.length){
+        setResult(prev=>({...prev,suggestions:[...(prev.suggestions||[]),...sug]}))
+        setScaffoldsSubmitted(false)
+      }else setAddedToBank(false)
+    }catch(_){setAddedToBank(false)}
   }
 
   const submitScaffolds=async()=>{
@@ -3644,7 +3704,7 @@ function NGSayIt({isOnline,onBack}){
       {/* Add to bank */}
       <div style={{display:'flex',gap:10,marginBottom:16}}>
         <button onClick={addToBank} disabled={addedToBank} style={{flex:1,padding:'12px',background:addedToBank?`${GR}20`:S,border:`1px solid ${addedToBank?GR+'44':BD}`,borderRadius:12,cursor:addedToBank?'default':'pointer',fontFamily:FONT,fontSize:13,color:addedToBank?GR:TX,fontWeight:600}}>
-          {addedToBank?'✓ Added to card bank':'+ Add to card bank'}
+          {addedToBank?'✓ Sugestão pronta — revisa abaixo ↓':'✦ Analisar como padrão'}
         </button>
         <button onClick={()=>{setInput(result.carioca||'');setResult(null)}} style={{padding:'12px 16px',background:S,border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,color:MU}}>
           Edit
@@ -4191,6 +4251,18 @@ function NGLearn({isOnline,onBack,startUnit}){
     load()
   }
 
+  const[evolving,setEvolving]=useState(null)
+  const levelUp=async(u)=>{
+    setSheet(null);setEvolving(u)
+    try{
+      const r=await ngFetch('ng-path',{action:'level_up',unit_id:u.unit_id})
+      if(r?.error){setErrMsg(r.error);setStatus('error');setEvolving(null);return}
+      SFX.unlock()
+      setEvolving(null)
+      setCelebrate({emoji:u.emoji,title:`${u.title} — Nível ${r.new_level}`,sub:'NÍVEL DESBLOQUEADO'})
+      load()
+    }catch(e){setEvolving(null);setErrMsg('Evolution failed: '+(e?.message||''));setStatus('error')}
+  }
   const stopPoll=()=>{if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null}}
   const startPoll=()=>{if(!pollRef.current)pollRef.current=setInterval(load,8000)}
 
@@ -4288,6 +4360,14 @@ function NGLearn({isOnline,onBack,startUnit}){
                 {u.status==='complete'?'✓':u.emoji}
               </div>
               {u.is_side_quest&&<div style={{position:'absolute',top:-6,right:-6,fontSize:14}}>📓</div>}
+              {/* Level badge — the little bubble on the big bubble */}
+              <div style={{position:'absolute',bottom:-3,right:-3,minWidth:20,height:20,borderRadius:10,
+                background:u.level_ready?AC:S,border:`1.5px solid ${u.level_ready?AC:BD}`,
+                color:u.level_ready?'#16240f':MU,fontSize:10,fontWeight:800,
+                display:'flex',alignItems:'center',justifyContent:'center',padding:'0 5px',
+                animation:u.level_ready?'pulse 1.5s infinite':'none'}}>
+                {u.level_ready?'↑':(u.level||1)}
+              </div>
             </button>
             <div style={{fontSize:11.5,fontWeight:700,color:u.status==='locked'?MU:TX,marginTop:7,lineHeight:1.3}}>{u.title}</div>
             <div style={{fontSize:9.5,color:u.status==='complete'?GR:u.pct>0?AC:MU,marginTop:1,fontWeight:600}}>
@@ -4308,7 +4388,10 @@ function NGLearn({isOnline,onBack,startUnit}){
             <div style={{fontSize:18,fontWeight:900,color:TX}}>{sheet.title}</div>
             <div style={{fontSize:12,color:MU}}>{sheet.situation}</div>
           </div>
-          <div style={{fontSize:17,fontWeight:800,color:sheet.status==='complete'?GR:AC}}>{sheet.status==='complete'?'✓':sheet.pct+'%'}</div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontSize:17,fontWeight:800,color:sheet.status==='complete'?GR:AC}}>{sheet.status==='complete'?'✓':sheet.pct+'%'}</div>
+            <div style={{fontSize:9.5,color:MU,fontWeight:700,letterSpacing:1}}>NÍVEL {sheet.level||1}</div>
+          </div>
         </div>
         <div style={{height:5,background:BD,borderRadius:5,overflow:'hidden',margin:'10px 0 16px'}}>
           <div style={{height:'100%',width:`${sheet.pct}%`,borderRadius:5,transition:'width 0.8s ease',
@@ -4327,16 +4410,31 @@ function NGLearn({isOnline,onBack,startUnit}){
         </div>)}
         <div style={{marginTop:16}}>
           <PBtn label={sheet.status==='complete'?'↻ Revisar unidade':'▶ Praticar esta unidade'} onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startUnit(u)}}/>
+          {sheet.level_ready&&<div style={{marginTop:10}}>
+            <PBtn label={`⬆ Evoluir para nível ${(sheet.level||1)+1}`} color={GR} onClick={()=>levelUp(sheet)}/>
+            <div style={{fontSize:10,color:MU,textAlign:'center',marginTop:6}}>Claude forja 4-5 padrões mais difíceis desta situação, no momento — dos seus pontos fracos.</div>
+          </div>}
+          {!sheet.level_ready&&sheet.pct>=100&&sheet.level_wait_hours>0&&<div style={{marginTop:10,textAlign:'center',fontSize:11.5,color:GD,fontWeight:600}}>
+            ⏳ Evolui em {Math.ceil(sheet.level_wait_hours/24)}d — deixa a memória assentar
+          </div>}
         </div>
         <div style={{fontSize:10,color:MU,opacity:0.65,textAlign:'center',marginTop:10}}>Progress = real memory strength. Fades if neglected — units can reopen.</div>
       </div>
+    </div>}
+
+    {/* Evolving — Claude forging the next level, live */}
+    {evolving&&<div style={{position:'fixed',inset:0,background:'rgba(4,16,9,0.93)',zIndex:400,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:30}}>
+      <div style={{animation:'float 2s ease-in-out infinite'}}><Poste size={48}/></div>
+      <div style={{fontSize:16,fontWeight:800,color:TX,marginTop:18,fontFamily:FONTD}}>A trilha está evoluindo…</div>
+      <div style={{fontSize:12,color:MU,marginTop:8,textAlign:'center',lineHeight:1.7}}>Claude está forjando os próximos padrões de<br/>"{evolving.title}" — nível {(evolving.level||1)+1}. ~10 segundos.</div>
+      <div style={{marginTop:18}}><Spinner size={20}/></div>
     </div>}
 
     {/* Unit complete — celebration */}
     {celebrate&&<div onClick={()=>setCelebrate(null)} style={{position:'fixed',inset:0,background:'rgba(4,16,9,0.9)',zIndex:400,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:30}}>
       <Confetti/>
       <div style={{fontSize:74,animation:'popIn 0.6s cubic-bezier(0.34,1.56,0.64,1)'}}>{celebrate.emoji}</div>
-      <div style={{fontSize:13,color:GD,fontWeight:700,letterSpacing:3,textTransform:'uppercase',marginTop:18,animation:'up 0.5s ease 0.2s both'}}>Unidade completa · every pattern memory-verified</div>
+      <div style={{fontSize:13,color:GD,fontWeight:700,letterSpacing:3,textTransform:'uppercase',marginTop:18,animation:'up 0.5s ease 0.2s both'}}>{celebrate.sub||'Unidade completa · every pattern memory-verified'}</div>
       <div style={{fontSize:26,fontWeight:900,color:'#fff',marginTop:6,textAlign:'center',animation:'up 0.5s ease 0.3s both'}}>{celebrate.title}</div>
       <div style={{fontSize:13,color:'#aab',marginTop:8,textAlign:'center',animation:'up 0.5s ease 0.4s both'}}>AI SIM! Registra no cartório! 🔥</div>
       <div style={{fontSize:11,color:'#778',marginTop:26,animation:'up 0.5s ease 0.6s both'}}>tap anywhere</div>
