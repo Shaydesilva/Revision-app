@@ -1739,6 +1739,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const shouldEndRef=useRef(false)
   const respActiveRef=useRef(false)
   const recStreamRef=useRef(null)
+  const[lunaSuggestion,setLunaSuggestion]=useState(null)
   const[pendingSug,setPendingSug]=useState([]) // scaffold suggestions awaiting YOUR approval
   const phaseRef=useRef('idle')
   const spectrumRef=useRef(0.35)
@@ -2228,19 +2229,17 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
   const addToDeck=useCallback(async(word,translation,sentence)=>{
     if(ngMode){
-      // Blanket rule: Claude analyzes where this phrase sits in a stage
-      // ladder and SUGGESTS — nothing is added without your approval.
-      const pt=(sentence&&sentence.length>(word||'').length)?sentence:(word||'')
+      // UNIFIED PIPELINE: the analyzer places the phrase in a ladder
+      // (base / above / below / extend existing). Verbatim survives. You judge.
       setWordMenu(null)
-      setStatus('Analisando padrão…')
+      setLunaSuggestion({loading:true,phrase:word||sentence||''})
       try{
-        const r=await fetch('/.netlify/functions/ng-say-it',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({text:pt,forceScaffold:true})}).then(x=>x.json())
-        const sug=(r?.suggestions||[])[0]
-        setStatus('')
-        if(sug)setPendingSug(p=>[...p,{...sug,_id:'sug'+Date.now()}])
-        else log('No scaffold suggestion returned')
-      }catch(e){setStatus('');log('Scaffold analysis failed: '+e.message)}
+        const r=await fetch('/.netlify/functions/ng-suggest',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action:'propose',phrase:word||'',translation:translation||'',context_sentence:sentence||'',source:'luna'})}).then(x=>x.json())
+        if(r?.duplicate)setLunaSuggestion({duplicate:true,existing:r.existing})
+        else if(r?.suggestion)setLunaSuggestion({sug:r.suggestion})
+        else setLunaSuggestion({error:r?.error||'Analysis failed'})
+      }catch(e){setLunaSuggestion({error:e.message})}
       return
     }
     await onAddCard(mk(`voice-${Date.now()}`,word||'',translation||'','vocab',{exampleSentence:sentence||null}))
@@ -2275,6 +2274,12 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   return<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 64px)'}}>
 
     {/* Word menu */}
+    {lunaSuggestion&&<div style={{position:'fixed',left:12,right:12,bottom:118,zIndex:60,maxWidth:456,margin:'0 auto'}}>
+      {lunaSuggestion.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Analisando "{lunaSuggestion.phrase}" — onde entra na escada…</div>}
+      {lunaSuggestion.duplicate&&<div onClick={()=>setLunaSuggestion(null)} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>Você já tem esse: <span style={{color:AC,fontWeight:700}}>{lunaSuggestion.existing?.base}</span> · toque pra fechar</div>}
+      {lunaSuggestion.error&&<div onClick={()=>setLunaSuggestion(null)} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{lunaSuggestion.error} · toque pra fechar</div>}
+      {lunaSuggestion.sug&&<SuggestionCard sug={lunaSuggestion.sug} onDone={()=>setLunaSuggestion(null)}/>}
+    </div>}
     {wordMenu&&<div style={{position:'fixed',inset:0,zIndex:200}} onClick={()=>setWordMenu(null)}>
       <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:wordMenu.y,left:Math.min(wordMenu.x,window.innerWidth-210),background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'8px',minWidth:200,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',animation:'up 0.15s ease'}}>
         <div style={{fontSize:15,fontWeight:700,color:YE,padding:'6px 12px',borderBottom:`1px solid ${BD}`,marginBottom:4}}>{wordMenu.word}</div>
@@ -2544,6 +2549,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
       const data=await ngFetch('ng-frontier',deck&&deck!=='focus'&&deck!=='due'?{deck,category,unit_id:unitId}:{})
       if(data.error)throw new Error(data.error)
       ngFetch('ng-today',{action:'get'}).then(t=>{if(t?.coach_note)setCoachNote(t.coach_note)}).catch(()=>{})
+    ngFetch('ng-suggest',{action:'list'}).then(d=>setPendCount((d.suggestions||[]).length)).catch(()=>{})
       const reviewCards=(data.review||[]).map(r=>({...r,isReview:true}))
       // due = reviews only · decks = pure deck · focus/default = frontier+reviews
       const allCards=deck==='due'?reviewCards
@@ -3123,6 +3129,7 @@ Return JSON:
 
 // ── NGScaffoldMap ─────────────────────────────────────────────────
 function NGScaffoldMap({isOnline,onBack}){
+  const[pendSugs,setPendSugs]=useState([])
   const[mapView,setMapView]=useState('constellation') // constellation | grid
   const[memState,setMemState]=useState([])
   const[graphEdges,setGraphEdges]=useState([])
@@ -3136,6 +3143,10 @@ function NGScaffoldMap({isOnline,onBack}){
   const[pendingHybrids,setPendingHybrids]=useState([])
   const[showHybridPanel,setShowHybridPanel]=useState(false)
   const[unlockScaffold,setUnlockScaffold]=useState(null)
+  useEffect(()=>{
+    if(!isOnline)return
+    ngFetch('ng-suggest',{action:'list'}).then(d=>setPendSugs(d.suggestions||[])).catch(()=>{})
+  },[isOnline])
 
   useEffect(()=>{
     if(mapView!=='constellation'||memState.length)return
@@ -3210,6 +3221,12 @@ function NGScaffoldMap({isOnline,onBack}){
 
     {/* Header */}
     {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
+
+    {/* Pendentes — the suggestion shelf */}
+    {pendSugs.length>0&&<div style={{padding:'0 20px',marginBottom:18}}>
+      <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>📥 Pendentes · {pendSugs.length}</div>
+      {pendSugs.map(sg=><SuggestionCard key={sg.id} sug={sg} onDone={()=>setPendSugs(p=>p.filter(x=>x.id!==sg.id))}/>)}
+    </div>}
     {showHybridPanel&&<HybridApprovalPanel
       pending={pendingHybrids}
       onClose={()=>setShowHybridPanel(false)}
@@ -3604,6 +3621,7 @@ function NGSayIt({isOnline,onBack}){
     return()=>{if(audioEl){audioEl.pause();audioEl.currentTime=0}}
   },[audioEl])
   const[addedToBank,setAddedToBank]=useState(false)
+  const[saySug,setSaySug]=useState(null)
   const[scaffoldDecisions,setScaffoldDecisions]=useState({}) // {idx: true/false}
   const[scaffoldsSubmitted,setScaffoldsSubmitted]=useState(false)
 
@@ -3639,17 +3657,16 @@ function NGSayIt({isOnline,onBack}){
 
   const addToBank=async()=>{
     if(!result||!isOnline)return
-    // Blanket rule: NOTHING enters the stack unapproved. Claude analyzes the
-    // phrase, places it at its true rung of a 4-stage ladder, and SUGGESTS.
-    setAddedToBank(true) // disables button while analysing
+    // UNIFIED PIPELINE — analyzer places it (base/above/below/extend),
+    // verbatim survives, you judge on the card below.
+    setAddedToBank(true)
+    setSaySug({loading:true})
     try{
-      const r=await ngFetch('ng-say-it',{text:result.carioca,forceScaffold:true})
-      const sug=(r?.suggestions||[]).slice(0,1)
-      if(sug.length){
-        setResult(prev=>({...prev,suggestions:[...(prev.suggestions||[]),...sug]}))
-        setScaffoldsSubmitted(false)
-      }else setAddedToBank(false)
-    }catch(_){setAddedToBank(false)}
+      const r=await ngFetch('ng-suggest',{action:'propose',phrase:result.carioca,translation:result.original||'',context_sentence:'',source:'say_it'})
+      if(r?.duplicate)setSaySug({duplicate:true,existing:r.existing})
+      else if(r?.suggestion)setSaySug({sug:r.suggestion})
+      else{setSaySug({error:r?.error||'Analysis failed'});setAddedToBank(false)}
+    }catch(e){setSaySug({error:e.message});setAddedToBank(false)}
   }
 
   const submitScaffolds=async()=>{
@@ -3710,6 +3727,12 @@ function NGSayIt({isOnline,onBack}){
           Edit
         </button>
       </div>
+      {saySug&&<div style={{marginBottom:16}}>
+        {saySug.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Analisando onde entra na escada…</div>}
+        {saySug.duplicate&&<div onClick={()=>{setSaySug(null);setAddedToBank(false)}} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>Você já tem esse: <span style={{color:AC,fontWeight:700}}>{saySug.existing?.base}</span> · toque pra fechar</div>}
+        {saySug.error&&<div onClick={()=>{setSaySug(null);setAddedToBank(false)}} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{saySug.error} · toque pra fechar</div>}
+        {saySug.sug&&<SuggestionCard sug={saySug.sug} onDone={()=>{setSaySug(null)}}/>}
+      </div>}
 
       {/* Scaffold suggestions — user must approve */}
       {result.suggestions?.length>0&&!scaffoldsSubmitted&&<div style={{background:S,border:`1px solid ${YE}33`,borderRadius:16,padding:'16px',marginBottom:12}}>
@@ -4194,6 +4217,51 @@ function NGBrain({isOnline,onBack}){
 // ── NGLearn — the Trilha. Duolingo-class path: winding nodes, progress
 // rings, celebrations, sound. Defensive: every state renders something. ──
 // O Poste — the brand mark: a memory, lit, above the city
+// SuggestionCard — the single approval surface for the unified pipeline.
+// Ouro = the verbatim tapped phrase (the law).
+function SuggestionCard({sug,onDone}){
+  const[busy,setBusy]=useState(false)
+  const p=sug.payload||{}
+  const isExt=p.decision==='extend_existing'
+  const stages=p.scaffold?.stages||[]
+  const resolve=async(verdict,make_base)=>{
+    setBusy(true)
+    try{
+      const r=await ngFetch('ng-suggest',{action:'resolve',suggestion_id:sug.id,verdict,make_base})
+      if(verdict==='approve'&&r?.ok)SFX.unlock()
+      onDone&&onDone(verdict,r)
+    }catch(_){onDone&&onDone('error')}
+  }
+  return<div style={{background:S,border:`1px solid ${GD}55`,borderRadius:16,padding:'14px 15px',marginBottom:10,animation:'up 0.3s ease'}}>
+    <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>
+      ✦ Sugestão · {sug.source} · {isExt?'estende padrão existente':`escada de ${stages.length}`}
+    </div>
+    {isExt?<div>
+      <div style={{fontSize:12,color:MU,marginBottom:4}}>Novo degrau ({p.extension?.position==='below'?'abaixo':'acima'}) num padrão que você já tem:</div>
+      <div style={{fontSize:14,fontWeight:700,color:AC,marginBottom:2}}>{p.extension?.new_stage?.pt}</div>
+      <div style={{fontSize:11,color:MU}}>{p.extension?.new_stage?.en}</div>
+    </div>
+    :<div>
+      {stages.map((s,i)=><div key={i} style={{display:'flex',gap:8,alignItems:'baseline',padding:'4px 0'}}>
+        <span style={{fontSize:9,color:MU,width:14,flexShrink:0}}>{i+1}</span>
+        <div style={{flex:1}}>
+          <span style={{fontSize:13.5,fontWeight:i===p.tapped_stage?800:600,color:i===p.tapped_stage?AC:TX}}>
+            {s.pt}{i===p.tapped_stage&&<span style={{fontSize:8,color:GD,marginLeft:6,letterSpacing:1}}>VOCÊ FALOU</span>}
+          </span>
+          <div style={{fontSize:10,color:MU}}>{s.en}</div>
+        </div>
+      </div>)}
+    </div>}
+    {p.note&&<div style={{fontSize:10.5,color:YE,marginTop:6,lineHeight:1.5}}>⚠ {p.note}</div>}
+    <div style={{display:'flex',gap:8,marginTop:12}}>
+      <button disabled={busy} onClick={()=>resolve('approve')} style={{flex:1,padding:'10px',background:`${GR}14`,border:`1px solid ${GR}55`,borderRadius:11,color:GR,fontWeight:700,fontSize:12.5,cursor:'pointer',fontFamily:FONT}}>{busy?'…':'✓ Aprovar'}</button>
+      {!isExt&&typeof p.tapped_stage==='number'&&p.tapped_stage>0&&
+        <button disabled={busy} onClick={()=>resolve('approve',true)} style={{flex:1,padding:'10px',background:S2,border:`1px solid ${BD}`,borderRadius:11,color:TX,fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:FONT}}>⤴ Como base</button>}
+      <button disabled={busy} onClick={()=>resolve('reject')} style={{padding:'10px 14px',background:'none',border:`1px solid ${BD}`,borderRadius:11,color:MU,fontSize:12.5,cursor:'pointer',fontFamily:FONT}}>✕</button>
+    </div>
+  </div>
+}
+
 function Poste({size=28}){
   return<svg width={size} height={size*0.82} viewBox="0 0 40 33" style={{display:'block'}}>
     <circle cx="20" cy="8" r="6.5" fill="#f0b429" opacity="0.16"/>
@@ -4262,6 +4330,14 @@ function NGLearn({isOnline,onBack,startUnit}){
       setCelebrate({emoji:u.emoji,title:`${u.title} — Nível ${r.new_level}`,sub:'NÍVEL DESBLOQUEADO'})
       load()
     }catch(e){setEvolving(null);setErrMsg('Evolution failed: '+(e?.message||''));setStatus('error')}
+  }
+  const redoLevel=async(u)=>{
+    setSheet(null)
+    try{
+      const r=await ngFetch('ng-path',{action:'redo_level',unit_id:u.unit_id})
+      if(r?.error){setErrMsg(r.error);setStatus('error');return}
+      SFX.tap();load()
+    }catch(e){setErrMsg('Redo failed: '+(e?.message||''));setStatus('error')}
   }
   const stopPoll=()=>{if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null}}
   const startPoll=()=>{if(!pollRef.current)pollRef.current=setInterval(load,8000)}
@@ -4417,6 +4493,9 @@ function NGLearn({isOnline,onBack,startUnit}){
           {!sheet.level_ready&&sheet.pct>=100&&sheet.level_wait_hours>0&&<div style={{marginTop:10,textAlign:'center',fontSize:11.5,color:GD,fontWeight:600}}>
             ⏳ Evolui em {Math.ceil(sheet.level_wait_hours/24)}d — deixa a memória assentar
           </div>}
+          {(sheet.level||1)>1&&sheet.pct===0&&<div style={{marginTop:10}}>
+            <GBtn label="↻ Refazer este nível (nada praticado ainda)" small onClick={()=>redoLevel(sheet)}/>
+          </div>}
         </div>
         <div style={{fontSize:10,color:MU,opacity:0.65,textAlign:'center',marginTop:10}}>Progress = real memory strength. Fades if neglected — units can reopen.</div>
       </div>
@@ -4553,6 +4632,17 @@ function NGToday({isOnline,onBack,goTo}){
 
 // ── NGRadio — Radio Carioca: tune in, infinite buffered show ────────
 function NGRadio({isOnline,onBack}){
+  const[radioSug,setRadioSug]=useState(null)
+  const proposeLine=async(l)=>{
+    SFX.tap()
+    setRadioSug({loading:true})
+    try{
+      const r=await ngFetch('ng-suggest',{action:'propose',phrase:l.pt||l.text||'',translation:l.en||'',context_sentence:'',source:'radio'})
+      if(r?.duplicate)setRadioSug({duplicate:true,existing:r.existing})
+      else if(r?.suggestion)setRadioSug({sug:r.suggestion})
+      else setRadioSug({error:r?.error||'Analysis failed'})
+    }catch(e){setRadioSug({error:e.message})}
+  }
   const[phase,setPhase]=useState('off') // off|tuning|playing
   const[paused,setPaused]=useState(false)
   const[speed,setSpeed]=useState(1)
@@ -4826,11 +4916,21 @@ function NGRadio({isOnline,onBack}){
             fontSize:14,lineHeight:1.6,color:TX,cursor:'pointer',
             boxShadow:active?`0 0 12px ${isChico?RADIO_A:GR}22`:'none'
           }}>{highlightLine(l.pt)}</div>
-          {showTl[i]&&<div style={{maxWidth:'82%',marginTop:3,padding:'6px 10px',background:S2,border:`1px solid ${BD}`,borderRadius:8,fontSize:12,color:MU}}>{l.en}</div>}
+          {showTl[i]&&<div style={{maxWidth:'82%',marginTop:3,padding:'6px 10px',background:S2,border:`1px solid ${BD}`,borderRadius:8,fontSize:12,color:MU,display:'flex',alignItems:'center',gap:8}}>
+            <span style={{flex:1}}>{l.en}</span>
+            <button onClick={e=>{e.stopPropagation();proposeLine(l)}} style={{background:`${RADIO_A}14`,border:`1px solid ${RADIO_A}44`,borderRadius:8,padding:'3px 9px',fontSize:10.5,fontWeight:700,color:RADIO_A,cursor:'pointer',fontFamily:FONT,flexShrink:0}}>✦ padrão</button>
+          </div>}
         </div>
       })}
       <div ref={endRef}/>
     </div>
+
+    {radioSug&&<div style={{position:'fixed',left:12,right:12,bottom:110,zIndex:60,maxWidth:456,margin:'0 auto'}}>
+      {radioSug.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Analisando onde entra na escada…</div>}
+      {radioSug.duplicate&&<div onClick={()=>setRadioSug(null)} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>Você já tem esse: <span style={{color:RADIO_A,fontWeight:700}}>{radioSug.existing?.base}</span> · toque pra fechar</div>}
+      {radioSug.error&&<div onClick={()=>setRadioSug(null)} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{radioSug.error} · toque pra fechar</div>}
+      {radioSug.sug&&<SuggestionCard sug={radioSug.sug} onDone={()=>setRadioSug(null)}/>}
+    </div>}
 
     {/* Back-to-live chip when free scrolling */}
     {phase==='playing'&&!follow&&<div style={{position:'absolute',bottom:118,left:'50%',transform:'translateX(-50%)',zIndex:50}}>
@@ -5053,6 +5153,7 @@ function NGHome({isOnline,go,active=true}){
   const[brainLine,setBrainLine]=useState(null)
   const[loading,setLoading]=useState(true)
   const[milestone,setMilestone]=useState(null)
+  const[pendCount,setPendCount]=useState(0)
 
   useEffect(()=>{
     if(!active||!isOnline){setLoading(false);return}
@@ -5129,6 +5230,12 @@ function NGHome({isOnline,go,active=true}){
         <span style={{display:'block',fontSize:16,color:'#14230e',fontWeight:800}}>{continueTarget.label}</span>
       </button>
     </div>
+
+    {pendCount>0&&<div onClick={()=>go&&go('ng-map')} style={{margin:'12px 20px 0',display:'flex',alignItems:'center',gap:9,background:`${GD}0c`,border:`1px solid ${GD}44`,borderRadius:14,padding:'10px 14px',cursor:'pointer'}}>
+      <span style={{fontSize:14}}>📥</span>
+      <span style={{flex:1,fontSize:12.5,color:TX,fontWeight:600}}>{pendCount} sugest{pendCount===1?'ão':'ões'} esperando seu veredito</span>
+      <span style={{fontSize:11,color:GD,fontWeight:700}}>revisar →</span>
+    </div>}
 
     {/* Live tiles */}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'14px 20px 0'}}>
