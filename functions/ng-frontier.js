@@ -14,7 +14,8 @@ exports.handler=async(event)=>{
     const[
       {data:profile,error:profileErr},
       {data:scaffolds,error:scaffoldErr},
-      {data:recentEvents}
+      {data:recentEvents},
+      {data:memDue}
     ]=await Promise.all([
       sb.from('ng_learner_profile').select('*').eq('user_id',UID).single(),
       sb.from('ng_scaffolds')
@@ -24,7 +25,15 @@ exports.handler=async(event)=>{
         .select('scaffold_id,stage,mode,quality,created_at')
         .eq('user_id',UID)
         .order('created_at',{ascending:false})
-        .limit(500)
+        .limit(500),
+      // ONE CLOCK: reviews are scheduled by the memory engine, nothing else.
+      sb.from('ng_memory')
+        .select('scaffold_id,stage,skill,stability,next_due,last_review')
+        .eq('user_id',UID)
+        .eq('skill','production')
+        .lte('next_due',new Date().toISOString())
+        .order('next_due',{ascending:true})
+        .limit(60)
     ])
 
     console.log('ng-frontier: scaffolds=',scaffolds?.length||0,'err=',scaffoldErr?.message||'none')
@@ -81,21 +90,9 @@ exports.handler=async(event)=>{
             const reviewCount=entry.review_count||0
             const interval=SR_INTERVALS[Math.min(reviewCount,SR_INTERVALS.length-1)]
             const daysSince=lastReview?(now-lastReview.getTime())/86400000:999
-            if(daysSince>=interval){
-              reviewQueue.push({
-                scaffold_id:scaffold.id,
-                base:scaffold.base_portuguese,
-                stage:stage.stage,
-                pt:stage.pt,
-                en:stage.en,
-                context:scaffold.context,
-                category:scaffold.category,
-                isReview:true,
-                days_overdue:Math.round(daysSince-interval),
-                review_count:reviewCount,
-                next_interval:SR_INTERVALS[Math.min(reviewCount+1,SR_INTERVALS.length-1)]
-              })
-            }
+            // LEGACY CLOCK RETIRED (v1 freeze): scheduling belongs to
+            // ng_memory.next_due exclusively. 'controlled' keeps its real
+            // job — unlock gating — and nothing else.
           }
           if(i===stages.length-1)fullyControlled.push(scaffold.id)
           continue
@@ -156,6 +153,33 @@ exports.handler=async(event)=>{
         })
         break // first uncontrolled stage only
       }
+    }
+
+    // ═══ THE ONE CLOCK: reviews = memory rows past their forgetting edge ═══
+    {
+      const scById={};for(const sc of scaffolds)scById[sc.id]=sc
+      const seen=new Set()
+      for(const m of(memDue||[])){
+        const sc=scById[m.scaffold_id];if(!sc)continue
+        const st=(sc.stages||[]).find(s=>Number(s.stage)===Number(m.stage));if(!st)continue
+        const key=m.scaffold_id+'|'+m.stage;if(seen.has(key))continue;seen.add(key)
+        const overdueDays=(Date.now()-new Date(m.next_due).getTime())/86400000
+        reviewQueue.push({
+          scaffold_id:sc.id,
+          base:sc.base_portuguese,
+          stage:st.stage,
+          pt:st.pt,
+          en:st.en,
+          context:sc.context,
+          category:sc.category,
+          isReview:true,
+          days_overdue:Math.max(0,Math.round(overdueDays)),
+          stability:Math.round((m.stability||0)*10)/10,
+          review_count:0,
+          next_interval:Math.round(m.stability||1)
+        })
+      }
+      reviewQueue.sort((a,b)=>b.days_overdue-a.days_overdue)
     }
 
     frontier.sort((a,b)=>b.urgency-a.urgency)
