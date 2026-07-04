@@ -25,7 +25,8 @@ exports.handler=async(event)=>{
 
     // ── Progress tables (V1 + V2 + brain) ─────────────────────────────
     await wipe('ng_scaffold_events')
-    await wipe('ng_path_units')        // trilha regenerates from graph automatically
+    await wipe('ng_path_units')
+    await wipe('ng_suggestions')     // pending pipeline        // trilha regenerates from graph automatically
     await wipe('ng_memory')             // V2 memory engine
     await wipe('ng_daily')              // nightly brain output
     await wipe('ng_radio_segments')     // radio content references old frontier
