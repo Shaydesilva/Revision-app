@@ -5,7 +5,14 @@
 exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
-    const{createClient}=require('@supabase/supabase-js')
+    // ═══ V1 FREEZE CONSTITUTION (do not modify without a declared v2 migration) ═══
+// Memory engine params: first-success stability 3d (q>=4) / 1.5d (q3), fail 0.5d;
+// growth: S*(1+e^1.2*(11-D)*S^-0.05*(e^((1-R)*1.4)-1)*0.35), cap 365d; difficulty
+// drift ±0.35/rep bounded [1,10]. Acquisition: last-4-events avg >= 3. Skills:
+// flashcard→recognition, all else→production. Trilha solid gate: 7d production
+// stability. Evolution cooldown: 72h. These constants ARE the measuring stick —
+// changing them mid-journey invalidates every comparison the learner relies on.
+const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
 
