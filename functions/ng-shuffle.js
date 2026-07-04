@@ -111,7 +111,7 @@ exports.handler=async(event)=>{
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
         body:JSON.stringify({
           model:'claude-sonnet-4-6',max_tokens:250,
-          system:`Create a Portuguese writing challenge for a learner in Rio. Phase ${phase}, difficulty: ${difficulty}.
+          system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nCreate a Portuguese writing challenge for a learner in Rio. Phase ${phase}, difficulty: ${difficulty}.
 Set a vivid specific Rio scenario (bar, beach, date, Uber, party etc) that makes ALL the given patterns natural to use.
 The learner must use every pattern. Write the scenario in English, under 60 words.
 Return JSON only: {"scenario":"string","hint":"one short tip"}`,
@@ -132,7 +132,7 @@ Return JSON only: {"scenario":"string","hint":"one short tip"}`,
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
         body:JSON.stringify({
           model:'claude-sonnet-4-6',max_tokens:400,
-          system:`Evaluate a Portuguese writing challenge for a Carioca learner. Be direct and honest.
+          system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nEvaluate a Portuguese writing challenge for a Carioca learner. Be direct and honest.
 Accept Carioca contractions and informal spelling. Never penalise missing accents.
 Return JSON only.`,
           messages:[{role:'user',content:`Required patterns:\n${words.map((w,i)=>`${i+1}. "${w.pt}"`).join('\n')}\n\nLearner wrote:\n"${answer}"\n\nReturn JSON:
