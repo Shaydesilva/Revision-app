@@ -3222,6 +3222,9 @@ function NGScaffoldMap({isOnline,onBack}){
     {/* Header */}
     {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
 
+    {/* Semantics legend — ✓ is history, rings are now */}
+    <div style={{padding:'0 20px',marginBottom:10,fontSize:10,color:MU,opacity:0.75,lineHeight:1.5}}>✓ = acquired (historical) · trilha rings & constellation glow = memory strength <i>now</i> — they can fade; that's honesty, not a bug.</div>
+
     {/* Pendentes — the suggestion shelf */}
     {pendSugs.length>0&&<div style={{padding:'0 20px',marginBottom:18}}>
       <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>📥 Pendentes · {pendSugs.length}</div>
@@ -3781,16 +3784,29 @@ function NGImport({isOnline,onBack}){
   const[submitted,setSubmitted]=useState(false)
   const[phase,setPhase]=useState('input') // input|review|done
 
+  const[importProg,setImportProg]=useState(null) // {chunk,total,found}
   const analyse=async()=>{
     if(!pasted.trim()||!isOnline)return
     setLoading(true)
+    setSuggestions([])
+    // Client-driven chunk chain — one lesson day per request, timeout-immune.
     try{
-      const data=await ngFetch('ng-import-scaffolds',{notes:pasted.trim(),newCards:[],previewOnly:true})
-      setSuggestions(data.suggestions||[])
-      setDecisions({})
-      setSubmitted(false)
-      setPhase(data.suggestions?.length?'review':'done')
-    }catch(e){console.warn('Import error:',e)}
+      let chunk=0,total=null,acc=[],guard=0,skipTotals={}
+      while(chunk!==null&&guard<40){
+        setImportProg({chunk:chunk+1,total,found:acc.length})
+        const d=await ngFetch('ng-import-scaffolds',{notes:pasted.trim(),chunk})
+        if(d?.error)break
+        total=d.total_chunks||total
+        acc=[...acc,...(d.created||[])]
+        for(const[k,v]of Object.entries(d.skipped||{}))skipTotals[k]=(skipTotals[k]||0)+(v||0)
+        setSuggestions([...acc])
+        setImportProg({chunk:(d.chunk||0)+1,total,found:acc.length,skipped:skipTotals})
+        chunk=(d.next===0||d.next)?d.next:null
+        guard++
+      }
+      setImportProg(p=>({...(p||{}),done:true}))
+      setPhase(acc.length?'review':'done')
+    }catch(e){console.warn('Import error:',e);setPhase(suggestions.length?'review':'done')}
     setLoading(false)
   }
 
@@ -3818,37 +3834,31 @@ function NGImport({isOnline,onBack}){
       style={{width:'100%',minHeight:200,background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',color:TX,fontSize:14,outline:'none',resize:'none',fontFamily:FONT,lineHeight:1.7,marginBottom:12}}
     />
     <PBtn label={loading?'Analysing…':'Analyse notes →'} onClick={analyse} disabled={!pasted.trim()||loading||!isOnline}/>
-    {loading&&<div style={{textAlign:'center',padding:'20px 0'}}><Spinner size={20}/><div style={{color:MU,fontSize:12,marginTop:8}}>Detecting patterns…</div></div>}
+    {loading&&<div style={{textAlign:'center',padding:'20px 0'}}><Spinner size={20}/><div style={{color:MU,fontSize:12,marginTop:8}}>{importProg?`Dia ${importProg.chunk}${importProg.total?'/'+importProg.total:''} · ${importProg.found} propostos…`:'Detecting patterns…'}</div></div>}
   </div>
 
   if(phase==='review')return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
     <button onClick={()=>setPhase('input')} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:16}}>← Back</button>
-    <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:4}}>{suggestions.length} pattern{suggestions.length!==1?'s':''} detected</div>
-    <div style={{fontSize:13,color:MU,marginBottom:20}}>Approve the ones you want in your scaffold bank. Nothing adds without your OK.</div>
-    {suggestions.map((sc,i)=><div key={i} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',marginBottom:10}}>
-      <div style={{fontSize:15,fontWeight:700,color:TX,marginBottom:2}}>{sc.base_portuguese}</div>
-      <div style={{fontSize:12,color:MU,marginBottom:8}}>{sc.base_english||''}</div>
-      {sc.stages?.length>0&&<div style={{marginBottom:10}}>
-        {sc.stages.slice(0,3).map((st,j)=><div key={j} style={{fontSize:11,color:MU,paddingLeft:8,borderLeft:`2px solid ${BD}`,marginBottom:3}}>
-          Stage {st.stage||j+1}: {st.pt}
-        </div>)}
-      </div>}
-      <div style={{display:'flex',gap:8}}>
-        <button onClick={()=>setDecisions(d=>({...d,[i]:true}))}
-          style={{flex:1,padding:'8px',background:decisions[i]===true?`${GR}20`:S2,border:`1px solid ${decisions[i]===true?GR+'44':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===true?GR:TX,fontWeight:600}}>
-          {decisions[i]===true?'✓ Add to bank':'Add to bank'}
-        </button>
-        <button onClick={()=>setDecisions(d=>({...d,[i]:false}))}
-          style={{flex:1,padding:'8px',background:decisions[i]===false?`${RE}12`:S2,border:`1px solid ${decisions[i]===false?RE+'33':BD}`,borderRadius:8,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===false?RE:MU}}>
-          {decisions[i]===false?'✗ Skip':'Skip'}
-        </button>
-      </div>
-    </div>)}
-    {allDecided&&<PBtn label="Confirm decisions" onClick={confirm}/>}
-    <button onClick={()=>{setDecisions({});suggestions.forEach((_,i)=>setDecisions(d=>({...d,[i]:false})));confirm()}}
-      style={{width:'100%',marginTop:10,padding:'12px',background:'none',border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,color:MU}}>
-      Skip all
-    </button>
+    <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:4,fontFamily:FONTD}}>{suggestions.length} padr{suggestions.length!==1?'ões':'ão'} proposto{suggestions.length!==1?'s':''}</div>
+    <div style={{fontSize:12.5,color:MU,marginBottom:6}}>Do caderno do Victor — escadas montadas, tabelas e fonética ignoradas, itens "!" pulados.</div>
+    {importProg?.skipped&&<div style={{fontSize:10.5,color:MU,opacity:0.7,marginBottom:16}}>
+      Ignorado: {importProg.skipped.tables||0} tabelas · {importProg.skipped.phonics||0} fonética · {importProg.skipped.marked_solid||0} já sólidos (!) · {importProg.skipped.meta||0} meta
+    </div>}
+    <div style={{display:'flex',gap:8,marginBottom:14}}>
+      <button onClick={async()=>{
+        SFX.tap()
+        const ids=suggestions.map(s=>s.id)
+        const r=await ngFetch('ng-suggest',{action:'resolve_bulk',ids,verdict:'approve'})
+        if(r?.ok){SFX.complete();setSuggestions([]);setSubmitted(true);setPhase('done')}
+      }} style={{flex:2,padding:'12px',background:`${GR}16`,border:`1px solid ${GR}55`,borderRadius:12,color:GR,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>✓ Aprovar todos ({suggestions.length})</button>
+      <button onClick={async()=>{
+        const ids=suggestions.map(s=>s.id)
+        await ngFetch('ng-suggest',{action:'resolve_bulk',ids,verdict:'reject'})
+        setSuggestions([]);setPhase('done')
+      }} style={{flex:1,padding:'12px',background:'none',border:`1px solid ${BD}`,borderRadius:12,color:MU,fontSize:12.5,cursor:'pointer',fontFamily:FONT}}>✕ Recusar todos</button>
+    </div>
+    {suggestions.map(sg=><SuggestionCard key={sg.id} sug={sg} onDone={()=>setSuggestions(p=>p.filter(x=>x.id!==sg.id))}/>)}
+    {suggestions.length===0&&<div style={{textAlign:'center',padding:'30px',color:MU,fontSize:13}}>Tudo decidido ✓</div>}
   </div>
 
   if(phase==='done')return<div style={{padding:'60px 24px',textAlign:'center',animation:'up 0.3s ease'}}>
@@ -5766,6 +5776,17 @@ export default function App(){
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
         {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-learn',i:'⛰',l:'Learn'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
           <button key={t.k} onClick={()=>{
+              if(t.k==='__export'){
+                SFX.tap()
+                fetch('/.netlify/functions/ng-export').then(r=>r.blob()).then(b=>{
+                  const u=URL.createObjectURL(b)
+                  const a=document.createElement('a')
+                  a.href=u;a.download='carioca-backup-'+new Date().toISOString().slice(0,10)+'.json'
+                  document.body.appendChild(a);a.click();a.remove()
+                  setTimeout(()=>URL.revokeObjectURL(u),4000)
+                }).catch(()=>{})
+                setShowMore(false);return
+              }
               if(t.k==='__sfx'){
                 const off=localStorage.getItem('sfx')==='off'
                 localStorage.setItem('sfx',off?'on':'off')
@@ -5800,6 +5821,7 @@ export default function App(){
             {k:'ng-placement',i:'✦',l:'Placement',d:'Map what you know'},
             {k:'ng-brain',i:'🧠',l:'The Brain',d:'Watch it think'},
             {k:'__sfx',i:'🔊',l:'Sound',d:'Tap to toggle effects'},
+            {k:'__export',i:'⬇',l:'Backup',d:'Download your full journey as JSON'},
           ].map(t=><button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
             <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
             <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
