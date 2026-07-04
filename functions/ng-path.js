@@ -127,6 +127,27 @@ Stages escalate: 1 core → 2 extended → 3 full street flow.`,
       return{statusCode:200,body:JSON.stringify({ok:true,new_level:(unit.level||1)+1,added:newIds.length})}
     }
 
+    // ═══ REDO LEVEL — post-facto rejection of an evolution (untouched only) ═══
+    if(action==='redo_level'){
+      const{unit_id}=JSON.parse(event.body||'{}')
+      const{data:unit}=await sb.from('ng_path_units').select('*').eq('user_id',UID).eq('unit_id',unit_id).single()
+      if(!unit||(unit.level||1)<2)return{statusCode:400,body:JSON.stringify({error:'Nothing to redo'})}
+      const ids=Array.isArray(unit.scaffold_ids)?unit.scaffold_ids:[]
+      const{count:evCount}=await sb.from('ng_scaffold_events')
+        .select('id',{count:'exact',head:true}).eq('user_id',UID).in('scaffold_id',ids)
+      if((evCount||0)>0)return{statusCode:400,body:JSON.stringify({error:'Level already practiced — it stays. Redo is for untouched evolutions only.'})}
+      const hist=Array.isArray(unit.levels)?[...unit.levels]:[]
+      const prev=hist.pop()
+      if(!prev)return{statusCode:400,body:JSON.stringify({error:'No previous level archived'})}
+      await sb.from('ng_scaffolds').delete().eq('user_id',UID).in('id',ids).eq('source','self_extend')
+      await sb.from('ng_path_units').update({
+        scaffold_ids:prev.scaffold_ids,levels:hist,
+        level:prev.level,completed_at:prev.completed_at
+      }).eq('id',unit.id)
+      await brainLog(sb,'path',`"${unit.title}" evolution undone — level ${unit.level} scrapped untouched. The ↑ is live again; evolve when ready for a fresh forge.`,null,2)
+      return{statusCode:200,body:JSON.stringify({ok:true,restored_level:prev.level})}
+    }
+
     // ═══ GET — never generates inline; dispatches + reports bootstrapping ═══
     let{data:units}=await sb.from('ng_path_units').select('*').eq('user_id',UID).order('sort_order')
     if(!units?.length){
