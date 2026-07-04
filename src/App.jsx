@@ -1737,6 +1737,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const lunaLiveRef=useRef('')
   const shouldEndRef=useRef(false)
   const respActiveRef=useRef(false)
+  const recStreamRef=useRef(null)
   const phaseRef=useRef('idle')
   const spectrumRef=useRef(0.35)
   const pttRef=useRef(true)
@@ -1783,6 +1784,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
     if(recorderRef.current){try{if(recorderRef.current.state!=='inactive')recorderRef.current.stop()}catch{}recorderRef.current=null}
     recChunksRef.current=[]
     if(streamRef.current){streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null}
+    if(recStreamRef.current){recStreamRef.current.getTracks().forEach(t=>t.stop());recStreamRef.current=null}
     if(audioRef.current)audioRef.current.srcObject=null
     lunaLiveRef.current=''
     shouldEndRef.current=false
@@ -1958,8 +1960,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
   const transcribeAudio=async(blob)=>{
     if(!blob||blob.size<1000)return
     try{
-      const r=await fetch('/.netlify/functions/ng-transcribe?hint='+encodeURIComponent(
-        ((frontierRef.current||[]).slice(0,10).map(f=>f.pt).filter(Boolean).join(', ')).slice(0,350)),{
+      const r=await fetch('/.netlify/functions/ng-transcribe',{
         method:'POST',
         headers:{'Content-Type':blob.type||'audio/webm'},
         body:blob
@@ -2022,7 +2023,13 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
         try{
           // Safari (iPad!) supports NONE of the webm types — it records mp4/AAC.
           const mimeType=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'].find(m=>MediaRecorder.isTypeSupported(m))||''
-          const rec=new MediaRecorder(stream,mimeType?{mimeType}:{})
+          // CRITICAL: the recorder must NOT share the WebRTC stream — muting
+          // that stream (PTT) silences every consumer, recorder included.
+          // A cloned stream stays live regardless of what OpenAI hears.
+          const recStream=stream.clone()
+          recStream.getAudioTracks().forEach(t=>{t.enabled=true})
+          recStreamRef.current=recStream
+          const rec=new MediaRecorder(recStream,mimeType?{mimeType}:{})
           rec.ondataavailable=e=>{if(e.data&&e.data.size>0)recChunksRef.current.push(e.data)}
           rec.onstop=()=>{
             const chunks=[...recChunksRef.current]
