@@ -69,6 +69,64 @@ exports.handler=async(event)=>{
       return{statusCode:200,body:JSON.stringify({ok:true,chunk,units_written:rows.length,next:chunk+1<cats.length?chunk+1:null})}
     }
 
+    // ═══ LEVEL UP — the unit evolves: new, harder patterns forged live ═══
+    if(action==='level_up'){
+      const{unit_id}=JSON.parse(event.body||'{}')
+      const{data:unit}=await sb.from('ng_path_units').select('*').eq('user_id',UID).eq('unit_id',unit_id).single()
+      if(!unit)return{statusCode:404,body:JSON.stringify({error:'Unit not found'})}
+      // Server-side gate: every current pattern solid + 72h cooldown passed
+      const ids=Array.isArray(unit.scaffold_ids)?unit.scaffold_ids:[]
+      const{data:mem}=await sb.from('ng_memory').select('scaffold_id,stability')
+        .eq('user_id',UID).eq('skill','production').in('scaffold_id',ids)
+      const stab={};(mem||[]).forEach(m=>{if(!stab[m.scaffold_id]||m.stability>stab[m.scaffold_id])stab[m.scaffold_id]=m.stability})
+      const allSolid=ids.length>0&&ids.every(id=>(stab[id]||0)>=(unit.threshold_days||7))
+      const hoursSince=unit.completed_at?(Date.now()-new Date(unit.completed_at).getTime())/3600000:0
+      if(!allSolid||hoursSince<72)return{statusCode:400,body:JSON.stringify({error:'Not ready — patterns must be solid and 72h must pass since completion.'})}
+
+      const[{data:scRows},{data:profile}]=await Promise.all([
+        sb.from('ng_scaffolds').select('id,base_portuguese,base_english,phase,category,context').eq('user_id',UID).in('id',ids),
+        sb.from('ng_learner_profile').select('error_fingerprint,struggle_patterns,phase').eq('user_id',UID).single()
+      ])
+      const current=(scRows||[]).map(s=>`"${s.base_portuguese}" (${s.base_english})`).join('\n')
+      const maxPhase=Math.max(1,...(scRows||[]).map(s=>s.phase||1))
+      const cat=(scRows||[])[0]?.category||'social_foundation'
+      const struggles=Object.keys(profile?.error_fingerprint||{}).slice(0,5).join(', ')||'none logged'
+
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1700,
+          system:`You evolve a Carioca Portuguese learning unit to its next level. The learner MASTERED the current patterns — design 4-5 NEW, harder ones for the SAME situation: longer chains, faster register, more idiomatic/street, weave in their weak spots. Portuguese must be authentic Rio street register. JSON only:
+{"scaffolds":[{"base_portuguese":"","base_english":"","stages":[{"pt":"","en":""},{"pt":"","en":""},{"pt":"","en":""}]}]}
+Stages escalate: 1 core → 2 extended → 3 full street flow.`,
+          messages:[{role:'user',content:`UNIT: "${unit.title}" — ${unit.situation}\nEVOLVING: level ${unit.level||1} → ${(unit.level||1)+1}\nMASTERED PATTERNS:\n${current}\nLEARNER WEAK SPOTS: ${struggles}`}]})
+      })
+      const data=await res.json()
+      let gen=[]
+      try{gen=JSON.parse((data.content?.[0]?.text||'{}').replace(/```json|```/g,'').trim()).scaffolds||[]}catch(_){}
+      if(!gen.length)return{statusCode:500,body:JSON.stringify({error:'Evolution generation failed — try again.'})}
+      const newIds=[]
+      for(const g of gen.slice(0,5)){
+        const id='sc_lvl_'+Date.now()+'_'+Math.random().toString(36).slice(2,5)
+        const{error}=await sb.from('ng_scaffolds').insert({
+          id,user_id:UID,base_portuguese:g.base_portuguese,base_english:g.base_english||'',
+          stages:(g.stages||[]).map((s,i)=>({stage:i+1,pt:s.pt,en:s.en,acquired:false,acquired_at:null,practice_count:0,modes_used:[]})),
+          current_stage:1,phase:Math.min(4,maxPhase+1),category:cat,
+          context:unit.situation||'general',cluster:unit.unit_id,source:'self_extend',last_practiced:null
+        })
+        if(!error)newIds.push(id)
+      }
+      if(!newIds.length)return{statusCode:500,body:JSON.stringify({error:'Could not write evolved patterns'})}
+      await sb.from('ng_path_units').update({
+        levels:[...(Array.isArray(unit.levels)?unit.levels:[]),{level:unit.level||1,scaffold_ids:ids,completed_at:unit.completed_at}],
+        scaffold_ids:newIds,
+        level:(unit.level||1)+1,
+        completed_at:null
+      }).eq('id',unit.id)
+      await brainLog(sb,'path',`"${unit.title}" evolved to level ${(unit.level||1)+1}: ${newIds.length} harder patterns forged from mastery + weak spots (${struggles}). The trilha grows.`,null,3)
+      return{statusCode:200,body:JSON.stringify({ok:true,new_level:(unit.level||1)+1,added:newIds.length})}
+    }
+
     // ═══ GET — never generates inline; dispatches + reports bootstrapping ═══
     let{data:units}=await sb.from('ng_path_units').select('*').eq('user_id',UID).order('sort_order')
     if(!units?.length){
@@ -91,7 +149,9 @@ exports.handler=async(event)=>{
     ])
     const stab={};(mem||[]).forEach(m=>{if(!stab[m.scaffold_id]||m.stability>stab[m.scaffold_id])stab[m.scaffold_id]=m.stability})
     const scMap={};(scaffolds||[]).forEach(s=>{scMap[s.id]=s})
+    const COOLDOWN_H=72 // level-up cooldown: memory needs to settle (spacing effect)
     let currentAssigned=false
+    const stampQueue=[]
     const enriched=(units||[]).map(u=>{
       const ids=Array.isArray(u.scaffold_ids)?u.scaffold_ids:[]
       const per=ids.map(id=>({
@@ -105,8 +165,16 @@ exports.handler=async(event)=>{
       let status=pct>=100?'complete':started?'in_progress':'locked'
       if(status==='locked'&&!currentAssigned){status='current';currentAssigned=true}
       if(status==='in_progress')currentAssigned=true
-      return{...u,patterns:per,pct,status}
+      // Level machinery: stamp first completion of the CURRENT level;
+      // gate the upgrade behind a 72h cooldown so mastery has to survive sleep.
+      let completedAt=u.completed_at
+      if(pct>=100&&!completedAt){completedAt=new Date().toISOString();stampQueue.push({id:u.id,completed_at:completedAt})}
+      const hoursSince=completedAt?(Date.now()-new Date(completedAt).getTime())/3600000:0
+      const level_ready=pct>=100&&completedAt&&hoursSince>=COOLDOWN_H
+      const level_wait_hours=pct>=100&&!level_ready?Math.max(0,Math.ceil(COOLDOWN_H-hoursSince)):0
+      return{...u,patterns:per,pct,status,level:u.level||1,level_ready,level_wait_hours,completed_at:completedAt}
     })
+    for(const s of stampQueue){await sb.from('ng_path_units').update({completed_at:s.completed_at}).eq('id',s.id)}
     return{statusCode:200,body:JSON.stringify({units:enriched})}
   }catch(e){
     return{statusCode:500,body:JSON.stringify({error:e.message})}
