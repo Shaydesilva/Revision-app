@@ -3263,6 +3263,8 @@ function NGScaffoldMap({isOnline,onBack}){
       {[['constellation','✦ Live map'],['grid','⊞ Grid']].map(([k,l])=>
         <button key={k} onClick={()=>setMapView(k)}
           style={{flex:1,padding:'10px',background:mapView===k?`${AC}18`:S2,border:`1px solid ${mapView===k?AC+'55':BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:mapView===k?700:400,color:mapView===k?AC:MU}}>{l}</button>)}
+      <button onClick={()=>{SFX.tap();fetch('/.netlify/functions/ng-export').then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='carioca-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}).catch(()=>{})}}
+        style={{padding:'10px 14px',background:S2,border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:14,color:GD}}>⬇</button>
     </div>
 
     {/* Overall progress bar */}
