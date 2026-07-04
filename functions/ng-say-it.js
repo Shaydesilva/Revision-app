@@ -7,7 +7,7 @@ exports.handler=async(event)=>{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
-    const{text='',addToBank=false,cardData=null,approvedScaffolds=[]}=JSON.parse(event.body||'{}')
+    const{text='',addToBank=false,cardData=null,approvedScaffolds=[],forceScaffold=false}=JSON.parse(event.body||'{}')
 
     // Handle adding approved scaffolds to bank
     if(approvedScaffolds.length){
@@ -18,7 +18,7 @@ exports.handler=async(event)=>{
           user_id:UID,
           base_portuguese:sc.base_portuguese,
           base_english:sc.base_english||'',
-          stages:sc.stages,
+          stages:(sc.stages||[]).map((st,i)=>({stage:st.stage||i+1,pt:st.pt,en:st.en,acquired:false,acquired_at:null,practice_count:0,modes_used:[]})),
           current_stage:1,
           phase:1,
           category:sc.category||'social_foundation',
@@ -59,7 +59,7 @@ exports.handler=async(event)=>{
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({
         model:'claude-sonnet-4-6',max_tokens:600,
-        system:`You are a Carioca Portuguese expert. You translate text to natural Rio de Janeiro Portuguese and identify scaffold patterns.
+        system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nYou are a Carioca Portuguese expert. You translate text to natural Rio de Janeiro Portuguese and identify scaffold patterns.
 
 TRANSLATION RULES:
 - Use Carioca register: contractions (tô/tá/tamo), dropped subjects, local expressions
@@ -71,6 +71,7 @@ SCAFFOLD DETECTION:
 A scaffold is a conversational pattern with depth — a phrase that can be naturally extended in stages.
 Only suggest NEW scaffolds not in the existing bank. Only suggest if genuinely useful for Rio social life.
 Max 2 suggestions per call.
+${forceScaffold?`FORCE MODE: You MUST return exactly ONE scaffold built around the given phrase. ANALYZE the phrase's register and complexity, then PLACE IT at its correct rung of a natural 4-stage acquisition ladder (anchor_stage 1-4): if it's already complex street Portuguese it belongs at stage 3-4 with simpler foundations built BENEATH it; if it's a simple base it sits at stage 1 with extensions built above. The ladder must feel like one pattern family growing, not four unrelated lines. Include "anchor_stage" in the JSON.`:''}
 
 Existing bases (don't suggest these): ${Array.from(existingBases).slice(0,30).join(', ')}
 
@@ -104,7 +105,7 @@ Return JSON only:
 
     // Filter scaffold suggestions against existing
     const suggestions=(result.scaffolds||[]).filter(s=>
-      s.base_portuguese&&!existingBases.has(s.base_portuguese.toLowerCase().trim())
+      s.base_portuguese&&(forceScaffold||!existingBases.has(s.base_portuguese.toLowerCase().trim()))
     )
 
     // Generate TTS audio
