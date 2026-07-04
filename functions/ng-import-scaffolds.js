@@ -78,7 +78,7 @@ exports.handler=async(event)=>{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2000,
-        system:`You are the notes decision engine for a Carioca Portuguese learner's lesson notes (teacher: Victor). Extract SCAFFOLD candidates — nothing else.
+        system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nYou are the notes decision engine for a Carioca Portuguese learner's lesson notes (teacher: Victor). Extract SCAFFOLD candidates — nothing else.
 
 EXTRACT (candidates):
 - Natural, complete utterances a Carioca actually says: interjections, greetings, questions, replies, functional scripts (restaurant/shopping/directions), colloquial gems (incl. vulgar street register — it's the point), double meanings.
