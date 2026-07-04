@@ -2,6 +2,7 @@
 // Actions: chat (adaptive ladder probe), finalize (transcript → placement matrix → fill)
 
 const{createClient}=require('@supabase/supabase-js')
+const REGISTER_LAW="CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise)."
 const UID='00000000-0000-0000-0000-000000000001'
 
 async function brainLog(sb,proc,thought,data=null,importance=1){
@@ -12,7 +13,7 @@ async function claude(system,messages,maxTokens=800){
   const res=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system,messages})
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system:REGISTER_LAW+'\n\n'+system,messages})
   })
   const data=await res.json()
   return(data.content?.[0]?.text||'').replace(/```json|```/g,'').trim()
