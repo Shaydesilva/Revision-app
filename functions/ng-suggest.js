@@ -26,6 +26,44 @@ exports.handler=async(event)=>{
       return{statusCode:200,body:JSON.stringify({suggestions:data||[]})}
     }
 
+    // ── RESOLVE BULK — batch verdicts (Victor import review) ─────────
+    if(action==='resolve_bulk'){
+      const{ids=[],verdict='approve'}=body
+      if(!ids.length)return{statusCode:400,body:JSON.stringify({error:'No ids'})}
+      if(verdict==='reject'){
+        await sb.from('ng_suggestions').update({status:'rejected'}).eq('user_id',UID).in('id',ids)
+        return{statusCode:200,body:JSON.stringify({ok:true,rejected:ids.length})}
+      }
+      let approved=0
+      const boosts={}
+      for(const sid of ids.slice(0,60)){
+        const{data:sug}=await sb.from('ng_suggestions').select('*').eq('user_id',UID).eq('id',sid).single()
+        if(!sug||sug.status!=='pending')continue
+        const p=sug.payload||{}
+        const scf=p.scaffold||{}
+        const stages=(scf.stages||[]).map((st,i)=>({stage:i+1,pt:st.pt,en:st.en,acquired:false,acquired_at:null,practice_count:0,modes_used:[]}))
+        if(!stages.length)continue
+        const id='sc_sug_'+Date.now()+'_'+Math.random().toString(36).slice(2,5)
+        const{error}=await sb.from('ng_scaffolds').insert({
+          id,user_id:UID,base_portuguese:stages[0].pt,base_english:stages[0].en||scf.base_english||'',
+          stages,current_stage:1,phase:scf.phase||1,category:scf.category||'social_foundation',
+          context:scf.context||sug.source||'general',cluster:'suggested',source:sug.source||'suggested',last_practiced:null
+        })
+        if(error)continue
+        approved++
+        if(p.victor_mark==='struggling')boosts[id]=3
+        await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
+      }
+      if(Object.keys(boosts).length){
+        try{
+          const{data:prof}=await sb.from('ng_learner_profile').select('priority_boosts').eq('user_id',UID).single()
+          await sb.from('ng_learner_profile').update({priority_boosts:{...(prof?.priority_boosts||{}),...boosts}}).eq('user_id',UID)
+        }catch(_){}
+      }
+      await brainLog(sb,`Victor import: ${approved} patterns approved into the bank${Object.keys(boosts).length?`, ${Object.keys(boosts).length} flagged struggling by Victor → priority boosted`:''}.`,2)
+      return{statusCode:200,body:JSON.stringify({ok:true,approved,boosted:Object.keys(boosts).length})}
+    }
+
     // ── RESOLVE ──────────────────────────────────────────────────────
     if(action==='resolve'){
       const{suggestion_id,verdict,make_base=false}=body
@@ -69,6 +107,12 @@ exports.handler=async(event)=>{
       })
       if(error)return{statusCode:500,body:JSON.stringify({error:error.message})}
       await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
+      if(p.victor_mark==='struggling'){
+        try{
+          const{data:prof}=await sb.from('ng_learner_profile').select('priority_boosts').eq('user_id',UID).single()
+          await sb.from('ng_learner_profile').update({priority_boosts:{...(prof?.priority_boosts||{}),[id]:3}}).eq('user_id',UID)
+        }catch(_){}
+      }
       await brainLog(sb,`Suggestion approved: new pattern "${stages[0]?.pt}" (${stages.length} stages) from ${sug.source}. Verbatim phrase preserved at stage ${(make_base?1:(p.tapped_stage||0)+1)}.`,2)
       return{statusCode:200,body:JSON.stringify({ok:true,scaffold_id:id})}
     }
