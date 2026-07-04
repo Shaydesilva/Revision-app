@@ -245,6 +245,23 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
           if(reordered[i].sort_order!==i)await sb.from('ng_path_units').update({sort_order:i}).eq('id',reordered[i].id)
         }
       }
+      // Evolution suggestions — units ready to level up get a nudge (max 2)
+      const{data:allUnits}=await sb.from('ng_path_units').select('unit_id,title,level,completed_at,is_side_quest').eq('user_id',UID)
+      const ready=(allUnits||[]).filter(u=>u.completed_at&&(Date.now()-new Date(u.completed_at).getTime())>=72*3600000).slice(0,2)
+      for(const u of ready){
+        await brainLog(sb,'path',`"${u.title}" está pronta pra evoluir — nível ${(u.level||1)+1} esperando. O ↑ tá aceso na trilha. Sua decisão.`,null,3)
+      }
+      // Evolution nudge: units past the 72h cooldown get a brain-log suggestion.
+      // Suggest, never auto-evolve — the ↑ has to be the learner's tap.
+      try{
+        const{data:pu}=await sb.from('ng_path_units').select('unit_id,title,level,completed_at,scaffold_ids').eq('user_id',UID).not('completed_at','is',null)
+        for(const u of(pu||[])){
+          const hrs=(Date.now()-new Date(u.completed_at).getTime())/3600000
+          if(hrs>=72){
+            await brainLog(sb,'path',`"${u.title}" has been solid for ${Math.floor(hrs/24)} days — it's ready to evolve to level ${(u.level||1)+1}. The ↑ is waiting on the trilha.`,null,2)
+          }
+        }
+      }catch(_){}
     }catch(pathErr){console.log('path maintenance skipped:',pathErr.message)}
 
     // ── Final update — remaining fields (row was created progressively) ──
