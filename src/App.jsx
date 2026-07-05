@@ -4296,7 +4296,7 @@ function Confetti(){
   </div>
 }
 
-function NGLearn({isOnline,onBack,startUnit}){
+function NGLearn({isOnline,onBack,startUnit,startAula}){
   const[status,setStatus]=useState('loading') // loading|building|ready|empty|error
   const[units,setUnits]=useState([])
   const[sheet,setSheet]=useState(null) // expanded unit
@@ -4499,6 +4499,7 @@ function NGLearn({isOnline,onBack,startUnit}){
         </div>)}
         <div style={{marginTop:16}}>
           <PBtn label={sheet.status==='complete'?'↻ Revisar unidade':'▶ Praticar esta unidade'} onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startUnit(u)}}/>
+          <div style={{marginTop:8}}><GBtn label="🎓 Aula guiada — Escuta · Pratica · Cena" onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startAula&&startAula(u)}}/></div>
           {sheet.level_ready&&<div style={{marginTop:10}}>
             <PBtn label={`⬆ Evoluir para nível ${(sheet.level||1)+1}`} color={GR} onClick={()=>levelUp(sheet)}/>
             <div style={{fontSize:10,color:MU,textAlign:'center',marginTop:6}}>Claude forja 4-5 padrões mais difíceis desta situação, no momento — dos seus pontos fracos.</div>
@@ -5205,7 +5206,148 @@ function corruptPT(pt){
 // "How many minutes have you got?" -> countdown -> atoms from EVERYTHING
 // (reviews first, grammar guaranteed, constructor as an atom) -> every rep
 // graded into the one engine. Congruency is everything.
-function NGTreino({isOnline,onBack}){
+
+// ═══ NGAula — the guided lesson: Escuta → Pratica → Cena ═════════════
+// Layer-2 generated theater over the same atoms & the same engine.
+function NGAula({isOnline,unit,onBack}){
+  const[st,setSt]=useState('gen') // gen|escuta|practice|cena|done|nopack
+  const[pack,setPack]=useState(null)
+  const[playing,setPlaying]=useState(-1)
+  const[showEn,setShowEn]=useState({})
+  const[turnIdx,setTurnIdx]=useState(0)
+  const[gapAns,setGapAns]=useState('')
+  const[gapEval,setGapEval]=useState(null)
+  const[gapBusy,setGapBusy]=useState(false)
+  const[cenaScore,setCenaScore]=useState([])
+  const audioRef=useRef(null)
+
+  useEffect(()=>{
+    if(!unit){onBack();return}
+    ngFetch('ng-lesson-gen',{unit_id:unit.unit_id})
+      .then(r=>{if(r?.pack){setPack(r.pack);setSt('escuta')}else setSt('nopack')})
+      .catch(()=>setSt('nopack'))
+    return()=>{if(audioRef.current){audioRef.current.pause();audioRef.current=null}}
+  },[])
+
+  const playLine=async(i)=>{
+    const l=pack.dialogue[i];if(!l)return
+    setPlaying(i)
+    try{
+      const r=await ngFetch('ng-tts',{text:l.pt,voice:l.sp==='B'?'nova':'onyx'})
+      if(r?.audio){
+        if(audioRef.current)audioRef.current.pause()
+        const a=new Audio('data:audio/mp3;base64,'+r.audio)
+        audioRef.current=a
+        a.onended=()=>setPlaying(-1)
+        a.play()
+      }else setPlaying(-1)
+    }catch(_){setPlaying(-1)}
+  }
+
+  const submitGap=async(gap)=>{
+    if(gapBusy||!gapAns.trim())return
+    setGapBusy(true)
+    const r=await ngFetch('ng-write-eval',{target_pt:gap.target_pt,user_answer:gapAns,en_prompt:gap.prompt_en,scaffold_id:gap.scaffold_id,stage:gap.stage||1}).catch(()=>({quality:2,feedback:'—'}))
+    setGapEval(r);setGapBusy(false)
+    const q=r.quality||2
+    setCenaScore(s=>[...s,q])
+    if(gap.scaffold_id&&isOnline)
+      ngFetch('ng-session-end',{mode:'daily',events:[{scaffold_id:gap.scaffold_id,stage:gap.stage||1,quality:q,mode:'phrase'}],duration_seconds:30}).catch(()=>{})
+  }
+  const nextTurn=()=>{setGapAns('');setGapEval(null);setTurnIdx(i=>i+1)}
+
+  const Narr=({pt,en})=>pt?<div style={{textAlign:'center',margin:'0 0 16px'}}>
+    <div style={{fontSize:12.5,color:AC,fontWeight:700,fontStyle:'italic'}}>"{pt}"</div>
+    <div style={{fontSize:10,color:MU}}>{en} — Bia</div>
+  </div>:null
+
+  if(st==='gen')return<div style={{padding:'130px 20px',textAlign:'center'}}>
+    <div style={{animation:'float 2s ease-in-out infinite',display:'inline-block'}}><Poste size={42}/></div>
+    <div style={{fontSize:14,fontWeight:700,color:TX,marginTop:16,fontFamily:FONTD}}>Claude montando a aula…</div>
+    <div style={{fontSize:11,color:MU,marginTop:6}}>{unit?.title} · diálogo + cena, do teu mundo</div>
+  </div>
+
+  if(st==='nopack')return<div style={{padding:'80px 20px',textAlign:'center'}}>
+    <div style={{fontSize:13,color:MU,marginBottom:18}}>A aula guiada não carregou — mas o treino da unidade tá de pé.</div>
+    <PBtn label="▶ Praticar a unidade" onClick={()=>setSt('practice')}/>
+    <div style={{marginTop:10}}><GBtn label="← Voltar" onClick={onBack}/></div>
+  </div>
+
+  if(st==='escuta')return<div style={{padding:'24px 20px 100px',animation:'up 0.35s ease'}}>
+    <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:14}}>← sair</button>
+    <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:4}}>AULA · ATO 1 — ESCUTA</div>
+    <div style={{fontSize:20,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:12}}>{unit.emoji} {unit.title}</div>
+    <Narr pt={pack.narr?.open_pt} en={pack.narr?.open_en}/>
+    {pack.dialogue.map((l,i)=><div key={i} style={{display:'flex',gap:10,marginBottom:10,alignItems:'flex-start'}}>
+      <button onClick={()=>playLine(i)} style={{width:34,height:34,borderRadius:17,background:playing===i?AC:S2,border:`1px solid ${playing===i?AC:BD}`,color:playing===i?'#16240f':MU,fontSize:13,cursor:'pointer',flexShrink:0}}>{playing===i?'◼':'▶'}</button>
+      <div onClick={()=>setShowEn(s=>({...s,[i]:!s[i]}))} style={{flex:1,background:l.sp==='B'?S:'#132a1c',border:`1px solid ${BD}`,borderRadius:'4px 14px 14px 14px',padding:'10px 13px',cursor:'pointer'}}>
+        <div style={{fontSize:8.5,color:l.sp==='B'?COR_SPEED:GR,fontWeight:800,letterSpacing:1.5,marginBottom:3}}>{l.sp==='B'?'BIA':'CHICO'}</div>
+        <div style={{fontSize:14,color:TX,fontWeight:600,lineHeight:1.55}}>{l.pt}</div>
+        {showEn[i]&&<div style={{fontSize:11,color:MU,marginTop:4}}>{l.en}</div>}
+      </div>
+    </div>)}
+    <div style={{fontSize:10,color:MU,textAlign:'center',margin:'6px 0 14px'}}>toca na fala pra ver o inglês · o ouvido antes da boca</div>
+    <PBtn label="Agora pratica →" onClick={()=>{SFX.tap();setSt('practice')}}/>
+  </div>
+
+  if(st==='practice')return<NGTreino isOnline={isOnline} seedUnit={unit.unit_id}
+    onBack={onBack} onDone={()=>{setSt(pack?.cena?.turns?.length?'cena':'done');if(!pack?.cena)SFX.complete()}}/>
+
+  if(st==='cena'){
+    const turns=pack.cena.turns||[]
+    const t=turns[turnIdx]
+    return<div style={{padding:'24px 20px 100px',animation:'up 0.35s ease'}}>
+    <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:4}}>AULA · ATO FINAL — CENA</div>
+    <div style={{fontSize:13,color:TX,fontWeight:700,marginBottom:2}}>{pack.cena.setting_pt}</div>
+    <div style={{fontSize:10.5,color:MU,marginBottom:16}}>{pack.cena.setting_en} · agora é você na cena</div>
+    <Narr pt={pack.narr?.mid_pt} en={pack.narr?.mid_en}/>
+    {turns.slice(0,turnIdx+1).map((tt,i)=>tt.gap
+      ?(i<turnIdx||gapEval?.quality>=0&&i===turnIdx&&false?null:null)
+      :null)}
+    {turns.slice(0,turnIdx).map((tt,i)=><div key={i} style={{marginBottom:10}}>
+      {tt.gap
+        ?<div style={{textAlign:'right'}}><div style={{display:'inline-block',background:AC,borderRadius:'14px 4px 14px 14px',padding:'9px 13px',fontSize:13.5,fontWeight:700,color:'#16240f',maxWidth:'85%'}}>{tt.gap._said||tt.gap.target_pt}</div></div>
+        :<div style={{display:'inline-block',background:S,border:`1px solid ${BD}`,borderRadius:'4px 14px 14px 14px',padding:'9px 13px',fontSize:13.5,color:TX,maxWidth:'85%'}}><span style={{fontSize:8.5,color:tt.sp==='B'?COR_SPEED:GR,fontWeight:800}}>{tt.sp==='B'?'BIA ':'CHICO '}</span>{tt.pt}</div>}
+    </div>)}
+    {t&&!t.gap&&<div style={{marginBottom:14}}>
+      <div style={{display:'inline-block',background:S,border:`1.5px solid ${GD}66`,borderRadius:'4px 14px 14px 14px',padding:'11px 14px',fontSize:14.5,color:TX,maxWidth:'88%'}}>
+        <span style={{fontSize:8.5,color:t.sp==='B'?COR_SPEED:GR,fontWeight:800}}>{t.sp==='B'?'BIA ':'CHICO '}</span>{t.pt}
+        <div style={{fontSize:10.5,color:MU,marginTop:4}}>{t.en}</div>
+      </div>
+      <div style={{marginTop:14}}><PBtn label="Sua vez →" onClick={nextTurn}/></div>
+    </div>}
+    {t&&t.gap&&<div>
+      <div style={{fontSize:12,color:GD,fontWeight:700,marginBottom:8}}>🎬 Sua fala: {t.gap.prompt_en}</div>
+      <textarea value={gapAns} onChange={e=>setGapAns(e.target.value)} disabled={!!gapEval}
+        placeholder="fala do teu jeito…" style={{width:'100%',minHeight:64,background:S2,border:`1.5px solid ${gapEval?(gapEval.quality>=4?GR:GD):BD}`,borderRadius:14,padding:'12px 14px',fontSize:15,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
+      {gapEval&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'11px 13px'}}>
+        <div style={{fontSize:12,color:TX,lineHeight:1.6}}>{gapEval.tip||gapEval.feedback}</div>
+        {gapEval.quality<5&&gapEval.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:5}}>Carioca raiz: <b>{gapEval.carioca_correction}</b></div>}
+      </div>}
+      <div style={{marginTop:12}}>
+        {!gapEval?<PBtn label={gapBusy?'Avaliando…':'Falar'} onClick={()=>submitGap(t.gap)}/>
+        :<PBtn label={turnIdx>=turns.length-1?'Fechar a cena':'Continuar a cena →'} onClick={()=>{
+          t.gap._said=gapAns
+          if(turnIdx>=turns.length-1){SFX.complete();setSt('done')}else nextTurn()
+        }}/>}
+      </div>
+    </div>}
+    {!t&&<PBtn label="Fechar a cena" onClick={()=>{SFX.complete();setSt('done')}}/>}
+  </div>}
+
+  if(st==='done'){
+    const avg=cenaScore.length?Math.round(cenaScore.reduce((a,b)=>a+b,0)/cenaScore.length*10)/10:null
+    return<div style={{padding:'80px 20px',textAlign:'center',animation:'up 0.4s ease'}}>
+    <div style={{fontSize:46}}>🎓</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'12px 0 4px'}}>Aula fechada</div>
+    <Narr pt={pack?.narr?.close_pt} en={pack?.narr?.close_en}/>
+    {avg&&<div style={{fontSize:12,color:MU,marginBottom:18}}>Cena: qualidade média {avg} — tudo já entrou no motor.</div>}
+    <PBtn label="Voltar" onClick={onBack}/>
+  </div>}
+  return null
+}
+
+function NGTreino({isOnline,onBack,seedUnit,onDone}){
   const[stage,setStage]=useState('gate') // gate|placement-intro|pick|load|run|done|placed
   const placementRef=useRef(false)
   const placeResults=useRef([])
@@ -5224,6 +5366,7 @@ function NGTreino({isOnline,onBack}){
   const atomStartRef=useRef(0)
   const tickRef=useRef(null)
   useEffect(()=>{
+    if(seedUnit){start(8,seedUnit);return} // Aula practice block: fixed 8 min, unit-focused
     if(!isOnline){setStage('pick');return}
     ngFetch('ng-placement-seed',{action:'status'})
       .then(r=>setStage(r?.done?'pick':'placement-intro'))
@@ -5249,12 +5392,12 @@ function NGTreino({isOnline,onBack}){
       buildAtom(q[0],0);setStage('run')
     }catch(_){setStage('pick')}
   }
-  const start=async(m)=>{
+  const start=async(m,unitId)=>{
     setMins(m);setStage('load')
     try{
       const[due,def]=await Promise.all([
-        ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
-        ngFetch('ng-frontier').catch(()=>({}))
+        unitId?Promise.resolve({}):ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
+        unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId}).catch(()=>({})):ngFetch('ng-frontier').catch(()=>({}))
       ])
       const dueItems=(due?.frontier||[]).map(x=>({...x,isReview:true}))
       let front=(def?.frontier||[]).filter(x=>!dueItems.some(d=>d.scaffold_id===x.scaffold_id&&d.stage===x.stage))
@@ -5437,7 +5580,7 @@ function NGTreino({isOnline,onBack}){
         <span style={{color:GR,fontWeight:700}}>{g.delta||'↑'}</span>
       </div>)}
     </div>}
-    <PBtn label="Voltar pro Home" onClick={onBack}/>
+    <PBtn label={onDone?"Continuar pra Cena →":"Voltar pro Home"} onClick={onDone||onBack}/>
   </div>}
 
   // ═══ RUN ═══
@@ -6017,6 +6160,7 @@ export default function App(){
   const[ngScreen,setNgScreen]=useState('ng-home')
   const[showMore,setShowMore]=useState(false)
   const[studySeed,setStudySeed]=useState(null) // {deck:'unit',unit_id,title} from Learn
+  const[aulaUnit,setAulaUnit]=useState(null)
   const[loaded,setLoaded]=useState(false)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
 
@@ -6230,6 +6374,7 @@ export default function App(){
       <div style={{display:ngScreen==='ng-phrase'?'block':'none'}}><NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} active={ngScreen==='ng-phrase'}/></div>
       {/* Conditional — fresh each visit */}
       {ngScreen==='ng-treino'&&<NGTreino isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-aula'&&<NGAula isOnline={isOnline} unit={aulaUnit} onBack={()=>setNgScreen('ng-learn')}/>}
       {ngScreen==='ng-voice'&&<VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true} ngMode={true}/>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} seed={studySeed} clearSeed={()=>setStudySeed(null)}/>}
@@ -6241,7 +6386,8 @@ export default function App(){
       {ngScreen==='ng-placement'&&<NGPlacementChat isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-brain'&&<NGBrain isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-learn'&&<NGLearn isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}
-        startUnit={u=>{setStudySeed({deck:'unit',unit_id:u.unit_id,title:u.title});setNgScreen('ng-study')}}/>}
+        startUnit={u=>{setStudySeed({deck:'unit',unit_id:u.unit_id,title:u.title});setNgScreen('ng-study')}}
+        startAula={u=>{setAulaUnit(u);setNgScreen('ng-aula')}}/>}
       <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       </ErrorBoundary>
       {/* Next Gen Nav — 5 primary + More sheet */}
