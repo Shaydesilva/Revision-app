@@ -97,7 +97,7 @@ exports.handler=async(event)=>{
 
       const[{data:scRows},{data:profile}]=await Promise.all([
         sb.from('ng_scaffolds').select('id,base_portuguese,base_english,phase,category,context').eq('user_id',UID).in('id',ids),
-        sb.from('ng_learner_profile').select('error_fingerprint,struggle_patterns,phase').eq('user_id',UID).single()
+        sb.from('ng_learner_profile').select('error_fingerprint,struggle_patterns,phase,life_context').eq('user_id',UID).single()
       ])
       const current=(scRows||[]).map(s=>`"${s.base_portuguese}" (${s.base_english})`).join('\n')
       const maxPhase=Math.max(1,...(scRows||[]).map(s=>s.phase||1))
@@ -111,7 +111,7 @@ exports.handler=async(event)=>{
           system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nYou evolve a Carioca Portuguese learning unit to its next level. The learner MASTERED the current patterns — design 4-5 NEW, harder ones for the SAME situation: longer chains, faster register, more idiomatic/street, weave in their weak spots. Portuguese must be authentic Rio street register — real gíria a Carioca says TODAY, never textbook-flavored or invented slang. If unsure a construction is natural, choose a simpler one that definitely is. JSON only:
 {"scaffolds":[{"base_portuguese":"","base_english":"","stages":[{"pt":"","en":""},{"pt":"","en":""},{"pt":"","en":""}]}]}
 Stages escalate: 1 core → 2 extended → 3 full street flow.`,
-          messages:[{role:'user',content:`UNIT: "${unit.title}" — ${unit.situation}\nEVOLVING: level ${unit.level||1} → ${(unit.level||1)+1}\nMASTERED PATTERNS:\n${current}\nLEARNER WEAK SPOTS: ${struggles}`}]})
+          messages:[{role:'user',content:`UNIT: "${unit.title}" — ${unit.situation}\nEVOLVING: level ${unit.level||1} → ${(unit.level||1)+1}\nMASTERED PATTERNS:\n${current}\nLEARNER WEAK SPOTS: ${struggles}\nLEARNER LIFE (principles — draw scenarios from these THEMES, never invent private people): ${profile?.life_context||'general Rio life'}`}]})
       })
       const data=await res.json()
       let gen=[]

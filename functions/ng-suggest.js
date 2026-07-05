@@ -133,7 +133,7 @@ exports.handler=async(event)=>{
           return{statusCode:200,body:JSON.stringify({duplicate:true,existing:{id:sc.id,base:sc.base_portuguese,at_stage:st.stage}})}
     }
     const{data:profile}=await sb.from('ng_learner_profile')
-      .select('phase,controlled').eq('user_id',UID).single()
+      .select('phase,controlled,life_context').eq('user_id',UID).single()
     const words=new Set(np.split(' '))
     const related=(bank||[]).filter(sc=>norm(sc.base_portuguese).split(' ').some(w=>w.length>2&&words.has(w))).slice(0,15)
     const sample=(bank||[]).slice(0,25)
@@ -159,7 +159,7 @@ JSON only:
  "tapped_stage":0,
  "extension":{"scaffold_id":"","new_stage":{"pt":"","en":""},"position":"above"|"below"},
  "note":""}`,
-        messages:[{role:'user',content:`TAPPED PHRASE (verbatim, the law): "${phrase}"\nTRANSLATION: ${translation||'unknown'}\nHEARD IN: ${context_sentence||'no context'}\nSOURCE: ${source}\n\nBANK REFERENCE (for extend/dedupe decisions):\n${ref||'empty bank'}`}]})
+        messages:[{role:'user',content:`TAPPED PHRASE (verbatim, the law): "${phrase}"\nTRANSLATION: ${translation||'unknown'}\nHEARD IN: ${context_sentence||'no context'}\nSOURCE: ${source}\nLEARNER LIFE (theme principles for stage examples; never invent private people): ${profile?.life_context||'general Rio life'}\n\nBANK REFERENCE (for extend/dedupe decisions):\n${ref||'empty bank'}`}]})
     })
     const data=await res.json()
     let out=null
