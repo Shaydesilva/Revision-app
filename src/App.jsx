@@ -2464,7 +2464,7 @@ function VoiceMode({cards,onRateMultiple,onAddCard,isOnline,ngMode=false}){
 
 
 // ── NGFlashCards ──────────────────────────────────────────────────
-function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
+function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGrammar}){
   const[frontier,setFrontier]=useState([])
   const[idx,setIdx]=useState(0)
   const[flipped,setFlipped]=useState(false)
@@ -2704,7 +2704,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
       {k:'due',i:'◌',t:'Due'+(dueCount?` · ${dueCount}`:''),d:'Reviews at the forgetting edge'},
       {k:'focus',i:'◈',t:'Focus',d:'The classic frontier — highest priority 12'},
       {k:'grammar',i:'⚙',t:'Gramática',d:'The Máquina do Tempo — tenses as living sentences'},
-    ].map(dk=><button key={dk.k} onClick={()=>startDeck(dk.k)}
+    ].map(dk=><button key={dk.k} onClick={()=>{if(dk.k==='grammar'&&goTreinoGrammar){goTreinoGrammar();return}startDeck(dk.k)}}
       style={{width:'100%',textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'15px 16px',marginBottom:10,cursor:'pointer',fontFamily:FONT,display:'flex',gap:14,alignItems:'center'}}>
       <span style={{fontSize:22,flexShrink:0}}>{dk.i}</span>
       <span>
@@ -3144,6 +3144,7 @@ Return JSON:
 // ── NGScaffoldMap ─────────────────────────────────────────────────
 function NGScaffoldMap({isOnline,onBack}){
   const[pendSugs,setPendSugs]=useState([])
+  const[matrixSel,setMatrixSel]=useState(null)
   const[mapView,setMapView]=useState('constellation') // constellation | grid
   const[memState,setMemState]=useState([])
   const[graphEdges,setGraphEdges]=useState([])
@@ -3357,11 +3358,12 @@ function NGScaffoldMap({isOnline,onBack}){
           if(!tp||!pp)continue
           const key=pp+'|'+tp
           const s=stabOf[sc.id]||0
-          if(!cells[key]||s>cells[key].s)cells[key]={s,pt:st.pt}
+          if(!cells[key]||s>cells[key].s)cells[key]={s,pt:st.pt,en:st.en}
         }
       }
       return<div style={{padding:'0 12px'}}>
-        <div style={{fontSize:10.5,color:MU,textAlign:'center',marginBottom:14,lineHeight:1.6}}>A Linha do Tempo × as três formas vivas.<br/>Cada célula acende com a força REAL da memória — assista a FAZER se iluminar.</div>
+        <div style={{fontSize:10.5,color:MU,textAlign:'center',marginBottom:6,lineHeight:1.6}}>A Linha do Tempo × as três formas vivas.<br/>Cada célula acende com a força REAL da memória. Toca numa célula pra ver a frase.</div>
+        <div style={{fontSize:9.5,color:MU,opacity:0.7,textAlign:'center',marginBottom:12}}>Isso enche conforme você pratica as unidades ⚙ da Máquina do Tempo — vazio agora é normal.</div>
         <div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'separate',borderSpacing:3,margin:'0 auto'}}>
           <thead><tr><th></th>{TL_POINTS.map(p=><th key={p} style={{fontSize:7.5,color:GD,fontWeight:800,padding:'2px 1px',maxWidth:44,fontFamily:FONT}}>{p}</th>)}</tr></thead>
@@ -3370,7 +3372,7 @@ function NGScaffoldMap({isOnline,onBack}){
             {TL_POINTS.map(tp=>{
               const c=cells[pp+'|'+tp]
               const glow=c?Math.min(1,c.s/7):0
-              return<td key={tp} title={c?.pt||''} style={{width:40,height:40,borderRadius:9,textAlign:'center',verticalAlign:'middle',
+              return<td key={tp} onClick={()=>c&&setMatrixSel({person:pp,point:tp,pt:c.pt,en:c.en||'',s:c.s})} style={{width:40,height:40,borderRadius:9,textAlign:'center',verticalAlign:'middle',cursor:c?'pointer':'default',
                 background:c?(glow>0?`rgba(46,229,111,${0.08+glow*0.5})`:S):`${S2}`,
                 border:`1px solid ${c?(glow>0.6?GR:glow>0?GR+'55':BD):'#15291c'}`,
                 fontSize:11,color:glow>0.6?'#0a1f12':glow>0?GR:c?MU:'#25402f',fontWeight:800}}>
@@ -3379,6 +3381,11 @@ function NGScaffoldMap({isOnline,onBack}){
           </tr>)}</tbody>
         </table>
         </div>
+        {matrixSel&&<div style={{margin:'14px auto 0',maxWidth:360,background:S,border:`1px solid ${GD}55`,borderRadius:14,padding:'12px 15px',animation:'up 0.25s ease'}}>
+          <div style={{fontSize:8.5,color:GD,fontWeight:800,letterSpacing:1.5,marginBottom:5}}>{matrixSel.person} × {matrixSel.point}</div>
+          <div style={{fontSize:14.5,fontWeight:700,color:AC}}>{matrixSel.pt}</div>
+          <div style={{fontSize:11,color:MU,marginTop:2}}>{matrixSel.en} · {matrixSel.s>0?`${Math.round(matrixSel.s*10)/10}d de memória`:'ainda não praticada'}</div>
+        </div>}
         <div style={{fontSize:9.5,color:MU,textAlign:'center',marginTop:12}}>número = dias de estabilidade · ★ = sólido (7d+) · vazio = célula ainda não existe no teu banco</div>
       </div>
     })()}
@@ -5053,8 +5060,8 @@ function NGRadio({isOnline,onBack}){
       </div>
     </div>}
 
-    {/* Controls */}
-    <div style={{padding:'10px 20px 28px',flexShrink:0,borderTop:`1px solid ${BD}`}}>
+    {/* Controls — padded past the nav bar + home indicator (iPhone fold fix) */}
+    <div style={{padding:'10px 20px calc(env(safe-area-inset-bottom, 0px) + 96px)',flexShrink:0,borderTop:`1px solid ${BD}`}}>
       {phase==='off'&&<>
         <input value={stationPrompt} onChange={e=>setStationPrompt(e.target.value)}
           placeholder="Station vibe (optional): trading, Ipanema nightlife…"
@@ -5234,6 +5241,14 @@ function tlClassify(pt){
   if(/\s(fui|foi|foram|fiz|fez|fizemos|falei|falou|vi|viu|comi|comeu|peguei|pegou|tive|teve|conheci|passei)\s/.test(t))return'fiz'
   if(/\s(fazia|tinha|era|queria|via|jogava|morava|tava|estava)\s/.test(t))return'fazia'
   return null // present/habitual or unclassifiable — skip the atom
+}
+const DECOY_EN=['let\'s go tomorrow','I already ate','where is the bathroom?','she works downtown','it was really expensive','call me later','I don\'t drink coffee','we missed the bus','that place is closed','he plays on Sundays']
+const DECOY_PT=['bora amanhã cedo','já comi, valeu','onde fica o banheiro?','ela trabalha no centro','foi caro demais','me liga mais tarde','não bebo café','a gente perdeu o ônibus','esse lugar tá fechado','ele joga domingo']
+function padOptions(correct,cands,lang){
+  const pool=[...new Set(cands.filter(x=>x&&x!==correct))]
+  const dec=(lang==='pt'?DECOY_PT:DECOY_EN).filter(d=>d!==correct&&!pool.includes(d))
+  while(pool.length<2&&dec.length)pool.push(dec.splice(Math.floor(Math.random()*dec.length),1)[0])
+  return[correct,...pool.slice(0,2)].sort(()=>Math.random()-0.5)
 }
 const COR_SPEED='#fb7185'
 function SpeedTimer({deadline,onExpire}){
@@ -5541,7 +5556,7 @@ function NGAula({isOnline,unit,onBack}){
   return null
 }
 
-function NGTreino({isOnline,onBack,seedUnit,onDone}){
+function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const[stage,setStage]=useState('gate') // gate|placement-intro|pick|load|run|done|placed
   const placementRef=useRef(false)
   const placeResults=useRef([])
@@ -5562,6 +5577,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
   const startedRef=useRef(false)
   useEffect(()=>{
     if(seedUnit){if(!startedRef.current){startedRef.current=true;start(8,seedUnit)}return} // Aula practice: fixed 8 min
+    if(seedDeck){setStage('pick');return} // deck-seeded treino: pick time, skip placement gate
     if(!isOnline){setStage('pick');return}
     ngFetch('ng-placement-seed',{action:'status'})
       .then(r=>setStage(r?.done?'pick':'placement-intro'))
@@ -5592,8 +5608,10 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     setMins(m);setStage('load')
     try{
       const[due,def]=await Promise.all([
-        unitId?Promise.resolve({}):ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
-        unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId}).catch(()=>({})):ngFetch('ng-frontier').catch(()=>({}))
+        (unitId||seedDeck)?Promise.resolve({}):ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
+        unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId}).catch(()=>({}))
+          :seedDeck?ngFetch('ng-frontier',{deck:seedDeck}).catch(()=>({}))
+          :ngFetch('ng-frontier').catch(()=>({}))
       ])
       atomWRef.current=def?.atom_weights||{}
       const dueItems=(due?.frontier||[]).map(x=>({...x,isReview:true}))
@@ -5671,20 +5689,22 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
       const pool=[...new Set(queue.filter(x=>x!==item).flatMap(x=>(x.pt||'').split(' ')))]
         .filter(w=>w.length>=3&&w.toLowerCase()!==cl)
       const ending=pool.filter(w=>w.slice(-2)===correct.slice(-2))
-      const cand=[...new Set([...conf,...shuffleArr(ending),...shuffleArr(pool)])].slice(0,2)
+      let cand=[...new Set([...conf,...shuffleArr(ending),...shuffleArr(pool)])].slice(0,2)
+      while(cand.length<2){const d=DECOY_PT[Math.floor(Math.random()*DECOY_PT.length)].split(' ');const w=d[Math.floor(Math.random()*d.length)];if(w.toLowerCase()!==cl&&!cand.includes(w))cand.push(w)}
       const ops=shuffleArr([correct,...cand])
       setAtom({type:'cloze',blank:bi,correct,options:ops,result:null})
     }else if(t==='escuta'){
-      const others=queue.filter(x=>x!==item&&x.en).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.en)
-      setAtom({type:'escuta',options:[item.en,...others].sort(()=>Math.random()-0.5),audio:null,fetching:false,plays:0,result:null,chosen:null})
+      const others=queue.filter(x=>x!==item&&x.en).map(x=>x.en)
+      setAtom({type:'escuta',options:padOptions(item.en,others,'en'),audio:null,fetching:false,plays:0,result:null,chosen:null})
     }else if(t==='recog'){
-      const others=queue.filter(x=>x!==item&&x.en).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.en)
-      setAtom({type:'recog',options:[item.en,...others].sort(()=>Math.random()-0.5),result:null,chosen:null})
+      const others=queue.filter(x=>x!==item&&x.en).map(x=>x.en)
+      setAtom({type:'recog',options:padOptions(item.en,others,'en'),result:null,chosen:null})
     }else if(t==='timeline'){
       setAtom({type:'timeline',point:tlClassify(item.pt),result:null,chosen:null})
     }else if(t==='duel'){
       const cor=corruptPT(item.pt)
-      const wrong=cor?cor.bad:(queue.find(x=>x!==item&&x.pt)||{}).pt||'—'
+      const alt=(queue.find(x=>x!==item&&x.pt)||{}).pt
+      const wrong=cor?cor.bad:(alt||DECOY_PT[Math.floor(Math.random()*DECOY_PT.length)])
       const pair=Math.random()<0.5?[item.pt,wrong]:[wrong,item.pt]
       setAtom({type:'duel',pair,result:null,chosen:null,isTense:!!cor})
     }else if(t==='conserta'){
@@ -5722,7 +5742,23 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
   }
 
   const advance=()=>{
-    if(timeUpRef.current||qi>=queue.length-1){finish();return}
+    if(timeUpRef.current){finish();return}
+    if(qi>=queue.length-1){
+      if(placementRef.current){finish();return}
+      // THE TIMER IS THE ONLY CAP: recycle the material, reshuffled,
+      // until the clock dies. More reps, more data, more truth.
+      if(queue.length&&queue.length<200){
+        const fresh=shuffleArr(queue.filter(x=>!x._requeued).map(x=>({...x,_requeued:false})))
+        if(fresh.length){
+          setQueue(prev=>[...prev,...fresh])
+          const ni=qi+1
+          setQi(ni)
+          buildAtom(fresh[0],ni)
+          return
+        }
+      }
+      finish();return
+    }
     if(speedRef.current&&!speed&&!placementRef.current){
       // ═ A10 SPEED ROUND — peak-end rule: close on fire ═
       const pool=queue.filter(x=>x.pt&&x.en).sort(()=>Math.random()-0.5).slice(0,12)
@@ -5734,8 +5770,8 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     atomStartRef.current=Date.now()
     if(idx>=pool.length||timeUpRef.current){finish();return}
     const it=pool[idx]
-    const wrongs=pool.filter(x=>x!==it).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.pt)
-    const ops=[it.pt,...wrongs].sort(()=>Math.random()-0.5)
+    const wrongs=pool.filter(x=>x!==it&&x.pt!==it.pt).map(x=>x.pt)
+    const ops=padOptions(it.pt,wrongs,'pt')
     setSpeed({pool,idx,streak,best:Math.max(best,streak),item:it,ops,deadline:Date.now()+6000,flash:null})
   }
   const finish=async()=>{
@@ -5782,7 +5818,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
 
   if(stage==='pick')return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease'}}>
     <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:18}}>← Home</button>
-    <div style={{fontSize:24,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:6}}>Treino do dia</div>
+    <div style={{fontSize:24,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:6}}>{seedDeck==='grammar'?'⚙ Treino de Gramática':'Treino do dia'}</div>
     <div style={{fontSize:13.5,color:MU,marginBottom:26,lineHeight:1.6}}>Quanto tempo você tem agora?<br/><span style={{fontSize:11,opacity:0.8}}>Revisões primeiro, gramática garantida, tudo alimenta o motor.</span></div>
     {[[5,'☕ Café rápido','revisões que não podem esperar'],[10,'⚡ Treino honesto','revisões + fronteira'],[15,'🔥 Sessão cheia','o dia completo em um bloco'],[25,'🧘 Modo monge','profundidade total']].map(([m,t,d])=>
       <button key={m} onClick={()=>{SFX.tap();start(m)}} style={{display:'block',width:'100%',textAlign:'left',padding:'16px 18px',background:S,border:`1px solid ${BD}`,borderRadius:16,marginBottom:10,cursor:'pointer',fontFamily:FONT}}>
@@ -6020,6 +6056,107 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
       </div>}
     </div>}
   </div>
+}
+
+
+// ═══ NGSetup — PRIMEIRO DIA — the resumable first-run wizard ══════════
+// welcome -> seu mundo -> plantar -> organizar -> placement -> pronto.
+// Every step idempotent; state persists server-side so a mid-setup quit resumes.
+function Row({k,v}){return<div style={{display:'flex',justifyContent:'space-between',padding:'5px 0',fontSize:13}}>
+  <span style={{color:MU}}>{k}</span><span style={{color:TX,fontWeight:700}}>{v}</span></div>}
+function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
+  const[step,setStep]=useState(initialState==='new'?'welcome':initialState)
+  const[chips,setChips]=useState([])
+  const[freeText,setFreeText]=useState('')
+  const[seedOut,setSeedOut]=useState(null)
+  const ranRef=useRef({})
+
+  const setServer=(state,extra={})=>ngFetch('ng-setup',{action:'set',state,...extra}).catch(()=>{})
+
+  const CHIPS=[
+    ['trabalho remoto','remote work'],['vendas','sales'],['mora no Rio','lives in Rio'],
+    ['boteco & cerveja','bar life'],['praia','beach'],['futebol','football'],
+    ['academia','gym'],['programador','builds apps'],['viagem','travel'],
+    ['música','music'],['namoro','dating'],['gringo aprendendo','foreigner learning']]
+  const toggle=c=>setChips(x=>x.includes(c)?x.filter(y=>y!==c):[...x,c])
+
+  const composeLifeContext=()=>{
+    const themes=chips.map(c=>CHIPS.find(x=>x[0]===c)?.[1]||c).join('; ')
+    const free=freeText.trim()
+    return`Principles, not private names: this learner learns through their OWN real life. Themes: ${themes||'general Rio life'}.${free?` In their words: ${free}`:''} Draw scenarios from these THEMES — never invent private people or relationships.`
+  }
+
+  // ── PLANTING: seed spine directly + cluster wilds in one call ──
+  useEffect(()=>{
+    if(step!=='planting'&&step!=='organizing')return
+    if(ranRef.current[step])return
+    ranRef.current[step]=true
+    if(step==='planting'){
+      // fire the combined seed (direct plant + wild cluster) once
+      ngFetch('ng-seed-trilha',{cluster_wilds:true})
+        .then(r=>{setSeedOut(r||{});setServer('organizing');setStep('organizing')})
+        .catch(()=>{setSeedOut({});setServer('organizing');setStep('organizing')})
+    }
+  },[step])
+
+  const box={maxWidth:440,margin:'0 auto',padding:'0 22px'}
+
+  if(step==='welcome')return<div style={{...box,paddingTop:80,animation:'up 0.4s ease'}}>
+    <div style={{textAlign:'center'}}><Poste size={54}/></div>
+    <div style={{fontSize:28,fontWeight:900,color:TX,fontFamily:FONTD,textAlign:'center',marginTop:20}}>Bem-vindo ao Carioca</div>
+    <div style={{fontSize:14,color:MU,textAlign:'center',lineHeight:1.7,margin:'12px 0 30px'}}>
+      30 minutos por dia. Português de verdade — o do bar, da praia, da rua. Não é sala de aula.
+      Vamos montar tudo em 5 passos rápidos.
+    </div>
+    <PBtn label="Bora começar" onClick={()=>{SFX.tap();setServer('world');setStep('world')}}/>
+  </div>
+
+  if(step==='world')return<div style={{...box,paddingTop:56,animation:'up 0.4s ease'}}>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,marginBottom:6}}>PASSO 1 DE 5 · SEU MUNDO</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:8}}>O que faz parte da sua vida?</div>
+    <div style={{fontSize:12.5,color:MU,lineHeight:1.6,marginBottom:18}}>Toca no que te descreve. Cada cena, conversa e exercício vai sair do SEU mundo — sem nomes, só temas.</div>
+    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>
+      {CHIPS.map(([c])=><button key={c} onClick={()=>toggle(c)} style={{padding:'9px 14px',borderRadius:20,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:FONT,
+        background:chips.includes(c)?AC:S,border:`1px solid ${chips.includes(c)?AC:BD}`,color:chips.includes(c)?'#16240f':TX}}>{c}</button>)}
+    </div>
+    <textarea value={freeText} onChange={e=>setFreeText(e.target.value)} placeholder="algo mais? (opcional) — ex: trabalho com cripto, tenho um cachorro…"
+      style={{width:'100%',minHeight:60,background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 14px',fontSize:14,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box',marginBottom:18}}/>
+    <PBtn label="Continuar" onClick={()=>{SFX.tap();setServer('planting',{life_context:composeLifeContext()});setStep('planting')}}/>
+    <div style={{textAlign:'center',marginTop:10}}><button onClick={()=>{setServer('planting',{life_context:composeLifeContext()});setStep('planting')}} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT}}>pular por agora</button></div>
+  </div>
+
+  if(step==='planting')return<div style={{...box,paddingTop:150,textAlign:'center'}}>
+    <div style={{animation:'float 2s ease-in-out infinite',display:'inline-block'}}><Poste size={44}/></div>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,margin:'20px 0 8px'}}>PASSO 2 DE 5 · PLANTANDO</div>
+    <div style={{fontSize:16,fontWeight:700,color:TX,fontFamily:FONTD}}>Montando seu currículo…</div>
+    <div style={{fontSize:12,color:MU,marginTop:8,lineHeight:1.6}}>25 unidades da Máquina do Tempo,<br/>e organizando tudo que já existe no seu banco.</div>
+    <div style={{marginTop:20}}><Spinner size={18}/></div>
+  </div>
+
+  if(step==='organizing')return<div style={{...box,paddingTop:70,animation:'up 0.4s ease'}}>
+    <div style={{textAlign:'center',fontSize:44}}>🗺️</div>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textAlign:'center',margin:'14px 0 6px'}}>PASSO 3 DE 5 · ORGANIZADO</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:14}}>Sua trilha tá pronta</div>
+    <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'16px 18px',marginBottom:8}}>
+      <Row k="Espinha dorsal" v={`${seedOut?.units||25} unidades`}/>
+      <Row k="Padrões plantados" v={`${(seedOut?.planted||0)+(seedOut?.attached||0)}`}/>
+      {seedOut?.wild_units>0&&<Row k="Missões extras (da rua)" v={`${seedOut.wild_units} unidades · ${seedOut.wild_patterns} padrões`}/>}
+    </div>
+    <div style={{fontSize:11.5,color:MU,lineHeight:1.6,marginBottom:20,textAlign:'center'}}>A espinha dorsal é curada e fixa. As missões extras são tudo que você já tinha, agrupado por situação — opcionais, exploráveis.</div>
+    <PBtn label="Continuar pro teste de nível" onClick={()=>{SFX.tap();setServer('placement');setStep('placement')}}/>
+  </div>
+
+  if(step==='placement')return<div style={{...box,paddingTop:70,animation:'up 0.4s ease'}}>
+    <div style={{textAlign:'center',fontSize:42}}>📍</div>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textAlign:'center',margin:'14px 0 6px'}}>PASSO 4 DE 5 · NÍVEL</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:10}}>O teste de nível</div>
+    <div style={{fontSize:13,color:MU,lineHeight:1.7,textAlign:'center',marginBottom:8}}>10 minutos. O app mede onde você REALMENTE está e semeia o motor com o que já domina.</div>
+    <div style={{fontSize:11,color:MU,opacity:0.75,textAlign:'center',marginBottom:24}}>Errar não pune nada. O que acertar entra como memória provisória — os treinos confirmam.</div>
+    <PBtn label="▶ Fazer o teste (10 min)" onClick={()=>{SFX.tap();setServer('done');onPlacement()}}/>
+    <div style={{textAlign:'center',marginTop:10}}><button onClick={()=>{setServer('done');onEnterApp()}} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT}}>fazer depois</button></div>
+  </div>
+
+  return null
 }
 
 function NGHome({isOnline,go,active=true}){
@@ -6423,8 +6560,14 @@ export default function App(){
   const[showMore,setShowMore]=useState(false)
   const[studySeed,setStudySeed]=useState(null) // {deck:'unit',unit_id,title} from Learn
   const[aulaUnit,setAulaUnit]=useState(null)
+  const[treinoSeedDeck,setTreinoSeedDeck]=useState(null)
   const[loaded,setLoaded]=useState(false)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
+  const[setupState,setSetupState]=useState(null) // null=checking, 'done'=skip wizard, else step
+  useEffect(()=>{
+    if(ngMode!=='nextgen'||!isOnline){return}
+    ngFetch('ng-setup',{action:'status'}).then(r=>setSetupState(r?.state||'done')).catch(()=>setSetupState('done'))
+  },[ngMode,isOnline])
 
   // Always-on brain: heartbeat ping on load + every 5 min while app is open
   useEffect(()=>{
@@ -6621,6 +6764,16 @@ export default function App(){
 
   // Next Gen mode — own screen stack
   if(loaded&&ngMode==='nextgen'){
+    // PRIMEIRO DIA gate — the wizard owns the screen until setup completes.
+    if(isOnline&&setupState&&setupState!=='done'){
+      return<div style={{background:`radial-gradient(1100px 520px at 50% -8%,rgba(255,213,46,0.05),transparent 60%),linear-gradient(#0a1a10,${BG})`,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
+        <ErrorBoundary>
+          <NGSetup isOnline={isOnline} initialState={setupState}
+            onEnterApp={()=>{setSetupState('done');setNgScreen('ng-home')}}
+            onPlacement={()=>{setSetupState('done');setNgScreen('ng-treino')}}/>
+        </ErrorBoundary>
+      </div>
+    }
     return<div style={{background:`radial-gradient(1100px 520px at 50% -8%,rgba(255,213,46,0.05),transparent 60%),linear-gradient(#0a1a10,${BG})`,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
       <ErrorBoundary>
       {/* Mount-all for screens that preserve state between visits */}
@@ -6635,12 +6788,12 @@ export default function App(){
       <div style={{display:ngScreen==='ng-intelligence'?'block':'none'}}><NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       <div style={{display:ngScreen==='ng-phrase'?'block':'none'}}><NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} active={ngScreen==='ng-phrase'}/></div>
       {/* Conditional — fresh each visit */}
-      {ngScreen==='ng-treino'&&<NGTreino isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
+      {ngScreen==='ng-treino'&&<NGTreino isOnline={isOnline} seedDeck={treinoSeedDeck} onBack={()=>{setTreinoSeedDeck(null);setNgScreen('ng-home')}}/>}
       {ngScreen==='ng-aula'&&<NGAula isOnline={isOnline} unit={aulaUnit} onBack={()=>setNgScreen('ng-learn')}/>}
       {ngScreen==='ng-oficina'&&<NGOficina isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-voice'&&<VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true} ngMode={true}/>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
-      {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} seed={studySeed} clearSeed={()=>setStudySeed(null)}/>}
+      {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} seed={studySeed} clearSeed={()=>setStudySeed(null)} goTreinoGrammar={()=>{setTreinoSeedDeck('grammar');setNgScreen('ng-treino')}}/>}
       {ngScreen==='ng-map'&&<NGScaffoldMap isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-shuffle'&&<NGShuffle isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-import'&&<NGImport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
@@ -6657,14 +6810,6 @@ export default function App(){
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
         {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-learn',i:'⛰',l:'Learn'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
           <button key={t.k} onClick={()=>{
-              if(t.k==='__seed'){
-                SFX.tap()
-                fetch('/.netlify/functions/ng-seed-trilha',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
-                  .then(r=>r.json()).then(r=>{
-                    alert(r.ok?`Currículo plantado: ${r.units} unidades, ${r.proposed} padrões novos esperando seu veredito no shelf 📥`:('Falhou: '+(r.error||'?')))
-                  }).catch(e=>alert('Falhou: '+e.message))
-                setShowMore(false);return
-              }
               if(t.k==='__export'){
                 SFX.tap()
                 fetch('/.netlify/functions/ng-export').then(r=>r.blob()).then(b=>{
@@ -6711,7 +6856,6 @@ export default function App(){
             {k:'ng-brain',i:'🧠',l:'The Brain',d:'Watch it think'},
             {k:'__sfx',i:'🔊',l:'Sound',d:'Tap to toggle effects'},
             {k:'__export',i:'⬇',l:'Backup',d:'Download your full journey as JSON'},
-            {k:'__seed',i:'🌱',l:'Plantar currículo',d:'One-time: plant the 25-unit master trilha'},
           ].map(t=><button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
             <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
             <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
