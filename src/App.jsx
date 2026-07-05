@@ -5604,14 +5604,15 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     }catch(_){setStage('pick')}
   }
   const atomWRef=useRef({})
+  const refetchingRef=useRef(false)
   const start=async(m,unitId)=>{
     setMins(m);setStage('load')
     try{
       const[due,def]=await Promise.all([
         (unitId||seedDeck)?Promise.resolve({}):ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
         unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId}).catch(()=>({}))
-          :seedDeck?ngFetch('ng-frontier',{deck:seedDeck}).catch(()=>({}))
-          :ngFetch('ng-frontier').catch(()=>({}))
+          :seedDeck==='grammar'?ngFetch('ng-frontier',{deck:'grammar'}).catch(()=>({}))
+          :ngFetch('ng-frontier',{deck:'session'}).catch(()=>({}))
       ])
       atomWRef.current=def?.atom_weights||{}
       const dueItems=(due?.frontier||[]).map(x=>({...x,isReview:true}))
@@ -5744,31 +5745,61 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const advance=()=>{
     if(timeUpRef.current){finish();return}
     if(qi>=queue.length-1){
-      if(placementRef.current){finish();return}
-      // THE TIMER IS THE ONLY CAP: recycle the material, reshuffled,
-      // until the clock dies. More reps, more data, more truth.
-      if(queue.length&&queue.length<200){
-        const fresh=shuffleArr(queue.filter(x=>!x._requeued).map(x=>({...x,_requeued:false})))
-        if(fresh.length){
-          setQueue(prev=>[...prev,...fresh])
-          const ni=qi+1
-          setQi(ni)
-          buildAtom(fresh[0],ni)
+      if(placementRef.current){
+        // Placement is timer-governed too: keep sampling more items until the
+        // clock dies (richer measurement), pulling a fresh stratified deck.
+        if(isOnline&&!refetchingRef.current){
+          refetchingRef.current=true
+          ngFetch('ng-frontier',{deck:'placement'}).then(d=>{
+            refetchingRef.current=false
+            const seen=new Set(queue.map(x=>x.scaffold_id+'|'+x.stage))
+            const more=(d?.frontier||[]).filter(x=>!seen.has(x.scaffold_id+'|'+x.stage))
+            if(more.length){setQueue(prev=>[...prev,...more]);const ni=qi+1;setQi(ni);buildAtom(more[0],ni)}
+            else finish()
+          }).catch(()=>{refetchingRef.current=false;finish()})
           return
         }
+        finish();return
       }
+      // THE TIMER IS THE ONLY CAP. First try to pull a FRESH deck from the
+      // server (new material — reviews that just came due, unseen frontier);
+      // only if that's empty do we reshuffle what we have. Never end on time left.
+      if(isOnline&&!refetchingRef.current){
+        refetchingRef.current=true
+        ngFetch('ng-frontier',{deck:'session'}).then(d=>{
+          refetchingRef.current=false
+          const seen=new Set(queue.map(x=>x.scaffold_id+'|'+x.stage))
+          const incoming=(d?.frontier||[]).filter(x=>!seen.has(x.scaffold_id+'|'+x.stage))
+          const add=incoming.length?incoming:shuffleArr(queue.map(x=>({...x,_requeued:false})))
+          if(add.length){
+            setQueue(prev=>[...prev,...add])
+            const ni=qi+1;setQi(ni);buildAtom(add[0],ni)
+          }else finish()
+        }).catch(()=>{
+          refetchingRef.current=false
+          const fresh=shuffleArr(queue.map(x=>({...x,_requeued:false})))
+          if(fresh.length){setQueue(prev=>[...prev,...fresh]);const ni=qi+1;setQi(ni);buildAtom(fresh[0],ni)}else finish()
+        })
+        return
+      }
+      const fresh=shuffleArr(queue.map(x=>({...x,_requeued:false})))
+      if(fresh.length){setQueue(prev=>[...prev,...fresh]);const ni=qi+1;setQi(ni);buildAtom(fresh[0],ni);return}
       finish();return
     }
     if(speedRef.current&&!speed&&!placementRef.current){
       // ═ A10 SPEED ROUND — peak-end rule: close on fire ═
-      const pool=queue.filter(x=>x.pt&&x.en).sort(()=>Math.random()-0.5).slice(0,12)
+      const pool=queue.filter(x=>x.pt&&x.en).sort(()=>Math.random()-0.5)
       if(pool.length>=4){startSpeedItem(pool,0,0,0);return}
     }
     const ni=qi+1;setQi(ni);buildAtom(queue[ni],ni)
   }
-  const startSpeedItem=(pool,idx,streak,best)=>{
+  const startSpeedItem=(poolIn,idxIn,streak,best)=>{
     atomStartRef.current=Date.now()
-    if(idx>=pool.length||timeUpRef.current){finish();return}
+    if(timeUpRef.current){finish();return}
+    let pool=poolIn,idx=idxIn
+    if(idx>=pool.length){ // timer still alive — recycle the speed pool, keep the streak
+      pool=shuffleArr(pool);idx=0
+    }
     const it=pool[idx]
     const wrongs=pool.filter(x=>x!==it&&x.pt!==it.pt).map(x=>x.pt)
     const ops=padOptions(it.pt,wrongs,'pt')
