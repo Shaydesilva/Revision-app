@@ -9,8 +9,7 @@
 //   transactional scripts; colloquial gems; contrast pairs AS example sentences.
 //  SKIP: conjugation paradigm tables; vós/literary forms ("não usamos");
 //   phonics drills; English-only lines; exercises/homework/meta.
-//  MARKS: ! = solid per Victor → skip as new; ? = struggling → extract if
-//   missing + flag (approval seeds a priority boost); * = normal.
+//  MARKS: !?* annotations are stripped as noise — zero bias, merit only.
 
 const{createClient}=require('@supabase/supabase-js')
 const UID='00000000-0000-0000-0000-000000000001'
@@ -93,12 +92,9 @@ SKIP (do not output; count in skipped):
 - English-only lines, exercise instructions/answers, homework, "Next class"/"To Learn"/"Legenda"/meta. Count as "meta".
 - Bare common single words with no register value (hoje, alto, tudo) unless colloquial gems.
 
-VICTOR'S MARKS (legend: ! solid, ? struggling, * working):
-- Items marked "!" → SKIP as new (learner owns them). Count as "marked_solid".
-- Items marked "?" → EXTRACT (if genuinely a pattern) with "victor_mark":"struggling".
-- "*" → treat normally.
+VICTOR'S MARKS: the notes may carry !/?/* annotations. Treat them as NOISE — strip them from extracted text and give them ZERO weight in any decision. Extract purely on merit.
 
-Each scaffold: {"base_portuguese":stage-1 text,"base_english":"","category":"social_foundation|dating_register|personality_humour|deep_fluency","context":"","phase":1-4,"victor_mark":"struggling"|null,"stages":[{"pt":"","en":""}] (2-4, stage 1 = simplest)}
+Each scaffold: {"base_portuguese":stage-1 text,"base_english":"","category":"social_foundation|dating_register|personality_humour|deep_fluency","context":"","phase":1-4,"stages":[{"pt":"","en":""}] (2-4, stage 1 = simplest)}
 Max 8 scaffolds per chunk — pick the highest-value. JSON only:
 {"scaffolds":[...],"skipped":{"tables":0,"phonics":0,"marked_solid":0,"meta":0}}`,
         messages:[{role:'user',content:`ALREADY IN THE BANK (do not duplicate): ${bankSample||'empty'}\n\nNOTES CHUNK ${chunk+1}/${chunks.length}:\n${text}`}]})
@@ -121,7 +117,6 @@ Max 8 scaffolds per chunk — pick the highest-value. JSON only:
           category:sc.category||'social_foundation',context:sc.context||'victor',
           phase:sc.phase||1,stages},
         tapped_stage:0,
-        victor_mark:sc.victor_mark||null,
         day_chunk:chunk
       }
       const{data:ins,error}=await sb.from('ng_suggestions').insert({
