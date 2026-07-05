@@ -154,7 +154,7 @@ const SEED=[
   mk(64,'po','come on damn mild','giria',{exampleSentence:'Po, to com fome mano.'}),
   mk(65,'uma delicia','delicious amazing','vocab',{scenario:'food',exampleSentence:'Essa comida ta uma delicia!'}),
   mk(66,'essa comida ta do caralho','this food is fucking amazing','sentence',{scenario:'food',exampleSentence:'Cara, essa comida ta do caralho.'}),
-  mk(67,'de + a = da','contraction da — cafe da manha','grammar',{exampleSentence:'Cafe da manha, carro da Juliana.'}),
+  mk(67,'de + a = da','contraction da — cafe da manha','grammar',{exampleSentence:'Café da manhã, carro do vizinho.'}),
   mk(68,'de + o = do','contraction do — carro do Victor','grammar',{exampleSentence:'Carro do Victor, nome do lugar.'}),
   mk(69,'eu gosto de futebol','I like football','sentence',{exampleSentence:'Eu gosto de futebol, eu amo nadar.'}),
   mk(70,'mano estamos atrasados bora',"bro we're late let's go",'sentence',{cluster:'letsgo',exampleSentence:'Mano estamos atrasados, bora logo!'}),
@@ -171,7 +171,7 @@ const SEED=[
   mk(81,'viajar','to travel','vocab',{exampleSentence:'Eu amo viajar pelo Brasil.'}),
   mk(82,'viagem','trip travel','vocab',{exampleSentence:'Que viagem incrivel foi essa!'}),
   mk(83,'eu quero descansar','I want to rest','sentence',{exampleSentence:'Eu preciso descansar hoje.'}),
-  mk(84,'eu quero um beijo','I want a kiss','sentence',{exampleSentence:'Juliana, eu quero um beijo.'}),
+  mk(84,'eu quero um beijo','I want a kiss','sentence',{exampleSentence:'Amor, eu quero um beijo.'}),
   mk(85,'cafune','gentle head scratch hair stroke','giria',{exampleSentence:'Me da um cafune? To estressado.'}),
   mk(86,'eu preciso de...','I need...','grammar',{exampleSentence:'Eu preciso de um cafe agora.'}),
   mk(87,'vem aqui','come here','frase_pronta',{exampleSentence:'Vem aqui, deixa eu te mostrar.'}),
@@ -2695,6 +2695,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
       {k:'weak',i:'🎯',t:'Weak spots',d:'What you struggle with — the data decides'},
       {k:'due',i:'◌',t:'Due'+(dueCount?` · ${dueCount}`:''),d:'Reviews at the forgetting edge'},
       {k:'focus',i:'◈',t:'Focus',d:'The classic frontier — highest priority 12'},
+      {k:'grammar',i:'⚙',t:'Gramática',d:'The Máquina do Tempo — tenses as living sentences'},
     ].map(dk=><button key={dk.k} onClick={()=>startDeck(dk.k)}
       style={{width:'100%',textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'15px 16px',marginBottom:10,cursor:'pointer',fontFamily:FONT,display:'flex',gap:14,alignItems:'center'}}>
       <span style={{fontSize:22,flexShrink:0}}>{dk.i}</span>
@@ -5158,6 +5159,470 @@ function ConstellationView({scaffolds,memState,edges}){
 }
 
 
+
+// ═══ Signature-atom helpers (Linha do Tempo classification + corruption) ═══
+const TL_POINTS=['fazia','fiz','tava fazendo','ia fazer','faço','tô fazendo','vou fazer']
+function tlClassify(pt){
+  const t=' '+(pt||'').toLowerCase()+' '
+  if(/\s(tava|estava)\s+\w+ndo/.test(t))return'tava fazendo'
+  if(/\s(tô|to|tá|ta|tão|tao|tamo)\s+\w+ndo/.test(t))return'tô fazendo'
+  if(/\s(ia|iam)\s+\w+r\b/.test(t))return'ia fazer'
+  if(/\s(vou|vai|vão|vao)\s+\w+r\b/.test(t))return'vou fazer'
+  if(/\s(fui|foi|foram|fiz|fez|fizemos|falei|falou|vi|viu|comi|comeu|peguei|pegou|tive|teve|conheci|passei)\s/.test(t))return'fiz'
+  if(/\s(fazia|tinha|era|queria|via|jogava|morava|tava|estava)\s/.test(t))return'fazia'
+  return null // present/habitual or unclassifiable — skip the atom
+}
+const COR_SPEED='#fb7185'
+function SpeedTimer({deadline,onExpire}){
+  const[pct,setPct]=useState(100)
+  useEffect(()=>{
+    const iv=setInterval(()=>{
+      const r=Math.max(0,(deadline-Date.now())/6000*100)
+      setPct(r)
+      if(r<=0){clearInterval(iv);onExpire&&onExpire()}
+    },100)
+    return()=>clearInterval(iv)
+  },[deadline])
+  return<div style={{height:5,background:'#1a3324',borderRadius:3,overflow:'hidden'}}>
+    <div style={{height:'100%',width:pct+'%',background:pct>40?'#2ee56f':pct>18?'#f0a92c':'#ff6b5e',transition:'width 0.1s linear'}}/>
+  </div>
+}
+const CONF_PAIRS=[['tô','tava'],['tava','tô'],['tá','é'],['é','tá'],['fui','ia'],['ia','fui'],['foi','ia'],['vou','fui'],['tenho','tinha'],['tem','tinha'],['tamo','tava'],['fiz','fazia'],['fazia','fiz']]
+function corruptPT(pt){
+  const words=(pt||'').split(' ')
+  for(let i=0;i<words.length;i++){
+    const bare=words[i].toLowerCase().replace(/[.,!?]/g,'')
+    const hit=CONF_PAIRS.find(([a])=>a===bare)
+    if(hit){
+      const bad=[...words];bad[i]=hit[1]
+      return{bad:bad.join(' '),wrongIdx:i,wrongWord:hit[1],rightWord:words[i],decoys:CONF_PAIRS.filter(([a])=>a!==bare&&a!==hit[1]).slice(0,4).map(x=>x[0])}
+    }
+  }
+  return null
+}
+
+// ═══ NGTreino — THE DAILY LEARNING MODE ═══════════════════════════════
+// "How many minutes have you got?" -> countdown -> atoms from EVERYTHING
+// (reviews first, grammar guaranteed, constructor as an atom) -> every rep
+// graded into the one engine. Congruency is everything.
+function NGTreino({isOnline,onBack}){
+  const[stage,setStage]=useState('gate') // gate|placement-intro|pick|load|run|done|placed
+  const placementRef=useRef(false)
+  const placeResults=useRef([])
+  const[placeOut,setPlaceOut]=useState(null)
+  const[mins,setMins]=useState(10)
+  const[left,setLeft]=useState(0)
+  const[queue,setQueue]=useState([])
+  const[qi,setQi]=useState(0)
+  const[atom,setAtom]=useState(null) // {type,...state}
+  const[stats,setStats]=useState({done:0,qsum:0,byType:{}})
+  const[gains,setGains]=useState([])
+  const timeUpRef=useRef(false)
+  const[speed,setSpeed]=useState(null) // {items,idx,streak,best,deadline}
+  const speedRef=useRef(false)
+  const endAtRef=useRef(0)
+  const atomStartRef=useRef(0)
+  const tickRef=useRef(null)
+  useEffect(()=>{
+    if(!isOnline){setStage('pick');return}
+    ngFetch('ng-placement-seed',{action:'status'})
+      .then(r=>setStage(r?.done?'pick':'placement-intro'))
+      .catch(()=>setStage('pick'))
+  },[isOnline])
+
+  useEffect(()=>()=>{if(tickRef.current)clearInterval(tickRef.current)},[])
+
+  const startPlacement=async()=>{
+    setStage('load')
+    try{
+      const d=await ngFetch('ng-frontier',{deck:'placement'})
+      const q=d?.frontier||[]
+      if(q.length<8){setStage('pick');return}
+      placementRef.current=true;placeResults.current=[]
+      setQueue(q);setQi(0);setStats({done:0,qsum:0,byType:{}})
+      timeUpRef.current=false;speedRef.current=true
+      endAtRef.current=Date.now()+10*60000;setLeft(600)
+      tickRef.current=setInterval(()=>{
+        const s=Math.max(0,Math.round((endAtRef.current-Date.now())/1000))
+        setLeft(s);if(s<=0){timeUpRef.current=true;clearInterval(tickRef.current)}
+      },1000)
+      buildAtom(q[0],0);setStage('run')
+    }catch(_){setStage('pick')}
+  }
+  const start=async(m)=>{
+    setMins(m);setStage('load')
+    try{
+      const[due,def]=await Promise.all([
+        ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
+        ngFetch('ng-frontier').catch(()=>({}))
+      ])
+      const dueItems=(due?.frontier||[]).map(x=>({...x,isReview:true}))
+      let front=(def?.frontier||[]).filter(x=>!dueItems.some(d=>d.scaffold_id===x.scaffold_id&&d.stage===x.stage))
+      // GRAMMAR GUARANTEE: grammar cells surface at least every 3rd frontier slot
+      const gram=front.filter(x=>(x.context||'')==='grammar')
+      const rest=front.filter(x=>(x.context||'')!=='grammar')
+      const mixed=[]
+      while(gram.length||rest.length){
+        if(rest.length)mixed.push(rest.shift())
+        if(rest.length)mixed.push(rest.shift())
+        if(gram.length)mixed.push(gram.shift())
+      }
+      const q=[...dueItems.slice(0,14),...mixed].slice(0,40)
+      if(!q.length){setStage('pick');return}
+      setQueue(q);setQi(0)
+      setStats({done:0,qsum:0,byType:{}});setGains([])
+      timeUpRef.current=false
+      endAtRef.current=Date.now()+m*60000
+      setLeft(m*60)
+      tickRef.current=setInterval(()=>{
+        const s=Math.max(0,Math.round((endAtRef.current-Date.now())/1000))
+        setLeft(s)
+        if(s<=75&&!speedRef.current&&m>=10){speedRef.current=true} // finale armed
+        if(s<=0){timeUpRef.current=true;clearInterval(tickRef.current)}
+      },1000)
+      buildAtom(q[0],0)
+      setStage('run')
+    }catch(e){setStage('pick')}
+  }
+
+  const atomFor=(item,i)=>{
+    if(item.force==='recog')return'recog'
+    if(item.force==='reorder')return (item.pt||'').split(' ').length>=3?'reorder':'recog'
+    if(item.force==='constructor')return isOnline?'constructor':'reorder'
+    if(item.isReview)return'flip'
+    const words=(item.pt||'').split(' ')
+    const isGram=(item.context||'')==='grammar'
+    // Grammar gets the signature rotation; aspect made spatial + adversarial.
+    let rot=isGram?['timeline','duel','conserta','constructor'][i%4]
+                  :['reorder','cloze','constructor','duel'][i%4]
+    if(rot==='timeline'&&!tlClassify(item.pt))rot='duel'
+    if(rot==='conserta'&&!corruptPT(item.pt))rot='cloze'
+    if(rot==='duel'&&!corruptPT(item.pt)&&queue.length<3)rot='cloze'
+    if(rot==='reorder'&&words.length<3)rot='cloze'
+    if(rot==='cloze'&&words.length<3)rot='flip'
+    if(rot==='constructor'&&!isOnline)rot=isGram?'conserta':'reorder'
+    if(rot==='conserta'&&!corruptPT(item.pt))rot='cloze'
+    return rot
+  }
+  const shuffleArr=a=>{const x=[...a];for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[x[i],x[j]]=[x[j],x[i]]}return x}
+
+  const buildAtom=(item,i)=>{
+    atomStartRef.current=Date.now()
+    const t=atomFor(item,i)
+    if(t==='flip')setAtom({type:'flip',revealed:false})
+    else if(t==='reorder'){
+      const words=(item.pt||'').split(' ')
+      setAtom({type:'reorder',pool:shuffleArr(words),picked:[],tries:0,result:null,hint:null})
+    }else if(t==='cloze'){
+      const words=(item.pt||'').split(' ')
+      let bi=0;words.forEach((w,j)=>{if(w.length>words[bi].length)bi=j})
+      const correct=words[bi]
+      const others=queue.filter(x=>x!==item).flatMap(x=>(x.pt||'').split(' ')).filter(w=>w.length>=Math.max(3,correct.length-2)&&w.toLowerCase()!==correct.toLowerCase())
+      const ops=shuffleArr([correct,...shuffleArr([...new Set(others)]).slice(0,2)])
+      setAtom({type:'cloze',blank:bi,correct,options:ops,result:null})
+    }else if(t==='recog'){
+      const others=queue.filter(x=>x!==item&&x.en).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.en)
+      setAtom({type:'recog',options:[item.en,...others].sort(()=>Math.random()-0.5),result:null,chosen:null})
+    }else if(t==='timeline'){
+      setAtom({type:'timeline',point:tlClassify(item.pt),result:null,chosen:null})
+    }else if(t==='duel'){
+      const cor=corruptPT(item.pt)
+      const wrong=cor?cor.bad:(queue.find(x=>x!==item&&x.pt)||{}).pt||'—'
+      const pair=Math.random()<0.5?[item.pt,wrong]:[wrong,item.pt]
+      setAtom({type:'duel',pair,result:null,chosen:null,isTense:!!cor})
+    }else if(t==='conserta'){
+      const cor=corruptPT(item.pt)
+      setAtom({type:'conserta',...cor,phase2:false,result:null,options:null})
+    }else setAtom({type:'constructor',answer:'',evald:null,retried:false,busy:false})
+  }
+
+  const logEvent=async(item,quality,atomType)=>{
+    if(placementRef.current){
+      placeResults.current.push({scaffold_id:item.scaffold_id,stage:item.stage,phase:item.phase||1,
+        skill:atomType==='recog'?'recognition':'production',ok:quality>=3})
+      setStats(s=>({done:s.done+1,qsum:s.qsum+quality,byType:s.byType}))
+      return
+    }
+    const secs=Math.max(3,Math.round((Date.now()-atomStartRef.current)/1000))
+    setStats(s=>({done:s.done+1,qsum:s.qsum+quality,byType:{...s.byType,[atomType]:(s.byType[atomType]||0)+1}}))
+    if(quality>=4)SFX.tap()
+    if(!isOnline)return
+    try{
+      const r=await ngFetch('ng-session-end',{mode:'daily',
+        events:[{scaffold_id:item.scaffold_id,stage:item.stage,quality,mode:atomType==='constructor'?'write':atomType==='flip'?'flashcard':'shuffle'}],
+        duration_seconds:secs})
+      if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:item.pt}))].slice(-20))
+    }catch(_){}
+  }
+
+  const advance=()=>{
+    if(timeUpRef.current||qi>=queue.length-1){finish();return}
+    if(speedRef.current&&!speed){
+      // ═ A10 SPEED ROUND — peak-end rule: close on fire ═
+      const pool=queue.filter(x=>x.pt&&x.en).sort(()=>Math.random()-0.5).slice(0,12)
+      if(pool.length>=4){startSpeedItem(pool,0,0,0);return}
+    }
+    const ni=qi+1;setQi(ni);buildAtom(queue[ni],ni)
+  }
+  const startSpeedItem=(pool,idx,streak,best)=>{
+    if(idx>=pool.length||timeUpRef.current){finish();return}
+    const it=pool[idx]
+    const wrongs=pool.filter(x=>x!==it).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.pt)
+    const ops=[it.pt,...wrongs].sort(()=>Math.random()-0.5)
+    setSpeed({pool,idx,streak,best:Math.max(best,streak),item:it,ops,deadline:Date.now()+6000,flash:null})
+  }
+  const finish=async()=>{
+    if(tickRef.current)clearInterval(tickRef.current)
+    if(placementRef.current){
+      placementRef.current=false
+      const res=placeResults.current
+      const acc={}
+      for(const r of res){
+        const w=r.skill==='production'?2:1
+        acc[r.phase]=acc[r.phase]||{ok:0,n:0};acc[r.phase].ok+=r.ok?w:0;acc[r.phase].n+=w
+      }
+      let ph=1
+      for(const p of[1,2,3,4]){if(acc[p]&&acc[p].n>=2&&acc[p].ok/acc[p].n>=0.6)ph=p}
+      let out={phase:ph,seeded:0}
+      try{const r=await ngFetch('ng-placement-seed',{results:res,phase:ph});out.seeded=r?.seeded||0}catch(_){}
+      setPlaceOut(out);SFX.complete();setStage('placed')
+      return
+    }
+    SFX.complete();setStage('done')
+  }
+  const mmss=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
+  const item=queue[qi]
+
+  if(stage==='gate')return<div style={{padding:'140px 20px',textAlign:'center'}}><Spinner size={20}/></div>
+
+  if(stage==='placement-intro')return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease'}}>
+    <div style={{fontSize:40,textAlign:'center',marginBottom:14}}>📍</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:8}}>Antes de tudo: o teste de nível</div>
+    <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:8,textAlign:'center'}}>10 minutos, uma vez só. O app mede onde você REALMENTE está — compreensão, montagem e uma frase livre — e semeia o motor com o que você já domina.</div>
+    <div style={{fontSize:11,color:MU,opacity:0.75,textAlign:'center',marginBottom:24}}>Errar não pune nada: ausência de evidência não é evidência negativa. O que você acertar entra como memória provisória (2 dias) — os treinos reais confirmam.</div>
+    <PBtn label="▶ Começar o teste (10 min)" onClick={()=>{SFX.tap();startPlacement()}}/>
+  </div>
+
+  if(stage==='placed')return<div style={{padding:'70px 20px 100px',animation:'up 0.4s ease',textAlign:'center'}}>
+    <div style={{fontSize:44}}>🧭</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'12px 0 6px'}}>Você começa na Fase {placeOut?.phase||1}</div>
+    <div style={{fontSize:12.5,color:MU,lineHeight:1.7,marginBottom:24}}>{placeOut?.seeded||0} padrões entraram com memória provisória — os treinos desta semana confirmam.<br/>O começo agora é medido, não chutado.</div>
+    <PBtn label="Bora treinar" onClick={()=>setStage('pick')}/>
+  </div>
+
+  if(stage==='pick')return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease'}}>
+    <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:18}}>← Home</button>
+    <div style={{fontSize:24,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:6}}>Treino do dia</div>
+    <div style={{fontSize:13.5,color:MU,marginBottom:26,lineHeight:1.6}}>Quanto tempo você tem agora?<br/><span style={{fontSize:11,opacity:0.8}}>Revisões primeiro, gramática garantida, tudo alimenta o motor.</span></div>
+    {[[5,'☕ Café rápido','revisões que não podem esperar'],[10,'⚡ Treino honesto','revisões + fronteira'],[15,'🔥 Sessão cheia','o dia completo em um bloco'],[25,'🧘 Modo monge','profundidade total']].map(([m,t,d])=>
+      <button key={m} onClick={()=>{SFX.tap();start(m)}} style={{display:'block',width:'100%',textAlign:'left',padding:'16px 18px',background:S,border:`1px solid ${BD}`,borderRadius:16,marginBottom:10,cursor:'pointer',fontFamily:FONT}}>
+        <span style={{fontSize:15,fontWeight:700,color:TX}}>{t}</span>
+        <span style={{float:'right',fontSize:14,fontWeight:800,color:AC}}>{m} min</span>
+        <div style={{fontSize:11,color:MU,marginTop:3}}>{d}</div>
+      </button>)}
+  </div>
+
+  if(stage==='load')return<div style={{padding:'120px 20px',textAlign:'center'}}><Spinner size={22}/><div style={{fontSize:12,color:MU,marginTop:14}}>Montando o treino…</div></div>
+
+  if(stage==='done'){
+    const avg=stats.done?Math.round(stats.qsum/stats.done*10)/10:0
+    return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease',textAlign:'center'}}>
+    <div style={{fontSize:44}}>🏁</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'10px 0 4px'}}>Treino fechado</div>
+    <div style={{fontSize:12.5,color:MU,marginBottom:20}}>{mins} minutos · {stats.done} reps · qualidade média {avg}</div>
+    {gains.length>0&&<div style={{textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px 16px',marginBottom:16}}>
+      <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:8}}>GANHOS DE MEMÓRIA</div>
+      {gains.slice(-8).map((g,i)=><div key={i} style={{fontSize:11.5,color:TX,padding:'3px 0',display:'flex',justifyContent:'space-between'}}>
+        <span style={{maxWidth:'70%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.pt}</span>
+        <span style={{color:GR,fontWeight:700}}>{g.delta||'↑'}</span>
+      </div>)}
+    </div>}
+    <PBtn label="Voltar pro Home" onClick={onBack}/>
+  </div>}
+
+  // ═══ RUN ═══
+  return<div style={{padding:'20px 20px 100px',animation:'up 0.3s ease'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+      <button onClick={finish} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0}}>encerrar</button>
+      <div style={{background:left<=60?`${RE}18`:S,border:`1px solid ${left<=60?RE+'66':BD}`,borderRadius:20,padding:'6px 14px',fontSize:13,fontWeight:800,color:left<=60?RE:AC,fontVariantNumeric:'tabular-nums'}}>⏱ {mmss(left)}</div>
+      <div style={{fontSize:11,color:MU}}>{qi+1}/{queue.length}</div>
+    </div>
+    {speed&&<div style={{animation:'up 0.25s ease'}}>
+      <div style={{textAlign:'center',marginBottom:14}}>
+        <span style={{fontSize:10,color:COR_SPEED,fontWeight:800,letterSpacing:3}}>⚡ RODADA RELÂMPAGO</span>
+        <span style={{marginLeft:12,fontSize:12,color:speed.streak>=5?AC:MU,fontWeight:800}}>{speed.streak>=3?'🔥':''} streak {speed.streak}</span>
+      </div>
+      <SpeedTimer deadline={speed.deadline} onExpire={()=>{
+        setSpeed(s=>s?{...s,flash:'slow'}:s)
+        logEvent(speed.item,1,'speed')
+        setTimeout(()=>startSpeedItem(speed.pool,speed.idx+1,0,speed.best),500)
+      }}/>
+      <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px',fontSize:14.5,fontWeight:700,color:TX,textAlign:'center',margin:'10px 0 14px'}}>{speed.item.en}</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {speed.ops.map((op,i)=><button key={i} onClick={async()=>{
+          const right=op===speed.item.pt
+          const ns=right?speed.streak+1:0
+          if(right){SFX.tap();if(ns===8)SFX.complete()}
+          logEvent(speed.item,right?4:1,'speed')
+          startSpeedItem(speed.pool,speed.idx+1,ns,speed.best)
+        }} style={{padding:'14px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:FONT}}>{op}</button>)}
+      </div>
+    </div>}
+    {!speed&&item&&atom&&<div>
+      <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>
+        {placementRef.current?'📍 Teste de nível':(item.isReview?'◌ Revisão':(item.context==='grammar'?'⚙ Gramática':'✦ Fronteira'))} · {atom.type}
+      </div>
+
+      {atom.type==='flip'&&<div>
+        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:18,padding:'26px 20px',textAlign:'center',marginBottom:14}}>
+          <div style={{fontSize:11,color:MU,marginBottom:8}}>Diz em português:</div>
+          <div style={{fontSize:17,fontWeight:700,color:TX}}>{item.en}</div>
+          {atom.revealed&&<div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${BD}`,fontSize:18,fontWeight:800,color:AC}}>{item.pt}</div>}
+        </div>
+        {!atom.revealed?<PBtn label="Mostrar" onClick={()=>setAtom(a=>({...a,revealed:true}))}/>
+        :<div style={{display:'flex',gap:8}}>
+          {[[1,'Esqueci',RE],[3,'Difícil',GD],[4,'Bom',GR],[5,'Fácil',AC]].map(([q,l,col])=>
+            <button key={q} onClick={async()=>{await logEvent(item,q,'flip');advance()}} style={{flex:1,padding:'12px 4px',background:`${col}14`,border:`1px solid ${col}55`,borderRadius:12,color:col,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:FONT}}>{l}</button>)}
+        </div>}
+      </div>}
+
+      {atom.type==='reorder'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>Monta a frase: <span style={{color:TX}}>{item.en}</span></div>
+        <div style={{minHeight:52,background:S,border:`1px dashed ${atom.result==='right'?GR:atom.result==='wrong'?RE:BD}`,borderRadius:14,padding:'10px 12px',marginBottom:10,display:'flex',flexWrap:'wrap',gap:6}}>
+          {atom.picked.map((w,i)=><button key={i} onClick={()=>!atom.result&&setAtom(a=>({...a,picked:a.picked.filter((_,j)=>j!==i),pool:[...a.pool,w]}))} style={{padding:'7px 11px',background:AC,border:'none',borderRadius:9,color:'#16240f',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>{w}</button>)}
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+          {atom.pool.map((w,i)=><button key={i} onClick={()=>!atom.result&&setAtom(a=>({...a,pool:a.pool.filter((_,j)=>j!==i),picked:[...a.picked,w]}))} style={{padding:'7px 11px',background:S2,border:`1px solid ${BD}`,borderRadius:9,color:TX,fontSize:13,cursor:'pointer',fontFamily:FONT}}>{w}</button>)}
+        </div>
+        {atom.hint&&!atom.result&&<div style={{fontSize:11.5,color:GD,marginBottom:10}}>💡 {atom.hint}</div>}
+        {atom.result==='wrong'&&<div style={{fontSize:12,color:TX,marginBottom:10,background:`${RE}10`,border:`1px solid ${RE}33`,borderRadius:10,padding:'10px 12px'}}>Era assim: <b style={{color:AC}}>{item.pt}</b></div>}
+        {!atom.result?<PBtn label="Verificar" onClick={async()=>{
+          const ans=atom.picked.join(' ')
+          if(ans===item.pt){setAtom(a=>({...a,result:'right'}));const q=atom.tries>0?3:4;await logEvent(item,q,'reorder');setTimeout(advance,650)}
+          else if(atom.tries===0){setAtom(a=>({...a,tries:1,hint:`Começa com "${(item.pt||'').split(' ')[0]}" — tenta de novo`,picked:[],pool:shuffleArr((item.pt||'').split(' '))}));}
+          else{setAtom(a=>({...a,result:'wrong'}));await logEvent(item,1,'reorder')}
+        }}/>:atom.result==='wrong'?<PBtn label="Continuar" onClick={advance}/>:<div style={{textAlign:'center',color:GR,fontWeight:800,fontSize:15}}>✓</div>}
+      </div>}
+
+      {atom.type==='cloze'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>{item.en}</div>
+        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'20px 16px',fontSize:16,fontWeight:600,color:TX,marginBottom:14,lineHeight:1.7}}>
+          {(item.pt||'').split(' ').map((w,i)=>i===atom.blank?<span key={i} style={{color:atom.result?(atom.result==='right'?GR:RE):AC,borderBottom:`2px solid ${AC}`,padding:'0 6px',margin:'0 3px'}}>{atom.result?atom.correct:'____'}</span>:<span key={i}> {w} </span>)}
+        </div>
+        {!atom.result?<div style={{display:'flex',gap:8}}>
+          {atom.options.map((op,i)=><button key={i} onClick={async()=>{
+            const right=op===atom.correct
+            setAtom(a=>({...a,result:right?'right':'wrong',chosen:op}))
+            await logEvent(item,right?4:1,'cloze')
+            setTimeout(advance,right?600:1600)
+          }} style={{flex:1,padding:'13px 6px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:700,fontSize:13.5,cursor:'pointer',fontFamily:FONT}}>{op}</button>)}
+        </div>
+        :atom.result==='wrong'&&<div style={{fontSize:12,color:TX,background:`${RE}10`,border:`1px solid ${RE}33`,borderRadius:10,padding:'10px 12px'}}>Você marcou "{atom.chosen}" — era <b style={{color:AC}}>"{atom.correct}"</b> · {item.en}</div>}
+      </div>}
+
+      {atom.type==='recog'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>O que significa?</div>
+        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'20px 16px',fontSize:17,fontWeight:800,color:AC,textAlign:'center',marginBottom:14}}>{item.pt}</div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {atom.options.map((op,i)=><button key={i} disabled={!!atom.result} onClick={async()=>{
+            const right=op===item.en
+            setAtom(a=>({...a,result:right?'right':'wrong',chosen:op}))
+            await logEvent(item,right?4:1,'recog')
+            setTimeout(advance,right?550:1500)
+          }} style={{padding:'13px 15px',textAlign:'left',background:atom.result&&op===item.en?`${GR}16`:atom.chosen===op&&atom.result==='wrong'?`${RE}12`:S2,border:`1px solid ${atom.result&&op===item.en?GR:BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13.5,cursor:'pointer',fontFamily:FONT}}>{op}</button>)}
+        </div>
+      </div>}
+
+      {atom.type==='timeline'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:6}}>Onde essa frase mora na linha do tempo?</div>
+        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px 16px',fontSize:16,fontWeight:700,color:TX,textAlign:'center',marginBottom:16}}>{item.pt}</div>
+        <div style={{display:'flex',flexDirection:'column',gap:7}}>
+          {TL_POINTS.map(p=><button key={p} disabled={!!atom.result} onClick={async()=>{
+            const right=p===atom.point
+            setAtom(a=>({...a,result:right?'right':'wrong',chosen:p}))
+            await logEvent(item,right?4:1,'timeline')
+            setTimeout(advance,right?650:1900)
+          }} style={{padding:'11px 14px',textAlign:'left',background:atom.result&&p===atom.point?`${GR}18`:atom.chosen===p&&atom.result==='wrong'?`${RE}14`:S2,border:`1px solid ${atom.result&&p===atom.point?GR:atom.chosen===p&&atom.result==='wrong'?RE:BD}`,borderRadius:11,color:atom.result&&p===atom.point?GR:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>
+            <span style={{fontSize:9,color:MU,marginRight:8}}>{'←·→'[Math.sign(TL_POINTS.indexOf(p)-3.2)+1]||'·'}</span>{p}
+          </button>)}
+        </div>
+        {atom.result==='wrong'&&<div style={{fontSize:11.5,color:TX,marginTop:10}}>Mora em <b style={{color:AC}}>{atom.point}</b> — {item.en}</div>}
+      </div>}
+
+      {atom.type==='duel'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:6}}>{atom.isTense?'Qual soa certo pra essa situação?':'Qual é a frase de verdade?'}</div>
+        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:13.5,fontWeight:700,color:TX,marginBottom:14}}>{item.en}</div>
+        <div style={{display:'flex',flexDirection:'column',gap:9}}>
+          {atom.pair.map((p,i)=><button key={i} disabled={!!atom.result} onClick={async()=>{
+            const right=p===item.pt
+            setAtom(a=>({...a,result:right?'right':'wrong',chosen:p}))
+            await logEvent(item,right?4:1,'duel')
+            setTimeout(advance,right?600:1900)
+          }} style={{padding:'15px 16px',textAlign:'left',background:atom.result&&p===item.pt?`${GR}16`:atom.chosen===p&&atom.result==='wrong'?`${RE}12`:S2,border:`1.5px solid ${atom.result&&p===item.pt?GR:atom.chosen===p&&atom.result==='wrong'?RE:BD}`,borderRadius:13,color:TX,fontWeight:700,fontSize:14.5,cursor:'pointer',fontFamily:FONT}}>{p}</button>)}
+        </div>
+        {atom.result==='wrong'&&<div style={{fontSize:11.5,color:TX,marginTop:10}}>A certa era a outra — o tempo verbal muda a história.</div>}
+      </div>}
+
+      {atom.type==='conserta'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:6}}>{atom.phase2?'Qual palavra conserta?':'Tem um erro aqui — toca na palavra errada:'}</div>
+        <div style={{background:S,border:`1px solid ${atom.result==='right'?GR:atom.result==='wrong'?RE:BD}`,borderRadius:16,padding:'18px 16px',fontSize:16,fontWeight:600,color:TX,marginBottom:14,lineHeight:1.8}}>
+          {(atom.bad||'').split(' ').map((w,i)=><span key={i} onClick={()=>{
+            if(atom.phase2||atom.result)return
+            if(i===atom.wrongIdx){
+              SFX.tap()
+              const ops=[atom.rightWord,...atom.decoys.slice(0,2)].sort(()=>Math.random()-0.5)
+              setAtom(a=>({...a,phase2:true,options:ops}))
+            }else setAtom(a=>({...a,missTap:(a.missTap||0)+1}))
+          }} style={{cursor:atom.phase2?'default':'pointer',padding:'2px 4px',borderRadius:6,background:atom.phase2&&i===atom.wrongIdx?`${GD}22`:'transparent',borderBottom:!atom.phase2?`1px dotted ${BD}`:i===atom.wrongIdx?`2px solid ${GD}`:'none',color:atom.result&&i===atom.wrongIdx?(atom.result==='right'?GR:RE):TX}}>{atom.result==='right'&&i===atom.wrongIdx?atom.rightWord:w} </span>)}
+        </div>
+        {atom.missTap>=2&&!atom.phase2&&<div style={{fontSize:11,color:GD,marginBottom:10}}>💡 Olha o tempo verbal…</div>}
+        {atom.phase2&&!atom.result&&<div style={{display:'flex',gap:8}}>
+          {atom.options.map((op,i)=><button key={i} onClick={async()=>{
+            const right=op===atom.rightWord
+            setAtom(a=>({...a,result:right?'right':'wrong'}))
+            await logEvent(item,right?((atom.missTap||0)>=2?3:4):1,'conserta')
+            setTimeout(advance,right?650:1900)
+          }} style={{flex:1,padding:'13px 6px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:FONT}}>{op}</button>)}
+        </div>}
+        {atom.result==='wrong'&&<div style={{fontSize:12,color:TX}}>Era <b style={{color:AC}}>{atom.rightWord}</b>: {item.pt}</div>}
+      </div>}
+
+      {atom.type==='constructor'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>Constrói em português:</div>
+        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px',fontSize:15,fontWeight:700,color:TX,marginBottom:12}}>{item.en}</div>
+        <textarea value={atom.answer} onChange={e=>setAtom(a=>({...a,answer:e.target.value}))} disabled={!!atom.evald&&(atom.retried||atom.evald.quality>=4)} placeholder="digita do teu jeito…" style={{width:'100%',minHeight:74,background:S2,border:`1.5px solid ${atom.evald?(atom.evald.quality>=4?GR:GD):BD}`,borderRadius:14,padding:'12px 14px',fontSize:15,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
+        {atom.evald&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px'}}>
+          <div style={{display:'flex',gap:10,marginBottom:6,fontSize:10,fontWeight:800}}>
+            <span style={{color:atom.evald.meaning_ok?GR:RE}}>SIGNIFICADO {atom.evald.meaning_ok?'✓':'✗'}</span>
+            <span style={{color:atom.evald.grammar_ok?GR:GD}}>GRAMÁTICA {atom.evald.grammar_ok?'✓':'~'}</span>
+            <span style={{color:atom.evald.form_ok?GR:MU}}>ACENTOS {atom.evald.form_ok?'✓':'·'}</span>
+            <span style={{marginLeft:'auto',color:AC}}>q{atom.evald.quality}</span>
+          </div>
+          <div style={{fontSize:12,color:TX,lineHeight:1.6}}>{atom.evald.tip||atom.evald.feedback}</div>
+          {atom.evald.quality<5&&atom.evald.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:6}}>Carioca raiz: <b>{atom.evald.carioca_correction}</b></div>}
+        </div>}
+        <div style={{marginTop:12}}>
+          {!atom.evald?<PBtn label={atom.busy?'Avaliando…':'Enviar'} onClick={async()=>{
+            if(atom.busy||!atom.answer.trim())return
+            setAtom(a=>({...a,busy:true}))
+            const r=await ngFetch('ng-write-eval',{target_pt:item.pt,user_answer:atom.answer,en_prompt:item.en,scaffold_id:item.scaffold_id,stage:item.stage}).catch(()=>({quality:2,feedback:'Não deu pra avaliar'}))
+            setAtom(a=>({...a,busy:false,evald:r,firstQ:r.quality||2}))
+          }}/>
+          :(atom.evald.quality<=3&&!atom.retried)?<div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setAtom(a=>({...a,evald:null,retried:true}))} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Tentar de novo</button>
+            <button onClick={async()=>{await logEvent(item,atom.evald.quality,'constructor');advance()}} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continuar</button>
+          </div>
+          :<PBtn label="Continuar" onClick={async()=>{
+            const raw=atom.evald.quality||2
+            const q=atom.retried?Math.max(atom.firstQ||1,Math.max(1,Math.round(raw-0.5))):raw
+            await logEvent(item,q,'constructor');advance()
+          }}/>}
+        </div>
+      </div>}
+    </div>}
+  </div>
+}
+
 function NGHome({isOnline,go,active=true}){
   const[coachNote,setCoachNote]=useState('')
   const[phase,setPhase]=useState({n:1,name:'Survival → Social',controlled:0,due:0})
@@ -5236,6 +5701,10 @@ function NGHome({isOnline,go,active=true}){
 
     {/* CONTINUE — the one big button */}
     <div style={{margin:'16px 20px 0'}}>
+      <button onClick={()=>{SFX.tap();go('ng-treino')}} style={{width:'100%',padding:'15px 18px',background:`${GR}14`,border:`1.5px solid ${GR}66`,borderRadius:18,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left'}}>
+        <span style={{display:'block',fontSize:10,color:GR,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>▶ Treino do dia</span>
+        <span style={{display:'block',fontSize:15,color:TX,fontWeight:700}}>Quanto tempo você tem?</span>
+      </button>
       <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
         style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#e6a900)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:`ringGlow ${phase.due>=8?1.6:phase.due>=4?2.2:3.2}s ease-in-out infinite`}}>
         <span style={{display:'block',fontSize:10,color:'#16240fbb',fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>Continue</span>
@@ -5760,6 +6229,7 @@ export default function App(){
       <div style={{display:ngScreen==='ng-intelligence'?'block':'none'}}><NGIntelligence isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
       <div style={{display:ngScreen==='ng-phrase'?'block':'none'}}><NGPhrase isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} active={ngScreen==='ng-phrase'}/></div>
       {/* Conditional — fresh each visit */}
+      {ngScreen==='ng-treino'&&<NGTreino isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-voice'&&<VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true} ngMode={true}/>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} seed={studySeed} clearSeed={()=>setStudySeed(null)}/>}
@@ -5778,6 +6248,14 @@ export default function App(){
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
         {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-learn',i:'⛰',l:'Learn'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
           <button key={t.k} onClick={()=>{
+              if(t.k==='__seed'){
+                SFX.tap()
+                fetch('/.netlify/functions/ng-seed-trilha',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+                  .then(r=>r.json()).then(r=>{
+                    alert(r.ok?`Currículo plantado: ${r.units} unidades, ${r.proposed} padrões novos esperando seu veredito no shelf 📥`:('Falhou: '+(r.error||'?')))
+                  }).catch(e=>alert('Falhou: '+e.message))
+                setShowMore(false);return
+              }
               if(t.k==='__export'){
                 SFX.tap()
                 fetch('/.netlify/functions/ng-export').then(r=>r.blob()).then(b=>{
@@ -5824,6 +6302,7 @@ export default function App(){
             {k:'ng-brain',i:'🧠',l:'The Brain',d:'Watch it think'},
             {k:'__sfx',i:'🔊',l:'Sound',d:'Tap to toggle effects'},
             {k:'__export',i:'⬇',l:'Backup',d:'Download your full journey as JSON'},
+            {k:'__seed',i:'🌱',l:'Plantar currículo',d:'One-time: plant the 25-unit master trilha'},
           ].map(t=><button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
             <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
             <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
