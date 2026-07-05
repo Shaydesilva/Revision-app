@@ -208,6 +208,23 @@ exports.handler=async(event)=>{
             if(it){deckItems.push(it);added=true}
           }
         }
+      }else if(deck==='session'){
+        // TREINO SESSION DECK — timer-governed, so give DEPTH, not a focus-12.
+        // All due reviews + a large slice of eligible frontier, grammar mixed in.
+        const due=reviewQueue.map(r=>({...r,isReview:true}))
+        const fresh=[...frontier]
+        // pull straight from the bank too, so long sessions never starve
+        const inFrontier=new Set(fresh.map(x=>x.scaffold_id+'|'+x.stage))
+        const bankPool=[]
+        for(const sc of scaffolds){
+          const st=(sc.stages||[]).find(s=>s.stage===(sc.current_stage||1))||sc.stages?.[0]
+          if(!st?.pt)continue
+          const key=sc.id+'|'+(st.stage||1)
+          if(inFrontier.has(key))continue
+          if(controlled.has(sc.id))continue
+          bankPool.push({scaffold_id:sc.id,base:sc.base_portuguese,stage:st.stage||1,pt:st.pt,en:st.en||'',context:sc.context,category:sc.category,phase:sc.phase||1})
+        }
+        deckItems=[...due,...fresh,...bankPool].slice(0,120)
       }else if(deck==='placement'){
         // Stratified placement bank: ~4 per phase, grammar included,
         // atoms pre-assigned (8 recog -> 6 reorder -> 1 constructor).
@@ -227,7 +244,8 @@ exports.handler=async(event)=>{
           if(pick.length>=15)break
         }
         pick.sort((a,b)=>a.phase-b.phase)
-        deckItems=pick.map((it,i)=>({...it,force:i<8?'recog':i<14?'reorder':'constructor'}))
+        // atom assignment cycles so refetched batches keep the recog/reorder/constructor mix
+        deckItems=pick.map((it,i)=>({...it,force:(i%15)<8?'recog':(i%15)<14?'reorder':'constructor'}))
       }else if(deck==='grammar'){
         // The Máquina do Tempo — tense/person cells as living sentences.
         // NEVER lies empty: frontier-gated first, then straight from the bank.
