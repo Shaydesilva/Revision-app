@@ -5428,17 +5428,23 @@ function NGAula({isOnline,unit,onBack}){
     }catch(_){setPlaying(-1)}
   }
 
+  const gapFirstQRef=useRef(null)
+  const[gapRetried,setGapRetried]=useState(false)
   const submitGap=async(gap)=>{
     if(gapBusy||!gapAns.trim())return
     setGapBusy(true)
     const r=await ngFetch('ng-write-eval',{target_pt:gap.target_pt,user_answer:gapAns,en_prompt:gap.prompt_en,scaffold_id:gap.scaffold_id,stage:gap.stage||1}).catch(()=>({quality:2,feedback:'—'}))
+    if(gapRetried&&gapFirstQRef.current!=null){
+      r.quality=Math.max(gapFirstQRef.current,Math.max(1,Math.round((r.quality||2)-0.5)))
+      r._retried=true
+    }
     setGapEval(r);setGapBusy(false)
     const q=r.quality||2
     setCenaScore(s=>[...s,q])
     if(gap.scaffold_id&&isOnline)
       ngFetch('ng-session-end',{mode:'daily',events:[{scaffold_id:gap.scaffold_id,stage:gap.stage||1,quality:q,mode:'phrase'}],duration_seconds:30}).catch(()=>{})
   }
-  const nextTurn=()=>{setGapAns('');setGapEval(null);setTurnIdx(i=>i+1)}
+  const nextTurn=()=>{setGapAns('');setGapEval(null);setGapRetried(false);gapFirstQRef.current=null;setTurnIdx(i=>i+1)}
 
   const Narr=({pt,en})=>pt?<div style={{textAlign:'center',margin:'0 0 16px'}}>
     <div style={{fontSize:12.5,color:AC,fontWeight:700,fontStyle:'italic'}}>"{pt}"</div>
@@ -5510,6 +5516,10 @@ function NGAula({isOnline,unit,onBack}){
       </div>}
       <div style={{marginTop:12}}>
         {!gapEval?<PBtn label={gapBusy?'Avaliando…':'Falar'} onClick={()=>submitGap(t.gap)}/>
+        :(gapEval.quality<=3&&!gapRetried)?<div style={{display:'flex',gap:8}}>
+          <button onClick={()=>{gapFirstQRef.current=gapEval.quality||1;setGapRetried(true);setGapEval(null)}} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Tentar de novo</button>
+          <button onClick={()=>{t.gap._said=gapAns;(turnIdx>=turns.length-1)?(SFX.complete(),setSt('done')):nextTurn()}} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continuar</button>
+        </div>
         :<PBtn label={turnIdx>=turns.length-1?'Fechar a cena':'Continuar a cena →'} onClick={()=>{
           t.gap._said=gapAns
           if(turnIdx>=turns.length-1){SFX.complete();setSt('done')}else nextTurn()
@@ -5624,7 +5634,8 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     const isGram=(item.context||'')==='grammar'
     // Grammar gets the signature rotation; aspect made spatial + adversarial.
     // Layer-3 weighted rotation: struggled atoms appear more, aced ones less.
-    const base=isGram?['timeline','duel','conserta','constructor']:['reorder','cloze','constructor','duel']
+    // 'escuta' = graded listening comprehension — the ear gets reps too.
+    const base=isGram?['timeline','duel','conserta','constructor','escuta']:['reorder','cloze','escuta','constructor','duel']
     const w=atomWRef.current||{}
     const bag=[]
     for(const a of base){const rep=Math.max(1,Math.round((w[a]||1)*2));for(let k=0;k<rep;k++)bag.push(a)}
@@ -5634,6 +5645,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     if(rot==='duel'&&!corruptPT(item.pt)&&queue.length<3)rot='cloze'
     if(rot==='reorder'&&words.length<3)rot='cloze'
     if(rot==='cloze'&&words.length<3)rot='flip'
+    if(rot==='escuta'&&(!isOnline||queue.length<3))rot='cloze'
     if(rot==='constructor'&&!isOnline)rot=isGram?'conserta':'reorder'
     if(rot==='conserta'&&!corruptPT(item.pt))rot='cloze'
     return rot
@@ -5651,9 +5663,20 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
       const words=(item.pt||'').split(' ')
       let bi=0;words.forEach((w,j)=>{if(w.length>words[bi].length)bi=j})
       const correct=words[bi]
-      const others=queue.filter(x=>x!==item).flatMap(x=>(x.pt||'').split(' ')).filter(w=>w.length>=Math.max(3,correct.length-2)&&w.toLowerCase()!==correct.toLowerCase())
-      const ops=shuffleArr([correct,...shuffleArr([...new Set(others)]).slice(0,2)])
+      // Distractor quality: confusion partners first (real grammar traps),
+      // then same-ending words (plausible), then random — never absurd-easy.
+      const cl=correct.toLowerCase().replace(/[.,!?]/g,'')
+      const conf=CONF_PAIRS.filter(([a])=>a===cl).map(([,b])=>b)
+        .concat(CONF_PAIRS.filter(([,b])=>b===cl).map(([a])=>a))
+      const pool=[...new Set(queue.filter(x=>x!==item).flatMap(x=>(x.pt||'').split(' ')))]
+        .filter(w=>w.length>=3&&w.toLowerCase()!==cl)
+      const ending=pool.filter(w=>w.slice(-2)===correct.slice(-2))
+      const cand=[...new Set([...conf,...shuffleArr(ending),...shuffleArr(pool)])].slice(0,2)
+      const ops=shuffleArr([correct,...cand])
       setAtom({type:'cloze',blank:bi,correct,options:ops,result:null})
+    }else if(t==='escuta'){
+      const others=queue.filter(x=>x!==item&&x.en).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.en)
+      setAtom({type:'escuta',options:[item.en,...others].sort(()=>Math.random()-0.5),audio:null,fetching:false,plays:0,result:null,chosen:null})
     }else if(t==='recog'){
       const others=queue.filter(x=>x!==item&&x.en).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.en)
       setAtom({type:'recog',options:[item.en,...others].sort(()=>Math.random()-0.5),result:null,chosen:null})
@@ -5671,6 +5694,14 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
   }
 
   const logEvent=async(item,quality,atomType)=>{
+    // Relearning loop: a failed item returns later in the SAME session (once).
+    // Desirable difficulty — you don't leave a Treino with an unrepaired miss.
+    if(!placementRef.current&&quality<=2&&!item._requeued&&atomType!=='speed'){
+      setQueue(prev=>{
+        const at=Math.min(prev.length,qi+4)
+        return[...prev.slice(0,at),{...item,_requeued:true},...prev.slice(at)]
+      })
+    }
     if(placementRef.current){
       placeResults.current.push({scaffold_id:item.scaffold_id,stage:item.stage,phase:item.phase||1,
         skill:atomType==='recog'?'recognition':'production',ok:quality>=3})
@@ -5684,7 +5715,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     try{
       const r=await ngFetch('ng-session-end',{mode:'daily',
         events:[{scaffold_id:item.scaffold_id,stage:item.stage,quality,
-          mode:(atomType==='flip'||atomType==='recog'||atomType==='speed')?'flashcard':atomType==='constructor'?'write':atomType}],
+          mode:(atomType==='flip'||atomType==='recog'||atomType==='speed'||atomType==='escuta_audio')?'flashcard':atomType==='constructor'?'write':atomType}],
         duration_seconds:secs})
       if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:item.pt}))].slice(-20))
     }catch(_){}
@@ -5857,6 +5888,35 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
           }} style={{flex:1,padding:'13px 6px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:700,fontSize:13.5,cursor:'pointer',fontFamily:FONT}}>{op}</button>)}
         </div>
         :atom.result==='wrong'&&<div style={{fontSize:12,color:TX,background:`${RE}10`,border:`1px solid ${RE}33`,borderRadius:10,padding:'10px 12px'}}>Você marcou "{atom.chosen}" — era <b style={{color:AC}}>"{atom.correct}"</b> · {item.en}</div>}
+      </div>}
+
+      {atom.type==='escuta'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:10}}>Só o ouvido — o que você escutou?</div>
+        <div style={{textAlign:'center',marginBottom:16}}>
+          <button onClick={async()=>{
+            if(atom.plays>=2)return
+            if(atom.audio){const a=new Audio('data:audio/mp3;base64,'+atom.audio);a.play();setAtom(x=>({...x,plays:x.plays+1}));return}
+            if(atom.fetching)return
+            setAtom(x=>({...x,fetching:true}))
+            try{
+              const r=await ngFetch('ng-tts',{text:item.pt,voice:'nova'})
+              if(r?.audio){const a=new Audio('data:audio/mp3;base64,'+r.audio);a.play();setAtom(x=>({...x,audio:r.audio,fetching:false,plays:x.plays+1}))}
+              else setAtom(x=>({...x,fetching:false}))
+            }catch(_){setAtom(x=>({...x,fetching:false}))}
+          }} style={{width:76,height:76,borderRadius:38,background:atom.plays>=2?S2:`${BZ}18`,border:`2px solid ${atom.plays>=2?BD:BZ}`,color:atom.plays>=2?MU:BZ,fontSize:26,cursor:'pointer'}}>
+            {atom.fetching?'…':'🔊'}
+          </button>
+          <div style={{fontSize:9.5,color:MU,marginTop:6}}>{atom.plays===0?'toca pra ouvir':atom.plays===1?'mais 1 replay':'sem replays — decide'}</div>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {atom.options.map((op,i)=><button key={i} disabled={!!atom.result||atom.plays===0} onClick={async()=>{
+            const right=op===item.en
+            setAtom(a=>({...a,result:right?'right':'wrong',chosen:op}))
+            await logEvent(item,right?4:1,'escuta_audio')
+            setTimeout(advance,right?600:1800)
+          }} style={{padding:'13px 15px',textAlign:'left',background:atom.result&&op===item.en?`${GR}16`:atom.chosen===op&&atom.result==='wrong'?`${RE}12`:S2,border:`1px solid ${atom.result&&op===item.en?GR:BD}`,borderRadius:12,color:atom.plays===0?MU:TX,fontWeight:600,fontSize:13.5,cursor:'pointer',fontFamily:FONT,opacity:atom.plays===0?0.5:1}}>{op}</button>)}
+        </div>
+        {atom.result&&<div style={{fontSize:12,color:TX,marginTop:10,textAlign:'center'}}>Era: <b style={{color:AC}}>{item.pt}</b></div>}
       </div>}
 
       {atom.type==='recog'&&<div>
