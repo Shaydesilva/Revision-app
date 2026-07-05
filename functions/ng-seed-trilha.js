@@ -10,6 +10,14 @@ exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
+    const body=JSON.parse(event.body||'{}')
+    const anthropicKey=process.env.ANTHROPIC_API_KEY
+    const claude=async(system,user,maxTokens=1600)=>{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':anthropicKey,'anthropic-version':'2023-06-01'},
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system,messages:[{role:'user',content:user}]})})
+      const d=await res.json();return(d.content&&d.content[0]&&d.content[0].text||'').replace(/```json|```/g,'').trim()
+    }
     const seed=JSON.parse(SEED)
     if(seed.delete_scaffolds?.length)
       await sb.from('ng_scaffolds').delete().eq('user_id',UID).in('id',seed.delete_scaffolds)
@@ -22,26 +30,85 @@ exports.handler=async(event)=>{
     }))
     const{error:uerr}=await sb.from('ng_path_units').insert(rows)
     if(uerr)return{statusCode:500,body:JSON.stringify({error:'units: '+uerr.message})}
-    let proposed=0
-    const{data:pending}=await sb.from('ng_suggestions').select('phrase').eq('user_id',UID).eq('status','pending')
-    const seen=new Set((pending||[]).map(p=>(p.phrase||'').toLowerCase().trim()))
+    // Authored scaffolds — BANK-AWARE (reset/replant safe):
+    // already in the bank -> attach its id to the unit directly;
+    // genuinely new -> propose via the shelf (the law binds the author too).
+    let planted=0,attached=0
+    const norm=t=>(t||'').toLowerCase().replace(/[.,!?]/g,'').replace(/\u2026/g,'').replace(/\s+/g,' ').trim()
+    const{data:bankRows}=await sb.from('ng_scaffolds').select('id,base_portuguese,stages').eq('user_id',UID)
+    const bankBy={}
+    for(const b of(bankRows||[])){
+      bankBy[norm(b.base_portuguese)]=b.id
+      for(const st of(b.stages||[]))if(st.pt&&!bankBy[norm(st.pt)])bankBy[norm(st.pt)]=b.id
+    }
+    const attachToUnit=async(unitId,scId)=>{
+      try{
+        const{data:u}=await sb.from('ng_path_units').select('id,scaffold_ids').eq('user_id',UID).eq('unit_id',unitId).single()
+        if(u&&!(u.scaffold_ids||[]).includes(scId)){
+          await sb.from('ng_path_units').update({scaffold_ids:[...(u.scaffold_ids||[]),scId]}).eq('id',u.id)
+          return true
+        }
+      }catch(_){}
+      return false
+    }
     for(const item of seed.new_scaffolds){
       const sc=item.scaffold
       const phrase=(sc.stages&&sc.stages[0]&&sc.stages[0].pt)||sc.base_portuguese
-      if(seen.has((phrase||'').toLowerCase().trim()))continue
-      const{error}=await sb.from('ng_suggestions').insert({
-        user_id:UID,source:'curriculum',phrase,
-        payload:{decision:'new_scaffold',
-          scaffold:{base_portuguese:phrase,base_english:sc.base_english||(sc.stages&&sc.stages[0]&&sc.stages[0].en)||'',
-            category:sc.category||'social_foundation',context:sc.context||'general',
-            phase:sc.phase||1,stages:(sc.stages||[]).map(s=>({pt:s.pt,en:s.en}))},
-          tapped_stage:0,curriculum_unit:item.unit_id},
-        status:'pending'})
-      if(!error){proposed++;seen.add((phrase||'').toLowerCase().trim())}
+      const existId=bankBy[norm(phrase)]
+      if(existId){ if(await attachToUnit(item.unit_id,existId))attached++; continue }
+      const stages=(sc.stages||[]).map((st,i)=>({stage:i+1,pt:st.pt,en:st.en,acquired:false,acquired_at:null,practice_count:0,modes_used:[]}))
+      if(!stages.length)continue
+      const id='sc_cur_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)
+      const{error}=await sb.from('ng_scaffolds').insert({
+        id,user_id:UID,base_portuguese:stages[0].pt,base_english:stages[0].en||sc.base_english||'',
+        stages,current_stage:1,phase:sc.phase||1,category:sc.category||'social_foundation',
+        context:sc.context||'general',cluster:'curriculum',source:'curriculum',last_practiced:null})
+      if(error)continue
+      bankBy[norm(phrase)]=id
+      if(await attachToUnit(item.unit_id,id))attached++
+      planted++
     }
-    await sb.from('ng_learner_profile').update({life_context:seed.life_context}).eq('user_id',UID)
+    if(seed.life_context)await sb.from('ng_learner_profile').update({life_context:seed.life_context}).eq('user_id',UID)
+
+    // ═══ CLUSTER THE WILDS — one pass, at setup. Everything outside the spine
+    // becomes NAMED situational side-quest units (sacred spine stays 25). ═══
+    let wild_units=0,wild_patterns=0
+    if(body.cluster_wilds){
+      try{
+        const{data:allU2}=await sb.from('ng_path_units').select('scaffold_ids').eq('user_id',UID)
+        const placedW=new Set();(allU2||[]).forEach(u=>(u.scaffold_ids||[]).forEach(x=>placedW.add(x)))
+        const{data:allS2}=await sb.from('ng_scaffolds').select('id,base_portuguese,base_english,category').eq('user_id',UID)
+        const wilds=(allS2||[]).filter(x=>!placedW.has(x.id))
+        if(wilds.length>=4){
+          const chunks=[];for(let i=0;i<wilds.length&&i<240;i+=80)chunks.push(wilds.slice(i,i+80))
+          let sortW=910
+          for(const ch of chunks){
+            const listing=ch.map(x=>x.id+' | "'+x.base_portuguese+'" ('+(x.base_english||'')+') ['+x.category+']').join('\n')
+            const raw=await claude(
+'You cluster Carioca Portuguese patterns into REAL situational side-quest units for a learner. 4-7 patterns each, every id placed exactly once, no invented ids. Titles: short evocative Portuguese + one emoji. JSON only: {"units":[{"unit_id":"snake_case","title":"","title_en":"","emoji":"","situation":"one line","scaffold_ids":[]}]}',
+'PATTERNS:\n'+listing,1600)
+            let out=null;try{out=JSON.parse(raw)}catch(_){}
+            if(!out||!out.units)continue
+            const idset=new Set(ch.map(x=>x.id));const seenId=new Set()
+            const rows2=out.units.map((u,i)=>({
+              user_id:UID,unit_id:('sq_'+(u.unit_id||('wild'+sortW+i))).slice(0,60),
+              title:u.title||'Da rua',emoji:u.emoji||'📦',
+              situation:(u.title_en?('['+u.title_en+'] '):'')+(u.situation||''),
+              scaffold_ids:(u.scaffold_ids||[]).filter(id=>idset.has(id)&&!seenId.has(id)&&(seenId.add(id)||true)),
+              threshold_days:7,sort_order:sortW++,is_side_quest:true,level:1,levels:[]
+            })).filter(r=>r.scaffold_ids.length)
+            const leftover=ch.map(x=>x.id).filter(id=>!seenId.has(id))
+            if(leftover.length&&rows2.length)rows2[rows2.length-1].scaffold_ids.push(...leftover)
+            if(rows2.length){
+              await sb.from('ng_path_units').insert(rows2)
+              wild_units+=rows2.length;wild_patterns+=rows2.reduce((a,r)=>a+r.scaffold_ids.length,0)
+            }
+          }
+        }
+      }catch(_){}
+    }
     try{await sb.from('ng_brain_log').insert({user_id:UID,process:'path',importance:3,
-      thought:'The master curriculum is planted: '+rows.length+' authored units, '+proposed+' new patterns awaiting your verdict on the shelf. The tree has its seed.'})}catch(_){}
-    return{statusCode:200,body:JSON.stringify({ok:true,units:rows.length,proposed})}
+      thought:'The spine is planted: '+rows.length+' authored units, '+planted+' patterns planted, '+attached+' reconnected. The spine is sacred.'})}catch(_){}
+    return{statusCode:200,body:JSON.stringify({ok:true,units:rows.length,proposed,attached})}
   }catch(e){return{statusCode:500,body:JSON.stringify({error:e.message})}}
 }

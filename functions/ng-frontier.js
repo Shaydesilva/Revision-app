@@ -230,12 +230,24 @@ exports.handler=async(event)=>{
         deckItems=pick.map((it,i)=>({...it,force:i<8?'recog':i<14?'reorder':'constructor'}))
       }else if(deck==='grammar'){
         // The Máquina do Tempo — tense/person cells as living sentences.
-        // Grammar is never undervalued: its own deck, frontier-ordered.
+        // NEVER lies empty: frontier-gated first, then straight from the bank.
         deckItems=frontier.filter(it=>(it.context||'')==='grammar').slice(0,12)
         if(deckItems.length<12){
-          // top up with grammar-category reviews if thin
           const gRev=reviewQueue.filter(r=>(r.context||'')==='grammar').slice(0,12-deckItems.length)
           deckItems=[...deckItems,...gRev]
+        }
+        if(deckItems.length<12){
+          const have=new Set(deckItems.map(x=>x.scaffold_id+'|'+x.stage))
+          for(const sc of scaffolds){
+            if((sc.context||'')!=='grammar')continue
+            const st=(sc.stages||[]).find(s=>s.stage===(sc.current_stage||1))||sc.stages?.[0]
+            if(!st?.pt)continue
+            const key=sc.id+'|'+(st.stage||1)
+            if(have.has(key))continue
+            deckItems.push({scaffold_id:sc.id,base:sc.base_portuguese,stage:st.stage||1,pt:st.pt,en:st.en||'',context:sc.context,category:sc.category,phase:sc.phase||1})
+            have.add(key)
+            if(deckItems.length>=12)break
+          }
         }
       }else if(deck==='weak'){
         // Struggles + low recent quality + starred failures

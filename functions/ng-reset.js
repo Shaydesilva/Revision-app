@@ -26,7 +26,7 @@ exports.handler=async(event)=>{
     // ── Progress tables (V1 + V2 + brain) ─────────────────────────────
     await wipe('ng_scaffold_events')
     await wipe('ng_path_units')
-    await wipe('ng_suggestions')     // pending pipeline        // trilha regenerates from graph automatically
+    await wipe('ng_suggestions')     // pending pipeline
     await wipe('ng_memory')             // V2 memory engine
     await wipe('ng_daily')              // nightly brain output
     await wipe('ng_radio_segments')     // radio content references old frontier
@@ -59,7 +59,9 @@ exports.handler=async(event)=>{
       pending_hybrids:[],luna_chat_history:[],
       metrics_snapshot:null,last_intelligence_insights:'',
       show_bible:'',placement_done:false,confidence_log:[],
+      streak:{},atom_weights:{},setup_state:'new',
       last_hybrid_date:null,
+      // life_context intentionally kept — identity principle, not progress
       version:0,last_updated:new Date().toISOString()
       // radio_station_prompt intentionally kept — it's a preference
     }

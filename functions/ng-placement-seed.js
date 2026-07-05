@@ -25,7 +25,7 @@ exports.handler=async(event)=>{
       },{onConflict:'user_id,scaffold_id,stage,skill'})
       if(!error)seeded++
     }
-    await sb.from('ng_learner_profile').update({placement_done:true,phase:Math.max(1,Math.min(4,phase))}).eq('user_id',UID)
+    await sb.from('ng_learner_profile').update({placement_done:true,setup_state:'done',phase:Math.max(1,Math.min(4,phase))}).eq('user_id',UID)
     try{await sb.from('ng_brain_log').insert({user_id:UID,process:'placement',importance:3,
       thought:`Placement complete: starting phase ${phase}, ${seeded} patterns seeded with PROVISIONAL priors (capped 2d — real reps must confirm within the week). The journey starts measured.`})}catch(_){}
     return{statusCode:200,body:JSON.stringify({ok:true,seeded,phase})}

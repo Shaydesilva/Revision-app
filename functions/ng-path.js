@@ -60,7 +60,7 @@ exports.handler=async(event)=>{
         const leftovers=[...catIds].filter(id=>!placed.has(id))
         for(let li=0;li<leftovers.length;li+=6){
           rows.push({user_id:UID,unit_id:(cat+'_extra_'+chunk+'_'+(li/6)).slice(0,60),
-            title:'Da rua · '+cat.replace(/_/g,' '),emoji:'📦',
+            title:'Da rua · '+cat.replace(/_/g,' ')+' '+['I','II','III','IV','V','VI','VII','VIII'][Math.floor(li/6)%8],emoji:'📦',
             situation:'Padrões ainda sem casa — pratique; o cérebro reagrupa com o tempo',
             scaffold_ids:leftovers.slice(li,li+6),
             sort_order:chunk*100+60+Math.floor(li/6),is_side_quest:false})
@@ -165,6 +165,13 @@ Stages escalate: 1 core → 2 extended → 3 full street flow.`,
     if(!units?.length){
       const{count:scCount}=await sb.from('ng_scaffolds').select('id',{count:'exact',head:true}).eq('user_id',UID)
       if(!scCount)return{statusCode:200,body:JSON.stringify({units:[],bootstrapping:false,error:'No scaffolds in the bank yet'})}
+      // THE AUTHORED CURRICULUM IS THE FOUNDATION — plant it, never AI-cluster
+      // from scratch. Generation only ever EXTENDS (levels, orphan sweeps).
+      try{
+        const ctrl=new AbortController();setTimeout(()=>ctrl.abort(),1300)
+        await fetch(process.env.URL+'/.netlify/functions/ng-seed-trilha',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:ctrl.signal}).catch(()=>{})
+      }catch(_){}
+      return{statusCode:200,body:JSON.stringify({units:[],bootstrapping:true,message:'Plantando o currículo autoral…'})}
       // Debounce: skip dispatch if a build started in the last 3 minutes
       const threeMin=new Date(Date.now()-3*60000).toISOString()
       const{data:recentGen}=await sb.from('ng_brain_log').select('id')

@@ -263,6 +263,43 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
           }
         }
       }catch(_){}
+      // RECLUSTER SWEEP: numbered "Da rua" catch-alls get dissolved into
+      // NAMED situational units (one Sonnet call, only when they exist).
+      // The dumb sweep stays fast at generate-time; the night makes it beautiful.
+      try{
+        const{data:extraU}=await sb.from('ng_path_units').select('id,unit_id,title,scaffold_ids')
+          .eq('user_id',UID).like('title','Da rua ·%')
+        if((extraU||[]).length){
+          const ids=[...new Set(extraU.flatMap(u=>u.scaffold_ids||[]))]
+          if(ids.length){
+            const{data:scs}=await sb.from('ng_scaffolds').select('id,base_portuguese,base_english,category').eq('user_id',UID).in('id',ids)
+            const listing=(scs||[]).map(s=>`${s.id} | "${s.base_portuguese}" (${s.base_english||''}) [${s.category}]`).join('\n')
+            const raw=await claude(
+`You cluster leftover Carioca Portuguese patterns into REAL situational learning units. 3-6 patterns per unit, every id placed exactly once. Titles: short evocative PT + emoji. JSON only:
+{"units":[{"unit_id":"snake_case","title":"","title_en":"","emoji":"","situation":"one line: the situation these live in","scaffold_ids":[]}]}`,
+`PATTERNS TO CLUSTER:\n${listing}`,1400)
+            let out=null;try{out=JSON.parse(raw)}catch(_){}
+            if(out?.units?.length){
+              const placed=new Set()
+              const rows=out.units.map((u,i)=>({
+                user_id:UID,unit_id:('rc_'+(u.unit_id||('extra'+i))).slice(0,60),
+                title:u.title||'Da rua',emoji:u.emoji||'📦',
+                situation:(u.title_en?('['+u.title_en+'] '):'')+(u.situation||''),
+                scaffold_ids:(u.scaffold_ids||[]).filter(id=>ids.includes(id)&&!placed.has(id)&&(placed.add(id)||true)),
+                threshold_days:7,sort_order:900+i,is_side_quest:false,level:1,levels:[]
+              })).filter(r=>r.scaffold_ids.length)
+              const left=ids.filter(id=>!placed.has(id))
+              if(left.length&&rows.length)rows[rows.length-1].scaffold_ids.push(...left)
+              if(rows.length){
+                await sb.from('ng_path_units').delete().eq('user_id',UID).in('id',extraU.map(u=>u.id))
+                await sb.from('ng_path_units').insert(rows)
+                await brainLog(sb,'path',`Reclustered ${ids.length} stray patterns from ${extraU.length} catch-alls into ${rows.length} real units: ${rows.map(r=>r.title).join(' · ')}.`,null,2)
+              }
+            }
+          }
+        }
+      }catch(_){}
+
       // ORPHAN SWEEP: scaffolds not living in ANY unit (fresh Victor imports,
       // street finds) get adopted into a rolling side-quest unit — the trilha
       // never loses sight of new material.
