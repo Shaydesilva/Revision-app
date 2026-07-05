@@ -2572,6 +2572,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
 
   const card=frontier[idx]
 
+  const writeRetryRef=useRef(null) // firstQ when retrying (Universal Correction Law)
   const submitWrite=async()=>{
     if(!card||writeLoading||getCardMode(card)!=='write')return
     setWriteLoading(true)
@@ -2583,6 +2584,13 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
         stage:card.stage,
         en_prompt:card.en
       })
+      if(writeRetryRef.current!=null){
+        // retry: best score counts, minus the 0.5 honesty tax on improvement
+        const raw=data.quality||2
+        data.quality=Math.max(writeRetryRef.current,Math.max(1,Math.round(raw-0.5)))
+        data._retried=true
+        writeRetryRef.current=null
+      }
       setWriteResult(data)
       // Auto-advance after seeing result — rate fires separately on Continue
     }catch{setWriteResult({quality:2,correct:false,feedback:'Could not evaluate.'})}
@@ -2870,6 +2878,11 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed}){
               {writeResult.carioca_correction}
             </div>}
           </div>
+          {writeResult.quality<=3&&!writeResult.revealed&&!writeResult._retried&&
+            <button onClick={()=>{writeRetryRef.current=writeResult.quality||1;setWriteResult(null)}}
+              style={{width:'100%',padding:'12px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontFamily:FONT,fontSize:13,fontWeight:700,cursor:'pointer',marginBottom:8}}>
+              ↻ Tentar de novo (melhor nota vale, com taxa)
+            </button>}
           <button onClick={confirmWriteResult}
             style={{width:'100%',padding:'12px',background:writeResult.revealed?MU:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:13,fontWeight:700,cursor:'pointer'}}>
             {writeResult.revealed?'Got it — next →':'Continue →'}
@@ -3150,7 +3163,7 @@ function NGScaffoldMap({isOnline,onBack}){
   },[isOnline])
 
   useEffect(()=>{
-    if(mapView!=='constellation'||memState.length)return
+    if((mapView!=='constellation'&&mapView!=='matrix')||memState.length)return
     Promise.all([
       ngFetch('ng-memory',{action:'state'}).then(d=>setMemState(d.state||[])).catch(()=>{}),
       ngFetch('ng-graph',{action:'full'}).then(d=>setGraphEdges(d.edges||[])).catch(()=>{})
@@ -3261,7 +3274,7 @@ function NGScaffoldMap({isOnline,onBack}){
 
     {/* View switch — Live constellation / classic grid */}
     <div style={{padding:'0 20px 14px',display:'flex',gap:8}}>
-      {[['constellation','✦ Live map'],['grid','⊞ Grid']].map(([k,l])=>
+      {[['constellation','✦ Live map'],['grid','⊞ Grid'],['matrix','⚙ Matrix']].map(([k,l])=>
         <button key={k} onClick={()=>setMapView(k)}
           style={{flex:1,padding:'10px',background:mapView===k?`${AC}18`:S2,border:`1px solid ${mapView===k?AC+'55':BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:mapView===k?700:400,color:mapView===k?AC:MU}}>{l}</button>)}
       <button onClick={()=>{SFX.tap();fetch('/.netlify/functions/ng-export').then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='carioca-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}).catch(()=>{})}}
@@ -3328,6 +3341,48 @@ function NGScaffoldMap({isOnline,onBack}){
     </div>}
 
     {/* Category sections — grid view */}
+    {mapView==='matrix'&&(()=>{
+      // A MATRIZ — persons × Linha do Tempo, each cell lit by live memory.
+      // Pure read over existing data: scaffolds classified, memory glows.
+      const persons=['eu','você·ele·a gente','eles']
+      const stabOf={}
+      for(const m of memState){
+        const k=m.scaffold_id
+        if(!stabOf[k]||m.stability>stabOf[k])stabOf[k]=m.stability||0
+      }
+      const cells={}
+      for(const sc of scaffolds){
+        for(const st of(sc.stages||[])){
+          const tp=tlClassify(st.pt);const pp=personClassify(st.pt)
+          if(!tp||!pp)continue
+          const key=pp+'|'+tp
+          const s=stabOf[sc.id]||0
+          if(!cells[key]||s>cells[key].s)cells[key]={s,pt:st.pt}
+        }
+      }
+      return<div style={{padding:'0 12px'}}>
+        <div style={{fontSize:10.5,color:MU,textAlign:'center',marginBottom:14,lineHeight:1.6}}>A Linha do Tempo × as três formas vivas.<br/>Cada célula acende com a força REAL da memória — assista a FAZER se iluminar.</div>
+        <div style={{overflowX:'auto'}}>
+        <table style={{borderCollapse:'separate',borderSpacing:3,margin:'0 auto'}}>
+          <thead><tr><th></th>{TL_POINTS.map(p=><th key={p} style={{fontSize:7.5,color:GD,fontWeight:800,padding:'2px 1px',maxWidth:44,fontFamily:FONT}}>{p}</th>)}</tr></thead>
+          <tbody>{persons.map(pp=><tr key={pp}>
+            <td style={{fontSize:9,color:AC,fontWeight:800,paddingRight:6,whiteSpace:'nowrap',fontFamily:FONT}}>{pp}</td>
+            {TL_POINTS.map(tp=>{
+              const c=cells[pp+'|'+tp]
+              const glow=c?Math.min(1,c.s/7):0
+              return<td key={tp} title={c?.pt||''} style={{width:40,height:40,borderRadius:9,textAlign:'center',verticalAlign:'middle',
+                background:c?(glow>0?`rgba(46,229,111,${0.08+glow*0.5})`:S):`${S2}`,
+                border:`1px solid ${c?(glow>0.6?GR:glow>0?GR+'55':BD):'#15291c'}`,
+                fontSize:11,color:glow>0.6?'#0a1f12':glow>0?GR:c?MU:'#25402f',fontWeight:800}}>
+                {c?(glow>=0.99?'★':glow>0?Math.round(c.s*10)/10:'·'):''}
+              </td>})}
+          </tr>)}</tbody>
+        </table>
+        </div>
+        <div style={{fontSize:9.5,color:MU,textAlign:'center',marginTop:12}}>número = dias de estabilidade · ★ = sólido (7d+) · vazio = célula ainda não existe no teu banco</div>
+      </div>
+    })()}
+
     {mapView==='grid'&&Object.entries(categories).map(([cat,label])=>{
       const catScaffolds=grouped[cat]||[]
       if(!catScaffolds.length)return null
@@ -4647,6 +4702,7 @@ function NGToday({isOnline,onBack,goTo}){
 // ── NGRadio — Radio Carioca: tune in, infinite buffered show ────────
 function NGRadio({isOnline,onBack}){
   const[radioSug,setRadioSug]=useState(null)
+  const radioCreditRef=useRef(new Set())
   const proposeLine=async(l)=>{
     SFX.tap()
     setRadioSug({loading:true})
@@ -4806,6 +4862,12 @@ function NGRadio({isOnline,onBack}){
       try{currentAudioRef.current?.pause()}catch{}
     }
     setPatternPopup({f,loading:true,scaffold:null,mem:[]})
+    // Recognition credit: you HEARD it live and engaged — a small, honest rep.
+    // Once per pattern per show (radioCreditRef guards).
+    if(f?.scaffold_id&&!radioCreditRef.current.has(f.scaffold_id)){
+      radioCreditRef.current.add(f.scaffold_id)
+      ngFetch('ng-session-end',{mode:'radio',events:[{scaffold_id:f.scaffold_id,stage:f.stage||1,quality:4,mode:'flashcard'}],duration_seconds:10}).catch(()=>{})
+    }
     try{
       const[{data:scf},{data:memRows}]=await Promise.all([
         sb.from('ng_scaffolds').select('*').eq('id',f.scaffold_id).single(),
@@ -5187,6 +5249,14 @@ function SpeedTimer({deadline,onExpire}){
   return<div style={{height:5,background:'#1a3324',borderRadius:3,overflow:'hidden'}}>
     <div style={{height:'100%',width:pct+'%',background:pct>40?'#2ee56f':pct>18?'#f0a92c':'#ff6b5e',transition:'width 0.1s linear'}}/>
   </div>
+}
+function personClassify(pt){
+  const t=' '+(pt||'').toLowerCase()+' '
+  if(/\s(eu|tô|to|comi|fui|fiz|falei|vi|peguei|tive|quero|queria|vou|preciso|tenho|fazia|tava)\s/.test(t)&&/\seu\s/.test(t))return'eu'
+  if(/\s(eles|elas|vocês|voces|tão|tao|foram|vão|vao|fizeram|estão|estao)\s/.test(t))return'eles'
+  if(/\s(a gente|você|voce|cê|ce|ele|ela)\s/.test(t))return'você·ele·a gente'
+  if(/^\s*(tô|to|fui|fiz|quero|queria|vou|preciso|tenho|tava|falei|vi)\s/.test(t))return'eu'
+  return null
 }
 const CONF_PAIRS=[['tô','tava'],['tava','tô'],['tá','é'],['é','tá'],['fui','ia'],['ia','fui'],['foi','ia'],['vou','fui'],['tenho','tinha'],['tem','tinha'],['tamo','tava'],['fiz','fazia'],['fazia','fiz']]
 function corruptPT(pt){
