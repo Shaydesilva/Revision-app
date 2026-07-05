@@ -35,7 +35,6 @@ exports.handler=async(event)=>{
         return{statusCode:200,body:JSON.stringify({ok:true,rejected:ids.length})}
       }
       let approved=0
-      const boosts={}
       for(const sid of ids.slice(0,60)){
         const{data:sug}=await sb.from('ng_suggestions').select('*').eq('user_id',UID).eq('id',sid).single()
         if(!sug||sug.status!=='pending')continue
@@ -51,16 +50,15 @@ exports.handler=async(event)=>{
         })
         if(error)continue
         approved++
-        if(p.victor_mark==='struggling')boosts[id]=3
+        if(p.curriculum_unit){
+          try{
+            const{data:u}=await sb.from('ng_path_units').select('id,scaffold_ids').eq('user_id',UID).eq('unit_id',p.curriculum_unit).single()
+            if(u)await sb.from('ng_path_units').update({scaffold_ids:[...(u.scaffold_ids||[]),id]}).eq('id',u.id)
+          }catch(_){}
+        }
         await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
       }
-      if(Object.keys(boosts).length){
-        try{
-          const{data:prof}=await sb.from('ng_learner_profile').select('priority_boosts').eq('user_id',UID).single()
-          await sb.from('ng_learner_profile').update({priority_boosts:{...(prof?.priority_boosts||{}),...boosts}}).eq('user_id',UID)
-        }catch(_){}
-      }
-      await brainLog(sb,`Victor import: ${approved} patterns approved into the bank${Object.keys(boosts).length?`, ${Object.keys(boosts).length} flagged struggling by Victor → priority boosted`:''}.`,2)
+      await brainLog(sb,`Import review: ${approved} patterns approved into the bank.`,2)
       return{statusCode:200,body:JSON.stringify({ok:true,approved,boosted:Object.keys(boosts).length})}
     }
 
@@ -106,13 +104,14 @@ exports.handler=async(event)=>{
         source:sug.source||'suggested',last_practiced:null
       })
       if(error)return{statusCode:500,body:JSON.stringify({error:error.message})}
-      await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
-      if(p.victor_mark==='struggling'){
+      // Curriculum-authored scaffolds attach to their unit (the spine fills itself)
+      if(p.curriculum_unit){
         try{
-          const{data:prof}=await sb.from('ng_learner_profile').select('priority_boosts').eq('user_id',UID).single()
-          await sb.from('ng_learner_profile').update({priority_boosts:{...(prof?.priority_boosts||{}),[id]:3}}).eq('user_id',UID)
+          const{data:u}=await sb.from('ng_path_units').select('id,scaffold_ids').eq('user_id',UID).eq('unit_id',p.curriculum_unit).single()
+          if(u)await sb.from('ng_path_units').update({scaffold_ids:[...(u.scaffold_ids||[]),id]}).eq('id',u.id)
         }catch(_){}
       }
+      await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
       await brainLog(sb,`Suggestion approved: new pattern "${stages[0]?.pt}" (${stages.length} stages) from ${sug.source}. Verbatim phrase preserved at stage ${(make_base?1:(p.tapped_stage||0)+1)}.`,2)
       return{statusCode:200,body:JSON.stringify({ok:true,scaffold_id:id})}
     }

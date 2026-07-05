@@ -310,11 +310,34 @@ Return JSON only.`},
       }
     }
 
+        // ═══ STREAK — counts DAYS WITH REPS, not minutes. One automatic
+    // freeze per ISO-week covers a missed day ("choveu, acontece").
+    // No lives, no hearts, no punishment mechanics — the boteco doesn't shame you.
+    let streakOut=null
+    try{
+      if(eventsInserted>0){
+        const{data:sp}=await sb.from('ng_learner_profile').select('streak').eq('user_id',UID).single()
+        const st=sp?.streak||{}
+        const today=new Date().toISOString().slice(0,10)
+        const isoWeek=(d=>{const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()+3-((x.getDay()+6)%7));const w1=new Date(x.getFullYear(),0,4);return x.getFullYear()+'-'+Math.round(((x-w1)/86400000+((w1.getDay()+6)%7)-3)/7+1)})(new Date())
+        if(st.last!==today){
+          const gap=st.last?Math.round((new Date(today)-new Date(st.last))/86400000):99
+          let count=st.count||0,frozen=false
+          if(gap===1)count+=1
+          else if(gap===2&&st.freeze_week!==isoWeek){count+=1;frozen=true}
+          else count=1
+          const ns={count,last:today,freeze_week:frozen?isoWeek:(st.freeze_week||null),best:Math.max(st.best||0,count)}
+          await sb.from('ng_learner_profile').update({streak:ns}).eq('user_id',UID)
+          streakOut={...ns,frozen}
+        }else streakOut=st
+      }
+    }catch(_){}
     return{
       statusCode:200,
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         ok:true,
+        streak:streakOut,
         events_inserted:eventsInserted,
         newly_acquired:newlyAcquired,
         total_controlled:updatedControlled.length,

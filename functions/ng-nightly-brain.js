@@ -263,6 +263,54 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
           }
         }
       }catch(_){}
+      // ORPHAN SWEEP: scaffolds not living in ANY unit (fresh Victor imports,
+      // street finds) get adopted into a rolling side-quest unit — the trilha
+      // never loses sight of new material.
+      try{
+        const[{data:allU},{data:allS}]=await Promise.all([
+          sb.from('ng_path_units').select('id,unit_id,scaffold_ids').eq('user_id',UID),
+          sb.from('ng_scaffolds').select('id,created_at').eq('user_id',UID)
+        ])
+        const placed=new Set();(allU||[]).forEach(u=>(u.scaffold_ids||[]).forEach(x=>placed.add(x)))
+        const orphans=(allS||[]).filter(x=>!placed.has(x.id)).map(x=>x.id)
+        if(orphans.length){
+          const rua=(allU||[]).find(u=>u.unit_id==='da_rua_novos')
+          if(rua){
+            const merged=[...new Set([...(rua.scaffold_ids||[]),...orphans])].slice(-12)
+            await sb.from('ng_path_units').update({scaffold_ids:merged}).eq('id',rua.id)
+          }else{
+            await sb.from('ng_path_units').insert({user_id:UID,unit_id:'da_rua_novos',
+              title:'Da Rua — Novos',emoji:'📦',
+              situation:'[Fresh Finds] O que chegou da rua e do Victor esta semana — pratica e o cérebro reagrupa',
+              scaffold_ids:orphans.slice(0,12),threshold_days:7,sort_order:998,is_side_quest:true,level:1,levels:[]})
+          }
+          await brainLog(sb,'path',`${orphans.length} new pattern${orphans.length>1?'s':''} adopted into "Da Rua — Novos" — nothing you learn goes homeless.`,null,1)
+        }
+      }catch(_){}
+
+      // LAYER-3 POLICY: atom weights from the last 7 days of atom-tagged events.
+      // Atoms you ace get lighter; atoms you fail get heavier (more practice).
+      // Bounded 0.5–2.0 — the variety floor: no atom ever vanishes.
+      try{
+        const since=new Date(Date.now()-7*86400000).toISOString()
+        const{data:evs}=await sb.from('ng_scaffold_events').select('mode,quality')
+          .eq('user_id',UID).gte('created_at',since).limit(1200)
+        const per={}
+        for(const e of(evs||[])){
+          const m=e.mode
+          if(!['timeline','duel','conserta','reorder','cloze'].includes(m))continue
+          per[m]=per[m]||{n:0,fail:0};per[m].n++;if((e.quality||0)<3)per[m].fail++
+        }
+        const w={}
+        for(const[m,s]of Object.entries(per)){
+          if(s.n<4)continue
+          w[m]=Math.max(0.5,Math.min(2,0.7+(s.fail/s.n)*1.8))
+        }
+        if(Object.keys(w).length){
+          await sb.from('ng_learner_profile').update({atom_weights:w}).eq('user_id',UID)
+          await brainLog(sb,'path',`Atom policy tuned: ${Object.entries(w).map(([k,v])=>k+'×'+v.toFixed(1)).join(', ')} — the games bend toward your weak spots.`,null,1)
+        }
+      }catch(_){}
     }catch(pathErr){console.log('path maintenance skipped:',pathErr.message)}
 
     // ── Final update — remaining fields (row was created progressively) ──

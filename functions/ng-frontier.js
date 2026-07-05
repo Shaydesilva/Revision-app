@@ -290,7 +290,7 @@ exports.handler=async(event)=>{
         body:JSON.stringify({
           deck,frontier:deckItems,review:reviewQueue.slice(0,8),
           review_count:reviewQueue.length,all_categories:allCategories,
-          total_controlled:controlled.size,phase:profile?.phase||1
+          total_controlled:controlled.size,phase:profile?.phase||1,atom_weights:profile?.atom_weights||{},streak:profile?.streak||{}
         })}
     }
 
@@ -408,6 +408,8 @@ exports.handler=async(event)=>{
         phase:newPhase,
         phase_name:phaseName(newPhase),
         phase_progress:phaseProgress,
+        atom_weights:profile?.atom_weights||{},
+        streak:profile?.streak||{},
         total_controlled:controlled.size,
         fully_controlled_scaffolds:fullyControlled.length,
         controlled_list:Array.from(profile?.controlled||[]),

@@ -74,12 +74,29 @@ When you introduce a word or phrase:
 If he gets it wrong: model the correct version once ("tô, not estou") then immediately talk about something else.
 Violating this rule breaks the experience. One attempt. Done. Move on.`
 
+    // ── Active unit (the trilha and Luna share one world) ─────────
+    let unitNote=''
+    try{
+      const{data:units}=await sb.from('ng_path_units').select('title,situation,scaffold_ids,completed_at,sort_order,is_side_quest')
+        .eq('user_id',UID).order('sort_order')
+      const cur=(units||[]).find(u=>!u.completed_at&&!u.is_side_quest)
+      if(cur){
+        const ids=(cur.scaffold_ids||[]).slice(0,8)
+        let pats=[]
+        if(ids.length){
+          const{data:scs}=await sb.from('ng_scaffolds').select('base_portuguese').eq('user_id',UID).in('id',ids)
+          pats=(scs||[]).map(s=>s.base_portuguese)
+        }
+        unitNote=`ACTIVE UNIT: "${cur.title}" — ${(cur.situation||'').slice(0,110)}. Its patterns: ${pats.join(' · ')||'—'}. Weave 1-2 in naturally; stealth-test one.`
+      }
+    }catch(_){}
+
     // ── Error patterns ────────────────────────────────────────────
     const errorNote=(errors||[]).length
       ?`KNOWN ERROR PATTERNS: ${(errors||[]).map(e=>e.error_type).join(', ')} — be aware but don't lecture.`
       :''
 
-    const instructions=`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise). CORRECTION STYLE (recast law): NEVER halt the conversation to correct a mistake. Instead RECAST - naturally repeat their meaning back in correct Carioca within your reply and keep the flow. The system logs slips elsewhere; your job is momentum.\n\n${speedRule}
+    const instructions=`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise). CORRECTION STYLE (recast law): NEVER halt the conversation to correct a mistake. Instead RECAST - naturally repeat their meaning back in correct Carioca within your reply and keep the flow. The system logs slips elsewhere; your job is momentum. ACTIVE UNIT AWARENESS: if unit context is provided below, naturally weave 1-2 of its patterns into conversation and stealth-test one — never announce it.\n\n${speedRule}
 
 ${complexityRule}
 
@@ -101,7 +118,7 @@ ${targetWords||'any of the above'}
 ${productionGap.length?`## PRODUCTION GAP — he recognises these but can't produce them yet:
 ${productionGap.map(c=>c.portuguese).join(', ')}`:''}
 
-${errorNote}
+${errorNote}\n${unitNote}
 
 ## CONVERSATION STYLE
 - Keep responses to 1-2 sentences maximum

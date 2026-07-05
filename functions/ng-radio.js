@@ -28,6 +28,13 @@ async function generateSegment(sb,profile,scaffolds,mem,prevLines,station,segInd
   const scMap={};(scaffolds||[]).forEach(s=>{scMap[s.id]=s})
   const strong=(mem||[]).filter(m=>m.skill==='production'&&m.stability>=14)
     .map(m=>scMap[m.scaffold_id]?.base_portuguese).filter(Boolean)
+  // Unit-awareness: the show visits the learner's current lesson world.
+  let activeUnitLine='general Rio life'
+  try{
+    const{data:units}=await sb.from('ng_path_units').select('title,situation,completed_at,sort_order').eq('user_id',UID).order('sort_order').limit(30)
+    const cur=(units||[]).find(u=>!u.completed_at)
+    if(cur)activeUnitLine=cur.title+' — '+(cur.situation||'').slice(0,120)
+  }catch(_){}
   const frontier=(profile?.frontier||[]).slice(0,8).map(f=>`"${f.pt}"`)
   const showBible=profile?.show_bible||''
   const prevContext=prevLines?prevLines.slice(-6).map(l=>`${l.speaker==='echo'?'Chico':'Bia'}: ${l.pt}`).join('\n'):''
@@ -52,6 +59,7 @@ Write a 60-90 second segment (10-14 lines) that flows FROM the previous segment 
 If no previous context, start mid-flow anyway — like tuning into live radio.
 Return JSON only: {"lines":[{"speaker":"echo|shimmer","pt":"","en":""}],"patterns_used":[]}`,
       messages:[{role:'user',content:`STATION TOPIC: ${station||'daily Rio life, gossip, absurd situations'}
+TODAY'S LESSON WORLD (set at least one beat here if natural): ${activeUnitLine}
 KNOWN PATTERNS: ${strong.slice(0,40).join(', ')||'basic Carioca'}
 FRONTIER (max 2, only if natural): ${frontier.join(', ')||'none'}
 SHOW BIBLE (callbacks only): ${showBible.slice(0,500)}
