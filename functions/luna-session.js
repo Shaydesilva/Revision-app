@@ -79,7 +79,7 @@ Violating this rule breaks the experience. One attempt. Done. Move on.`
       ?`KNOWN ERROR PATTERNS: ${(errors||[]).map(e=>e.error_type).join(', ')} — be aware but don't lecture.`
       :''
 
-    const instructions=`${speedRule}
+    const instructions=`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise). CORRECTION STYLE (recast law): NEVER halt the conversation to correct a mistake. Instead RECAST - naturally repeat their meaning back in correct Carioca within your reply and keep the flow. The system logs slips elsewhere; your job is momentum.\n\n${speedRule}
 
 ${complexityRule}
 
