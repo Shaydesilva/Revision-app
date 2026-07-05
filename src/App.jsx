@@ -3898,9 +3898,9 @@ function NGImport({isOnline,onBack}){
   if(phase==='review')return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
     <button onClick={()=>setPhase('input')} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:16}}>← Back</button>
     <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:4,fontFamily:FONTD}}>{suggestions.length} padr{suggestions.length!==1?'ões':'ão'} proposto{suggestions.length!==1?'s':''}</div>
-    <div style={{fontSize:12.5,color:MU,marginBottom:6}}>Do caderno do Victor — escadas montadas, tabelas e fonética ignoradas, itens "!" pulados.</div>
+    <div style={{fontSize:12.5,color:MU,marginBottom:6}}>Do caderno do Victor — escadas montadas; tabelas, fonética e meta ignoradas. Marcas !?* tratadas como ruído.</div>
     {importProg?.skipped&&<div style={{fontSize:10.5,color:MU,opacity:0.7,marginBottom:16}}>
-      Ignorado: {importProg.skipped.tables||0} tabelas · {importProg.skipped.phonics||0} fonética · {importProg.skipped.marked_solid||0} já sólidos (!) · {importProg.skipped.meta||0} meta
+      Ignorado: {importProg.skipped.tables||0} tabelas · {importProg.skipped.phonics||0} fonética · {importProg.skipped.meta||0} meta
     </div>}
     <div style={{display:'flex',gap:8,marginBottom:14}}>
       <button onClick={async()=>{
@@ -5277,6 +5277,120 @@ function corruptPT(pt){
 // (reviews first, grammar guaranteed, constructor as an atom) -> every rep
 // graded into the one engine. Congruency is everything.
 
+
+// ═══ NGOficina — the standalone CONSTRUCTOR mode ══════════════════════
+// 8 sentences, difficulty ramping, the delayed "tem certeza?" nudge,
+// full rubric-v2 grading, retry law. The highest-value rep, given a home.
+function NGOficina({isOnline,onBack}){
+  const[st,setSt]=useState('load')
+  const[items,setItems]=useState([])
+  const[i,setI]=useState(0)
+  const[ans,setAns]=useState('')
+  const[evald,setEvald]=useState(null)
+  const[busy,setBusy]=useState(false)
+  const[retried,setRetried]=useState(false)
+  const firstQRef=useRef(null)
+  const[nudge,setNudge]=useState(false)
+  const nudgeShownRef=useRef(false)
+  const nudgeTimerRef=useRef(null)
+  const[scores,setScores]=useState([])
+  const startRef=useRef(Date.now())
+
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const[due,def]=await Promise.all([
+          ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
+          ngFetch('ng-frontier').catch(()=>({}))
+        ])
+        const pool=[...(due?.frontier||[]),...(def?.frontier||[])]
+          .filter(x=>x.pt&&x.en&&(x.pt.split(' ').length>=3))
+        const seen=new Set();const uniq=[]
+        for(const p of pool){const k=p.scaffold_id+'|'+p.stage;if(!seen.has(k)){seen.add(k);uniq.push(p)}}
+        uniq.sort((a,b)=>(a.phase||1)-(b.phase||1)) // difficulty ramp
+        if(!uniq.length){setSt('empty');return}
+        setItems(uniq.slice(0,8));setSt('run');startRef.current=Date.now()
+      }catch(_){setSt('empty')}
+    })()
+    return()=>{if(nudgeTimerRef.current)clearTimeout(nudgeTimerRef.current)}
+  },[])
+
+  const it=items[i]
+  const onType=(v)=>{
+    setAns(v);setNudge(false)
+    if(nudgeTimerRef.current)clearTimeout(nudgeTimerRef.current)
+    // THE DELAYED NUDGE: pause ~4s on a submittable draft -> one soft check-in.
+    if(!evald&&!nudgeShownRef.current&&v.trim().split(' ').length>=2){
+      nudgeTimerRef.current=setTimeout(()=>{nudgeShownRef.current=true;setNudge(true)},4000)
+    }
+  }
+  const submit=async()=>{
+    if(busy||!ans.trim()||!it)return
+    if(nudgeTimerRef.current)clearTimeout(nudgeTimerRef.current)
+    setNudge(false);setBusy(true)
+    const r=await ngFetch('ng-write-eval',{target_pt:it.pt,user_answer:ans,en_prompt:it.en,scaffold_id:it.scaffold_id,stage:it.stage}).catch(()=>({quality:2,feedback:'—'}))
+    if(retried&&firstQRef.current!=null){
+      r.quality=Math.max(firstQRef.current,Math.max(1,Math.round((r.quality||2)-0.5)))
+      r._retried=true
+    }
+    setEvald(r);setBusy(false)
+  }
+  const commit=async()=>{
+    const q=evald?.quality||2
+    setScores(s=>[...s,q])
+    if(isOnline&&it)
+      ngFetch('ng-session-end',{mode:'daily',events:[{scaffold_id:it.scaffold_id,stage:it.stage,quality:q,mode:'write'}],duration_seconds:Math.max(5,Math.round((Date.now()-startRef.current)/1000/Math.max(1,scores.length+1)))}).catch(()=>{})
+    if(q>=4)SFX.tap()
+    if(i>=items.length-1){SFX.complete();setSt('done');return}
+    setI(x=>x+1);setAns('');setEvald(null);setRetried(false)
+    firstQRef.current=null;nudgeShownRef.current=false
+  }
+
+  if(st==='load')return<div style={{padding:'130px 20px',textAlign:'center'}}><Spinner size={20}/></div>
+  if(st==='empty')return<div style={{padding:'100px 20px',textAlign:'center'}}>
+    <div style={{fontSize:13,color:MU,marginBottom:16}}>Nada pra construir agora — pratica primeiro, volta depois.</div>
+    <GBtn label="← Voltar" onClick={onBack}/></div>
+  if(st==='done'){
+    const avg=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10:0
+    return<div style={{padding:'90px 20px',textAlign:'center',animation:'up 0.4s ease'}}>
+      <div style={{fontSize:44}}>🛠</div>
+      <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'10px 0 4px'}}>Oficina fechada</div>
+      <div style={{fontSize:12.5,color:MU,marginBottom:22}}>{scores.length} frases construídas · qualidade média {avg}<br/>Significado primeiro, sempre. Tudo no motor.</div>
+      <PBtn label="Voltar" onClick={onBack}/>
+    </div>
+  }
+  return<div style={{padding:'24px 20px 100px',animation:'up 0.3s ease'}}>
+    <div style={{display:'flex',justifyContent:'space-between',marginBottom:16}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← sair</button>
+      <div style={{fontSize:11,color:MU}}>{i+1}/{items.length}</div>
+    </div>
+    <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:6}}>🛠 OFICINA DE FRASES · fase {it?.phase||1}</div>
+    <div style={{fontSize:12,color:MU,marginBottom:8}}>Constrói em português:</div>
+    <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'15px 16px',fontSize:15.5,fontWeight:700,color:TX,marginBottom:12}}>{it?.en}</div>
+    <textarea value={ans} onChange={e=>onType(e.target.value)} disabled={!!evald&&(retried||evald.quality>=4)}
+      placeholder="do teu jeito — significado primeiro…" style={{width:'100%',minHeight:80,background:S2,border:`1.5px solid ${evald?(evald.quality>=4?GR:GD):nudge?GD:BD}`,borderRadius:14,padding:'12px 14px',fontSize:15.5,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
+    {nudge&&!evald&&<div style={{marginTop:8,fontSize:11.5,color:GD,animation:'up 0.3s ease'}}>🤔 Tem certeza? Dá uma olhada no tempo verbal antes de mandar — ou manda mesmo, errar aqui é barato.</div>}
+    {evald&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px'}}>
+      <div style={{display:'flex',gap:10,marginBottom:6,fontSize:10,fontWeight:800}}>
+        <span style={{color:evald.meaning_ok?GR:RE}}>SIGNIFICADO {evald.meaning_ok?'✓':'✗'}</span>
+        <span style={{color:evald.grammar_ok?GR:GD}}>GRAMÁTICA {evald.grammar_ok?'✓':'~'}</span>
+        <span style={{color:evald.form_ok?GR:MU}}>ACENTOS {evald.form_ok?'✓':'·'}</span>
+        <span style={{marginLeft:'auto',color:AC}}>q{evald.quality}</span>
+      </div>
+      <div style={{fontSize:12.5,color:TX,lineHeight:1.6}}>{evald.tip||evald.feedback}</div>
+      {evald.quality<5&&evald.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:6}}>Carioca raiz: <b>{evald.carioca_correction}</b></div>}
+    </div>}
+    <div style={{marginTop:12}}>
+      {!evald?<PBtn label={busy?'Avaliando…':'Enviar'} onClick={submit}/>
+      :(evald.quality<=3&&!retried)?<div style={{display:'flex',gap:8}}>
+        <button onClick={()=>{firstQRef.current=evald.quality||1;setRetried(true);setEvald(null)}} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Tentar de novo</button>
+        <button onClick={commit} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continuar</button>
+      </div>
+      :<PBtn label={i>=items.length-1?'Fechar oficina':'Próxima →'} onClick={commit}/>}
+    </div>
+  </div>
+}
+
 // ═══ NGAula — the guided lesson: Escuta → Pratica → Cena ═════════════
 // Layer-2 generated theater over the same atoms & the same engine.
 function NGAula({isOnline,unit,onBack}){
@@ -5435,8 +5549,9 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
   const endAtRef=useRef(0)
   const atomStartRef=useRef(0)
   const tickRef=useRef(null)
+  const startedRef=useRef(false)
   useEffect(()=>{
-    if(seedUnit){start(8,seedUnit);return} // Aula practice block: fixed 8 min, unit-focused
+    if(seedUnit){if(!startedRef.current){startedRef.current=true;start(8,seedUnit)}return} // Aula practice: fixed 8 min
     if(!isOnline){setStage('pick');return}
     ngFetch('ng-placement-seed',{action:'status'})
       .then(r=>setStage(r?.done?'pick':'placement-intro'))
@@ -5462,6 +5577,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
       buildAtom(q[0],0);setStage('run')
     }catch(_){setStage('pick')}
   }
+  const atomWRef=useRef({})
   const start=async(m,unitId)=>{
     setMins(m);setStage('load')
     try{
@@ -5469,6 +5585,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
         unitId?Promise.resolve({}):ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
         unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId}).catch(()=>({})):ngFetch('ng-frontier').catch(()=>({}))
       ])
+      atomWRef.current=def?.atom_weights||{}
       const dueItems=(due?.frontier||[]).map(x=>({...x,isReview:true}))
       let front=(def?.frontier||[]).filter(x=>!dueItems.some(d=>d.scaffold_id===x.scaffold_id&&d.stage===x.stage))
       // GRAMMAR GUARANTEE: grammar cells surface at least every 3rd frontier slot
@@ -5506,8 +5623,12 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     const words=(item.pt||'').split(' ')
     const isGram=(item.context||'')==='grammar'
     // Grammar gets the signature rotation; aspect made spatial + adversarial.
-    let rot=isGram?['timeline','duel','conserta','constructor'][i%4]
-                  :['reorder','cloze','constructor','duel'][i%4]
+    // Layer-3 weighted rotation: struggled atoms appear more, aced ones less.
+    const base=isGram?['timeline','duel','conserta','constructor']:['reorder','cloze','constructor','duel']
+    const w=atomWRef.current||{}
+    const bag=[]
+    for(const a of base){const rep=Math.max(1,Math.round((w[a]||1)*2));for(let k=0;k<rep;k++)bag.push(a)}
+    let rot=bag[(i*7+3)%bag.length]
     if(rot==='timeline'&&!tlClassify(item.pt))rot='duel'
     if(rot==='conserta'&&!corruptPT(item.pt))rot='cloze'
     if(rot==='duel'&&!corruptPT(item.pt)&&queue.length<3)rot='cloze'
@@ -5562,7 +5683,8 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     if(!isOnline)return
     try{
       const r=await ngFetch('ng-session-end',{mode:'daily',
-        events:[{scaffold_id:item.scaffold_id,stage:item.stage,quality,mode:atomType==='constructor'?'write':atomType==='flip'?'flashcard':'shuffle'}],
+        events:[{scaffold_id:item.scaffold_id,stage:item.stage,quality,
+          mode:(atomType==='flip'||atomType==='recog'||atomType==='speed')?'flashcard':atomType==='constructor'?'write':atomType}],
         duration_seconds:secs})
       if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:item.pt}))].slice(-20))
     }catch(_){}
@@ -5570,7 +5692,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
 
   const advance=()=>{
     if(timeUpRef.current||qi>=queue.length-1){finish();return}
-    if(speedRef.current&&!speed){
+    if(speedRef.current&&!speed&&!placementRef.current){
       // ═ A10 SPEED ROUND — peak-end rule: close on fire ═
       const pool=queue.filter(x=>x.pt&&x.en).sort(()=>Math.random()-0.5).slice(0,12)
       if(pool.length>=4){startSpeedItem(pool,0,0,0);return}
@@ -5578,6 +5700,7 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     const ni=qi+1;setQi(ni);buildAtom(queue[ni],ni)
   }
   const startSpeedItem=(pool,idx,streak,best)=>{
+    atomStartRef.current=Date.now()
     if(idx>=pool.length||timeUpRef.current){finish();return}
     const it=pool[idx]
     const wrongs=pool.filter(x=>x!==it).sort(()=>Math.random()-0.5).slice(0,2).map(x=>x.pt)
@@ -5589,6 +5712,9 @@ function NGTreino({isOnline,onBack,seedUnit,onDone}){
     if(placementRef.current){
       placementRef.current=false
       const res=placeResults.current
+      if(res.length<6){ // too little evidence — no lock-in, no seeding
+        setStage('placement-intro');return
+      }
       const acc={}
       for(const r of res){
         const w=r.skill==='production'?2:1
@@ -5850,7 +5976,8 @@ function NGHome({isOnline,go,active=true}){
     // Three light parallel reads — no frontier list, no legacy recommendation
     ngFetch('ng-frontier').then(d=>{
       setPhase({n:d.phase||1,name:d.phase_name||'Survival → Social',
-        controlled:d.total_controlled||0,due:d.review_count||0})
+        controlled:d.total_controlled||0,due:d.review_count||0,
+        streak:(d.streak&&d.streak.count)||0})
       setLoading(false)
     }).catch(()=>setLoading(false))
     ngFetch('ng-today',{action:'get'}).then(t=>{if(t?.coach_note)setCoachNote(t.coach_note)}).catch(()=>{})
@@ -5896,6 +6023,7 @@ function NGHome({isOnline,go,active=true}){
 
     {/* Header: greeting + phase */}
     <div style={{padding:'14px 20px 6px',display:'flex',alignItems:'center',gap:14}}>
+      {phase.streak>=2&&<div style={{position:'absolute',right:20,top:12,background:`${GD}12`,border:`1px solid ${GD}44`,borderRadius:14,padding:'4px 10px',fontSize:11.5,fontWeight:800,color:GD}}>🔥 {phase.streak}</div>}
       <div style={{flex:1}}>
         <div style={{fontSize:26,fontWeight:900,color:TX,fontFamily:FONTD}}>E aí, Shay</div>
         <div style={{fontSize:12,color:MU,marginTop:2}}>Fase {phase.n} · {phase.name}</div>
@@ -5917,6 +6045,10 @@ function NGHome({isOnline,go,active=true}){
       <button onClick={()=>{SFX.tap();go('ng-treino')}} style={{width:'100%',padding:'15px 18px',background:`${GR}14`,border:`1.5px solid ${GR}66`,borderRadius:18,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left'}}>
         <span style={{display:'block',fontSize:10,color:GR,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>▶ Treino do dia</span>
         <span style={{display:'block',fontSize:15,color:TX,fontWeight:700}}>Quanto tempo você tem?</span>
+      </button>
+      <button onClick={()=>{SFX.tap();go('ng-oficina')}} style={{width:'100%',padding:'11px 18px',background:S,border:`1px solid ${BD}`,borderRadius:14,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:12.5,color:TX,fontWeight:600}}>🛠 Oficina de frases</span>
+        <span style={{fontSize:10,color:MU}}>construção livre · 8 frases</span>
       </button>
       <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
         style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#e6a900)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:`ringGlow ${phase.due>=8?1.6:phase.due>=4?2.2:3.2}s ease-in-out infinite`}}>
@@ -6445,6 +6577,7 @@ export default function App(){
       {/* Conditional — fresh each visit */}
       {ngScreen==='ng-treino'&&<NGTreino isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-aula'&&<NGAula isOnline={isOnline} unit={aulaUnit} onBack={()=>setNgScreen('ng-learn')}/>}
+      {ngScreen==='ng-oficina'&&<NGOficina isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-voice'&&<VoiceMode cards={cards} onRateMultiple={onRateMultiple} onAddCard={onAddCard} isOnline={isOnline} active={true} ngMode={true}/>}
       {ngScreen==='ng-field-report'&&<NGFieldReport isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/>}
       {ngScreen==='ng-study'&&<NGFlashCards isOnline={isOnline} onBack={()=>setNgScreen('ng-home')} seed={studySeed} clearSeed={()=>setStudySeed(null)}/>}
