@@ -5739,7 +5739,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         events:[{scaffold_id:item.scaffold_id,stage:item.stage,quality,
           mode:(atomType==='flip'||atomType==='recog'||atomType==='speed'||atomType==='escuta_audio')?'flashcard':atomType==='constructor'?'write':atomType}],
         duration_seconds:secs})
-      if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:item.pt}))].slice(-20))
+      if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:item.pt}))])
     }catch(_){}
   }
 
@@ -5868,13 +5868,27 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     <div style={{fontSize:44}}>🏁</div>
     <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'10px 0 4px'}}>Treino fechado</div>
     <div style={{fontSize:12.5,color:MU,marginBottom:20}}>{mins} minutos · {stats.done} reps · qualidade média {avg}</div>
-    {gains.length>0&&<div style={{textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px 16px',marginBottom:16}}>
-      <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:8}}>GANHOS DE MEMÓRIA</div>
-      {gains.slice(-8).map((g,i)=><div key={i} style={{fontSize:11.5,color:TX,padding:'3px 0',display:'flex',justifyContent:'space-between'}}>
-        <span style={{maxWidth:'70%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.pt}</span>
-        <span style={{color:GR,fontWeight:700}}>{g.delta||'↑'}</span>
-      </div>)}
-    </div>}
+    {gains.length>0&&(()=>{
+      // Dedupe by phrase — one row per pattern, strongest gain kept. Show ALL, scroll if long.
+      const byPhrase={}
+      for(const g of gains){
+        const k=g.pt||g.scaffold_id||JSON.stringify(g)
+        const d=typeof g.delta==='number'?g.delta:parseFloat(g.delta)||0
+        if(!byPhrase[k]||d>byPhrase[k]._d)byPhrase[k]={...g,_d:d}
+      }
+      const rows=Object.values(byPhrase)
+      return<div style={{textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px 16px',marginBottom:16}}>
+        <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:8,display:'flex',justifyContent:'space-between'}}>
+          <span>GANHOS DE MEMÓRIA</span><span style={{color:GR}}>{rows.length} padrões</span>
+        </div>
+        <div style={{maxHeight:280,overflowY:'auto'}}>
+        {rows.map((g,i)=><div key={i} style={{fontSize:11.5,color:TX,padding:'3px 0',display:'flex',justifyContent:'space-between',gap:8}}>
+          <span style={{maxWidth:'72%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.pt}</span>
+          <span style={{color:GR,fontWeight:700,flexShrink:0}}>{g.delta||'↑'}</span>
+        </div>)}
+        </div>
+      </div>
+    })()}
     <PBtn label={onDone?"Continuar pra Cena →":"Voltar pro Home"} onClick={onDone||onBack}/>
   </div>}
 
