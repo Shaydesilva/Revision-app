@@ -4,7 +4,7 @@
 //  P3+: grammar counts more; register precision at P4.
 // Accents NEVER cost more than one point. Never bare-wrong: always a contrast + ONE tip
 // targeted at the highest failed tier only.
-const REGISTER_LAW="CARIOCA REGISTER LAW: spoken Rio register. 'voce' never 'tu'; 'a gente'+3rd-singular never 'nos'; contractions to/ta/tamo/pra/pro/ce are CORRECT and preferred; spoken imperfect valid; no European forms."
+const REGISTER_LAW="CARIOCA REGISTER LAW: spoken Rio register. 'voce' never 'tu'; 'first-plural is 'nos' not 'a gente' - BOTH reduced (nos vai, nos ta, nos foi) AND standard (nos vamos, nos estamos) are CORRECT, never penalize either; 'a gente' acceptable, not an error; contractions to/ta/tamo/pra/pro/ce are CORRECT and preferred; spoken imperfect valid; no European forms."
 const{createClient}=require('@supabase/supabase-js')
 const UID='00000000-0000-0000-0000-000000000001'
 exports.handler=async(event)=>{
@@ -28,7 +28,7 @@ exports.handler=async(event)=>{
 You grade a learner's typed Portuguese under the FEEDBACK CONSTITUTION (learner phase ${phase}; weights: ${weights}).
 Judge THREE tiers independently:
 - MEANING: would a Carioca understand the intended message? (intent match vs the target/prompt)
-- GRAMMAR: register-aware correctness. Contractions and spoken forms are CORRECT. At phase<=2 be generous.
+- GRAMMAR: register-aware correctness. Contractions and spoken forms are CORRECT. NÓS RULE: 'nós' is this learner's first-plural; accept BOTH reduced agreement (nós vai, nós tá, nós foi) AND standard (nós vamos, nós estamos) as fully correct — never mark reduced nós as an error. 'a gente' is also acceptable, never penalize it. At phase<=2 be generous.
 - FORM: accents/spelling only. Compare ACCENT-INSENSITIVELY for meaning/grammar; accents affect ONLY the 4->5 step.
 QUALITY: meaning wrong -> max 2. meaning ok + grammar rough -> 3. + grammar clean -> 4. + form perfect -> 5.
 TIP: exactly ONE line, warm Bia voice, targeting ONLY the highest failed tier. If meaning failed, do not mention grammar or accents at all. If quality=5, tip is a specific 4-word praise.
