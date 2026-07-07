@@ -105,7 +105,7 @@ const SEED=[
   mk(15,'gatinha','attractive girl hottie','giria',{exampleSentence:'Tu e uma gatinha, sabia?'}),
   mk(16,'gostoso/a','hot delicious','vocab',{exampleSentence:'Essa comida ta gostosa demais.'}),
   mk(17,'to ligado','I understand I get it','frase_pronta',{exampleSentence:'To ligado, pode falar.'}),
-  mk(18,'ta ligado?','you know? you get it?','frase_pronta',{exampleSentence:'A gente vai sair, ta ligado?'}),
+  mk(18,'ta ligado?','you know? you get it?','frase_pronta',{exampleSentence:'Nós vai sair, tá ligado?'}),
   mk(19,'bora',"let's go",'giria',{cluster:'letsgo',contrast:'vamos',exampleSentence:'Bora tomar uma gelada!'}),
   mk(20,'tamo indo',"we're heading out",'frase_pronta',{cluster:'letsgo',contrast:'estamos indo',exampleSentence:'Tamo indo, te vejo la.'}),
   mk(21,'acabei de aprender isso','I just learned this','sentence',{exampleSentence:'Acabei de aprender isso hoje na aula.'}),
@@ -113,8 +113,8 @@ const SEED=[
   mk(23,'tchau','goodbye','vocab',{exampleSentence:'Tchau, te vejo amanha!'}),
   mk(24,'ate logo','see you later','frase_pronta',{exampleSentence:'Ate logo, foi um prazer.'}),
   mk(25,'foi um prazer','it was a pleasure','frase_pronta',{exampleSentence:'Foi um prazer te conhecer, cara.'}),
-  mk(26,'a gente se ve',"we'll see each other",'frase_pronta',{exampleSentence:'A gente se ve na festa entao.'}),
-  mk(27,'a gente','us we replaces nos in Carioca','grammar',{contrast:'nos',exampleSentence:'A gente vai pra praia hoje.'}),
+  mk(26,'nós se vê',"we'll see each other",'frase_pronta',{exampleSentence:'Nós se vê na festa então.'}),
+  mk(27,'nós','we/us — Vidigal register keeps nós (mostly reduced: nós vai, nós tá)','grammar',{contrast:'a gente',exampleSentence:'Nós vai pra praia hoje.'}),
   mk(28,'vamo pra praia',"let's go to the beach",'sentence',{cluster:'letsgo',contrast:'nos vamos a praia',scenario:'social',exampleSentence:'Vamo pra praia? Ta fazendo calor demais.'}),
   mk(29,'eu me mudei pro Rio','I moved to Rio','sentence',{contrast:'eu me mudei para o Rio',exampleSentence:'Eu me mudei pro Rio pq eu amo o Brasil.'}),
   mk(30,'pra / pro','to the contracted','grammar',{contrast:'para a / para o',exampleSentence:'Vou pra praia, depois pro bar.'}),
@@ -142,7 +142,7 @@ const SEED=[
   mk(52,'demais','too much a lot','vocab',{exampleSentence:'Ta fazendo calor demais hoje.'}),
   mk(53,'depois','after later','vocab',{exampleSentence:'Bora tomar uma depois do trabalho.'}),
   mk(54,'de boa','chilling all good','giria',{exampleSentence:'To de boa em casa hoje.'}),
-  mk(55,'ta pronta?','are you ready?','frase_pronta',{exampleSentence:'Ta pronta? A gente ta te esperando.'}),
+  mk(55,'ta pronta?','are you ready?','frase_pronta',{exampleSentence:'Tá pronta? Nós tá te esperando.'}),
   mk(56,'mao de vaca','stingy cheapskate','giria',{exampleSentence:'O cara e mao de vaca demais.'}),
   mk(57,'nao compensa','not worth it','frase_pronta',{exampleSentence:'Nao compensa ir la, fica longe demais.'}),
   mk(58,'trouxa','dumb sucker','giria',{exampleSentence:'Tu e muito trouxa de ter acreditado.'}),
@@ -191,7 +191,7 @@ const SEED=[
   mk(101,'tudo bom','all good','frase_pronta',{cluster:'greeting',exampleSentence:'Oi, tudo bom por ai?'}),
   mk(102,'ruim','bad','vocab',{contrast:'mau/mal',exampleSentence:'O tempo ta ruim hoje.'}),
   mk(103,'tempo','time weather','vocab',{exampleSentence:'O tempo ta otimo hoje!'}),
-  mk(104,'semana que vem','next week','frase_pronta',{exampleSentence:'A gente se ve semana que vem.'}),
+  mk(104,'semana que vem','next week','frase_pronta',{exampleSentence:'Nós se vê semana que vem.'}),
   mk(105,'segunda-feira','Monday','vocab',{cluster:'days',exampleSentence:'Te vejo segunda-feira.'}),
   mk(106,'terca-feira','Tuesday','vocab',{cluster:'days',exampleSentence:'Terca-feira vamos ao mercado.'}),
   mk(107,'quarta-feira','Wednesday','vocab',{cluster:'days',exampleSentence:'Quarta-feira e dia de treino.'}),
@@ -3345,7 +3345,7 @@ function NGScaffoldMap({isOnline,onBack}){
     {mapView==='matrix'&&(()=>{
       // A MATRIZ — persons × Linha do Tempo, each cell lit by live memory.
       // Pure read over existing data: scaffolds classified, memory glows.
-      const persons=['eu','você·ele·a gente','eles']
+      const persons=['eu','você·ele·ela','nós','eles']
       const stabOf={}
       for(const m of memState){
         const k=m.scaffold_id
@@ -5243,7 +5243,7 @@ function tlClassify(pt){
   return null // present/habitual or unclassifiable — skip the atom
 }
 const DECOY_EN=['let\'s go tomorrow','I already ate','where is the bathroom?','she works downtown','it was really expensive','call me later','I don\'t drink coffee','we missed the bus','that place is closed','he plays on Sundays']
-const DECOY_PT=['bora amanhã cedo','já comi, valeu','onde fica o banheiro?','ela trabalha no centro','foi caro demais','me liga mais tarde','não bebo café','a gente perdeu o ônibus','esse lugar tá fechado','ele joga domingo']
+const DECOY_PT=['bora amanhã cedo','já comi, valeu','onde fica o banheiro?','ela trabalha no centro','foi caro demais','me liga mais tarde','não bebo café','nós perdeu o ônibus','esse lugar tá fechado','ele joga domingo']
 function padOptions(correct,cands,lang){
   const pool=[...new Set(cands.filter(x=>x&&x!==correct))]
   const dec=(lang==='pt'?DECOY_PT:DECOY_EN).filter(d=>d!==correct&&!pool.includes(d))
@@ -5267,9 +5267,10 @@ function SpeedTimer({deadline,onExpire}){
 }
 function personClassify(pt){
   const t=' '+(pt||'').toLowerCase()+' '
-  if(/\s(eu|tô|to|comi|fui|fiz|falei|vi|peguei|tive|quero|queria|vou|preciso|tenho|fazia|tava)\s/.test(t)&&/\seu\s/.test(t))return'eu'
-  if(/\s(eles|elas|vocês|voces|tão|tao|foram|vão|vao|fizeram|estão|estao)\s/.test(t))return'eles'
-  if(/\s(a gente|você|voce|cê|ce|ele|ela)\s/.test(t))return'você·ele·a gente'
+  if(/\snós\s|\snos\s|\s(estamos|vamos|fomos|estávamos|estavamos|fizemos|temos|queremos|precisamos)\s/.test(t))return'nós'
+  if(/\s(eu)\s/.test(t))return'eu'
+  if(/\s(eles|elas|vocês|voces|tão|tao|foram|vão|vao|fizeram|estão|estao|estavam)\s/.test(t))return'eles'
+  if(/\s(a gente|você|voce|cê|ce|ele|ela)\s/.test(t))return'você·ele·ela'
   if(/^\s*(tô|to|fui|fiz|quero|queria|vou|preciso|tenho|tava|falei|vi)\s/.test(t))return'eu'
   return null
 }
