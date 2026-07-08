@@ -341,6 +341,43 @@ exports.handler=async(event)=>{
           }
           deckItems=deckItems.slice(0,12)
         }
+      }else if(deck==='fading'){
+        // ROAM default: the half-known first — wandering feels like 'oh, right,
+        // that one', not auditing a list. Retrievability from the ONE CLOCK.
+        const now2=Date.now()
+        const scored=[]
+        for(const m of memProd){
+          if(!m.last_review||!m.stability)continue
+          const elapsed=(now2-new Date(m.last_review).getTime())/86400000
+          const R=Math.exp(Math.log(0.9)*elapsed/Math.max(0.1,m.stability))
+          if(R>0.25&&R<0.75){
+            const sc=scaffolds.find(s=>s.id===m.scaffold_id);if(!sc)continue
+            const st=(sc.stages||[]).find(s=>Number(s.stage)===Number(m.stage));if(!st?.pt)continue
+            scored.push({scaffold_id:sc.id,base:sc.base_portuguese,stage:st.stage,pt:st.pt,en:st.en||'',context:sc.context,category:sc.category,source:sc.source,phase:sc.phase||1,practice_count:1,fading:Math.round((1-R)*100)})
+          }
+        }
+        scored.sort((a,b)=>b.fading-a.fading)
+        deckItems=scored.slice(0,20)
+        if(deckItems.length<6){
+          const have=new Set(deckItems.map(x=>x.scaffold_id+'|'+x.stage))
+          deckItems=[...deckItems,...frontier.filter(f=>f.practice_count>0&&!have.has(f.scaffold_id+'|'+f.stage))].slice(0,20)
+        }
+      }else if(deck==='victor'){
+        // The tutor lens: only what came from Victor's notes — homework, first-class.
+        deckItems=frontier.filter(it=>it.source==='victor').slice(0,20)
+        if(deckItems.length<20){
+          const have=new Set(deckItems.map(x=>x.scaffold_id+'|'+x.stage))
+          for(const sc of scaffolds){
+            if(sc.source!=='victor')continue
+            const st=(sc.stages||[]).find(s=>s.stage===(sc.current_stage||1))||sc.stages?.[0]
+            if(!st?.pt)continue
+            const key=sc.id+'|'+(st.stage||1)
+            if(have.has(key)||controlled.has(key))continue
+            deckItems.push({scaffold_id:sc.id,base:sc.base_portuguese,stage:st.stage||1,pt:st.pt,en:st.en||'',context:sc.context,category:sc.category,source:'victor',phase:sc.phase||1,practice_count:0})
+            have.add(key)
+            if(deckItems.length>=20)break
+          }
+        }
       }else if(deck==='category'&&deckCategory){
         const pool=frontier.filter(it=>(it.category||'social_foundation')===deckCategory)
         const practiced=pool.filter(it=>it.practice_count>0)
@@ -413,17 +450,6 @@ exports.handler=async(event)=>{
       }
     }
 
-    // Hybrid eligibility — all 4 stages controlled
-    const scaffoldControlledCount={}
-    ;(profile?.controlled||[]).forEach(c=>{
-      scaffoldControlledCount[c.scaffold_id]=(scaffoldControlledCount[c.scaffold_id]||0)+1
-    })
-    const hybridEligibleIds=Object.entries(scaffoldControlledCount)
-      .filter(([,count])=>count>=4)
-      .map(([id])=>id)
-    const hybridSet=new Set(hybridEligibleIds)
-    workingFrontier.forEach(f=>{f.hybrid_eligible=hybridSet.has(f.scaffold_id)})
-
     // Phase progress
     const currentPhase=profile?.phase||1
     const phaseScaffolds=scaffolds.filter(s=>s.phase===currentPhase)
@@ -474,24 +500,8 @@ exports.handler=async(event)=>{
       }
     }catch(_){}
 
-    // Daily hybrid generation — fires after 7am Rio time (UTC-3)
-    try{
-      const nowRio=new Date(Date.now()-3*3600000)
-      const todayRio=nowRio.toISOString().slice(0,10)
-      const lastHybrid=profile?.last_hybrid_date||'2000-01-01'
-      const rioHour=nowRio.getUTCHours()
-      if(rioHour>=7&&lastHybrid<todayRio){
-        const siteUrl=process.env.URL||process.env.DEPLOY_URL||''
-        if(siteUrl){
-          fetch(`${siteUrl}/.netlify/functions/ng-hybrid-generate`,{method:'POST'}).catch(()=>{})
-        }
-      }
-    }catch(_){}
 
-    // Pending hybrids count for map badge
-    const pendingHybrids=profile?.pending_hybrids||[]
-
-    console.log('ng-frontier: returning',workingFrontier.length,'items, phase',newPhase,'hybrid_eligible',hybridEligibleIds.length)
+    console.log('ng-frontier: returning',workingFrontier.length,'items, phase',newPhase)
 
     return{
       statusCode:200,
@@ -509,10 +519,6 @@ exports.handler=async(event)=>{
         total_controlled:controlled.size,
         fully_controlled_scaffolds:fullyControlled.length,
         controlled_list:Array.from(profile?.controlled||[]),
-        hybrid_eligible_count:hybridEligibleIds.length,
-        hybrid_eligible_ids:hybridEligibleIds,
-        pending_hybrids_count:pendingHybrids.length,
-        pending_hybrids:pendingHybrids,
         priority_boosts:profile?.priority_boosts||{},
         all_categories:allCategories
       })

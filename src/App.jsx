@@ -1148,6 +1148,8 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
     <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:4,fontFamily:FONTD}}>Study</div>
     <div style={{fontSize:13,color:MU,marginBottom:22}}>What are you in the mood for?</div>
     {[
+      {k:'fading',i:'🌗',t:'Fading',d:'The half-known — catch them before they slip away'},
+      {k:'victor',i:'📓',t:'Victor',d:"Your tutor's material — the homework loop"},
       {k:'fresh',i:'🔥',t:'Fresh',d:"Newest additions — today's lesson, latest imports"},
       {k:'mix',i:'🎲',t:'Mix',d:'A little of everything, across all categories'},
       {k:'weak',i:'🎯',t:'Weak spots',d:'What you struggle with — the data decides'},
@@ -1601,12 +1603,9 @@ function NGScaffoldMap({isOnline,onBack}){
   const[constFetched,setConstFetched]=useState(false)
   const[scaffolds,setScaffolds]=useState([])
   const[controlled,setControlled]=useState(new Set())
-  const[hybridEligible,setHybridEligible]=useState(new Set())
   const[loading,setLoading]=useState(true)
   const[selected,setSelected]=useState(null)
   const[starredScaffolds,setStarredScaffolds]=useState(new Set())
-  const[pendingHybrids,setPendingHybrids]=useState([])
-  const[showHybridPanel,setShowHybridPanel]=useState(false)
   const[unlockScaffold,setUnlockScaffold]=useState(null)
   useEffect(()=>{
     if(!isOnline)return
@@ -1639,11 +1638,9 @@ function NGScaffoldMap({isOnline,onBack}){
         (frontierData.controlled_list||[]).map(c=>`${c.scaffold_id}|${c.stage}`)
       )
       setControlled(ctrl)
-      setHybridEligible(new Set(frontierData.hybrid_eligible_ids||[]))
       // Load starred scaffolds from profile
       const boosts=profileData?.priority_boosts||{}
       setStarredScaffolds(new Set(Object.keys(boosts).filter(id=>boosts[id]>0)))
-      setPendingHybrids(frontierData.pending_hybrids||[])
       if(scaffoldData?.length)setScaffolds(scaffoldData)
     }catch(e){console.warn('Map load:',e)}
     setLoading(false)
@@ -1695,32 +1692,12 @@ function NGScaffoldMap({isOnline,onBack}){
       <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>📥 Pendentes · {pendSugs.length}</div>
       {pendSugs.map(sg=><SuggestionCard key={sg.id} sug={sg} onDone={()=>setPendSugs(p=>p.filter(x=>x.id!==sg.id))}/>)}
     </div>}
-    {showHybridPanel&&<HybridApprovalPanel
-      pending={pendingHybrids}
-      onClose={()=>setShowHybridPanel(false)}
-      onApprove={async(approved)=>{
-        setShowHybridPanel(false)
-        for(const sc of approved){
-          await ngFetch('ng-import-scaffolds',{approvedScaffolds:[{...sc,is_hybrid:true,can_hybridize:false}]}).catch(()=>{})
-        }
-        await ngFetch('ng-profile-update',{update:{pending_hybrids:[]}}).catch(()=>{})
-        setPendingHybrids([])
-        if(approved.length)setUnlockScaffold(approved[0])
-      }}
-      onReject={()=>{}}
-    />}
     <div style={{padding:'0 20px 20px',display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Back</button>
       <div style={{flex:1}}>
         <div style={{fontSize:18,fontWeight:800,color:TX}}>Scaffold Map</div>
         <div style={{fontSize:12,color:MU,marginTop:2}}>{totalControlled} of {totalStages} stages controlled</div>
       </div>
-      {pendingHybrids.length>0&&<button onClick={()=>setShowHybridPanel(true)}
-        style={{position:'relative',background:`${YE}15`,border:`1px solid ${YE}44`,borderRadius:10,padding:'7px 12px',cursor:'pointer',fontFamily:FONT,display:'flex',alignItems:'center',gap:5,flexShrink:0}}>
-        <span style={{fontSize:13}}>◈</span>
-        <span style={{fontSize:11,color:YE,fontWeight:700}}>{pendingHybrids.length} new</span>
-        <div style={{position:'absolute',top:-4,right:-4,width:8,height:8,background:RE,borderRadius:'50%'}}/>
-      </button>}
     </div>
 
     {/* View switch — Live constellation / classic grid */}
@@ -1866,7 +1843,6 @@ function NGScaffoldMap({isOnline,onBack}){
               onClick={()=>setSelected(s)}
               style={{background:pct===1?`${color}22`:pct>0?`${color}10`:S,border:`1px solid ${pct===1?color+'55':pct>0?color+'22':BD}`,borderRadius:12,padding:'10px 8px',cursor:'pointer',textAlign:'center',WebkitTapHighlightColor:'transparent',transition:'all 0.15s',position:'relative'}}
             >
-              {hybridEligible.has(s.id)&&<div style={{position:'absolute',top:3,right:3,fontSize:7,color:color,opacity:0.8}}>◈</div>}
               {/* Stage bars */}
               <div style={{display:'flex',gap:2,justifyContent:'center',marginBottom:6}}>
                 {[...Array(total)].map((_,i)=><div key={i} style={{width:8,height:3,borderRadius:2,background:i<stagesControlled?color:BD}}/>)}
@@ -2420,63 +2396,6 @@ function ScaffoldUnlockAnimation({scaffold,onComplete}){
 
 // ── Hybrid Notification Panel (inside NGScaffoldMap) ──────────────────
 // Rendered as a modal panel within the map screen
-function HybridApprovalPanel({pending,onApprove,onReject,onClose}){
-  const[decisions,setDecisions]=useState({})
-  const allDecided=pending.length>0&&pending.every((_,i)=>decisions[i]!==undefined)
-
-  return<div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:S,borderRadius:'20px 20px 0 0',padding:'16px 20px 40px',width:'100%',maxWidth:480,maxHeight:'80vh',overflowY:'auto',animation:'slideUp 0.3s ease'}}>
-      <div style={{width:36,height:4,background:BD,borderRadius:2,margin:'0 auto 16px'}}/>
-      <div style={{fontSize:18,fontWeight:800,color:TX,marginBottom:4}}>New hybrid patterns</div>
-      <div style={{fontSize:12,color:MU,marginBottom:20}}>Forged from patterns you've mastered. Approve to add to your bank.</div>
-      {pending.map((sc,i)=><div key={i} style={{background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'14px',marginBottom:10}}>
-        <div style={{fontSize:13,color:YE,fontWeight:600,marginBottom:2}}>◈ Hybrid</div>
-        <div style={{fontSize:16,fontWeight:800,color:TX,marginBottom:2}}>{sc.base_portuguese}</div>
-        <div style={{fontSize:12,color:MU,marginBottom:6}}>{sc.base_english}</div>
-        <div style={{fontSize:11,color:MU,marginBottom:4,fontStyle:'italic'}}>{sc.reason}</div>
-        <div style={{fontSize:11,color:MU,marginBottom:10}}>From: {sc.parent_a_base} + {sc.parent_b_base}</div>
-        {sc.stages?.slice(0,3).map((st,j)=><div key={j} style={{fontSize:11,color:MU,paddingLeft:8,borderLeft:`2px solid ${BD}`,marginBottom:3}}>
-          Stage {st.stage}: {st.pt}
-        </div>)}
-        <div style={{display:'flex',gap:8,marginTop:10}}>
-          <button onClick={()=>setDecisions(d=>({...d,[i]:true}))}
-            style={{flex:1,padding:'9px',background:decisions[i]===true?`${GR}20`:S,border:`1px solid ${decisions[i]===true?GR+'44':BD}`,borderRadius:10,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===true?GR:TX,fontWeight:600}}>
-            {decisions[i]===true?'✓ Add':'Add to bank'}
-          </button>
-          <button onClick={()=>setDecisions(d=>({...d,[i]:false}))}
-            style={{flex:1,padding:'9px',background:decisions[i]===false?`${RE}12`:S,border:`1px solid ${decisions[i]===false?RE+'33':BD}`,borderRadius:10,cursor:'pointer',fontFamily:FONT,fontSize:12,color:decisions[i]===false?RE:MU}}>
-            {decisions[i]===false?'✗ Skip':'Skip'}
-          </button>
-        </div>
-      </div>)}
-      {allDecided&&<button onClick={()=>{
-        const approved=pending.filter((_,i)=>decisions[i]===true)
-        const rejected=pending.filter((_,i)=>decisions[i]===false)
-        onApprove(approved,rejected)
-      }} style={{width:'100%',padding:'14px',background:AC,border:'none',borderRadius:12,color:'#fff',fontFamily:FONT,fontSize:14,fontWeight:700,cursor:'pointer',marginTop:4}}>
-        Confirm
-      </button>}
-    </div>
-  </div>
-}
-
-
-// ── Next Gen Constants ────────────────────────────────────────────
-
-// ── Helpers ───────────────────────────────────────────────────────
-
-// ═══ SFX — synthesized sound design, zero assets, app-wide ═══════════
-// Toggle: localStorage 'sfx' = 'off' disables. Default on.
-// Display font: Sora for titles & big numbers — runtime-injected,
-// offline falls back to system gracefully.
-try{
-  if(typeof document!=='undefined'&&!document.getElementById('carioca-font')){
-    const l=document.createElement('link')
-    l.id='carioca-font';l.rel='stylesheet'
-    l.href='https://fonts.googleapis.com/css2?family=Sora:wght@700;800&display=swap'
-    document.head.appendChild(l)
-  }
-}catch(_){}
 const FONTD="'Sora',"+"system-ui,-apple-system,sans-serif"
 const LU='#fb7185'      // Luna's coral — her accent everywhere
 const RADIO_A='#fbbf24' // Radio amber — the station's accent
@@ -3890,6 +3809,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const[atom,setAtom]=useState(null) // {type,...state}
   const[stats,setStats]=useState({done:0,qsum:0,byType:{}})
   const[gains,setGains]=useState([])
+  const[flash,setFlash]=useState(null) // 'pop' | 'shake' — verdict motion
   const timeUpRef=useRef(false)
   const[speed,setSpeed]=useState(null) // {items,idx,streak,best,deadline}
   const speedRef=useRef(false)
@@ -4096,6 +4016,9 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     }
     const secs=Math.max(3,Math.round((Date.now()-atomStartRef.current)/1000))
     setStats(s=>({done:s.done+1,qsum:s.qsum+quality,byType:{...s.byType,[atomType]:(s.byType[atomType]||0)+1}}))
+    // Verdict choreography: the card answers physically before it answers verbally.
+    setFlash(quality>=4?'pop':quality<=2?'shake':null)
+    setTimeout(()=>setFlash(null),450)
     if(quality>=4)SFX.tap()
     if(!isOnline)return
     try{
@@ -4269,7 +4192,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         }} style={{padding:'14px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:FONT}}>{op}</button>)}
       </div>
     </div>}
-    {!speed&&item&&atom&&<div>
+    {!speed&&item&&atom&&<div style={{animation:flash==='pop'?'pop 0.4s ease':flash==='shake'?'shake 0.4s ease':'none'}}>
       <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>
         {placementRef.current?'📍 Placement':(item.isReview?'◌ Review':(item.context==='grammar'?'⚙ Grammar':(item.isNew?'✦ New':'✦ Frontier')))} · {atom.type}
       </div>
