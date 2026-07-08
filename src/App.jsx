@@ -2798,7 +2798,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
     const deg=Math.round(u.pct*3.6)
     return{
       background:`conic-gradient(${ring} ${deg}deg, ${BD} ${deg}deg)`,
-      opacity:u.status==='locked'?0.45:1,
+      opacity:1, // no locks: every world is open — distance is information, not permission
       animation:u.status==='current'?'float 2.6s ease-in-out infinite':'none',
       boxShadow:u.status==='current'?`0 0 22px ${AC}55`:u.status==='complete'?`0 0 14px ${GR}33`:u.status==='in_progress'?`0 0 12px ${AC}33`:'none'
     }
@@ -2807,14 +2807,14 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
   return<div style={{padding:'52px 0 110px',animation:'up 0.35s ease',minHeight:'70vh'}}>
     <div style={{padding:'0 20px'}}>
       <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2,fontFamily:FONTD}}>Learn</div>
-      <div style={{fontSize:12,color:MU,marginBottom:8}}>Your path — clustered by your knowledge graph, verified by your memory.</div>
+      <div style={{fontSize:12,color:MU,marginBottom:8}}>Every world is open. Progress is measured in what you can do — never in what you're allowed to touch.</div>
     </div>
 
     {status==='loading'&&<div style={{textAlign:'center',padding:'60px 20px'}}><Spinner size={22}/></div>}
 
     {status==='building'&&<div style={{textAlign:'center',padding:'40px 24px'}}>
       <div style={{fontSize:40,marginBottom:12,animation:'float 2s ease-in-out infinite'}}>🏗️</div>
-      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>Building your trilha…</div>
+      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>Building your path…</div>
       <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Clustering your patterns into Rio situations,{buildChunk?` chunk ${(buildChunk.done||0)+1} in progress`:''}<br/>Keep this screen open — about a minute total.</div>
       <div style={{marginTop:16}}><Spinner size={18}/></div>
     </div>}
@@ -2826,7 +2826,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
     </div>}
 
     {status==='error'&&<div style={{margin:'20px',background:`${RE}0d`,border:`1px solid ${RE}33`,borderRadius:14,padding:'14px 16px'}}>
-      <div style={{fontSize:13,fontWeight:700,color:RE,marginBottom:4}}>A trilha apagou a luz</div>
+      <div style={{fontSize:13,fontWeight:700,color:RE,marginBottom:4}}>The path hit a power cut</div>
       <div style={{fontSize:12,color:TX,lineHeight:1.6,marginBottom:10}}>{errMsg}</div>
       <PBtn label="Try again" onClick={()=>{setStatus('loading');load()}}/>
     </div>}
@@ -2860,9 +2860,9 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
                 {u.level_ready?'↑':(u.level||1)}
               </div>
             </button>
-            <div style={{fontSize:11.5,fontWeight:700,color:u.status==='locked'?MU:TX,marginTop:7,lineHeight:1.3}}>{u.title}</div>
+            <div style={{fontSize:11.5,fontWeight:700,color:TX,marginTop:7,lineHeight:1.3}}>{u.title}</div>
             <div style={{fontSize:9.5,color:u.status==='complete'?GR:u.pct>0?AC:MU,marginTop:1,fontWeight:600}}>
-              {u.status==='complete'?'completa':u.pct>0?u.pct+'%':u.status==='current'?'← start here':''}
+              {u.status==='complete'?'✓ yours':u.pct>0?u.pct+'%':u.status==='current'?'← start here':'fresh territory'}
             </div>
           </div>
         </div>
@@ -4239,15 +4239,22 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
           <div style={{fontSize:17,fontWeight:700,color:TX}}>{item.en}</div>
           {atom.revealed&&<div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${BD}`,fontSize:18,fontWeight:800,color:AC}}>{item.pt}</div>}
         </div>
-        {!atom.revealed?<PBtn label="Mostrar" onClick={()=>setAtom(a=>({...a,revealed:true}))}/>
+        {!atom.revealed?<PBtn label="Show" onClick={()=>setAtom(a=>({...a,revealed:true}))}/>
         :<div style={{display:'flex',gap:8}}>
           {[[1,'Forgot',RE],[3,'Hard',GD],[4,'Good',GR],[5,'Easy',AC]].map(([q,l,col])=>
             <button key={q} onClick={async()=>{await logEvent(item,q,'flip');advance()}} style={{flex:1,padding:'12px 4px',background:`${col}14`,border:`1px solid ${col}55`,borderRadius:12,color:col,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:FONT}}>{l}</button>)}
         </div>}
+        {!item.isReview&&!placementRef.current&&<button onClick={()=>{
+          // Trusted prior, not a rep: 30-day memory + controlled. No grinding what you own.
+          SFX.tap()
+          ngFetch('ng-memory',{action:'know',scaffold_id:item.scaffold_id,stage:item.stage}).catch(()=>{})
+          setQueue(prev=>prev.filter((x,xi)=>xi===qi||!(x.scaffold_id===item.scaffold_id&&x.stage===item.stage)))
+          advance()
+        }} style={{display:'block',margin:'10px auto 0',background:'none',border:'none',color:MU,fontSize:11.5,cursor:'pointer',fontFamily:FONT,textDecoration:'underline',textUnderlineOffset:3}}>I already know this — skip it</button>}
       </div>}
 
       {atom.type==='reorder'&&<div>
-        <div style={{fontSize:12,color:MU,marginBottom:8}}>Monta a frase: <span style={{color:TX}}>{item.en}</span></div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>Build the sentence: <span style={{color:TX}}>{item.en}</span></div>
         <div style={{minHeight:52,background:S,border:`1px dashed ${atom.result==='right'?GR:atom.result==='wrong'?RE:BD}`,borderRadius:14,padding:'10px 12px',marginBottom:10,display:'flex',flexWrap:'wrap',gap:6}}>
           {atom.picked.map((w,i)=><button key={i} onClick={()=>!atom.result&&setAtom(a=>({...a,picked:a.picked.filter((_,j)=>j!==i),pool:[...a.pool,w]}))} style={{padding:'7px 11px',background:AC,border:'none',borderRadius:9,color:'#16240f',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>{w}</button>)}
         </div>

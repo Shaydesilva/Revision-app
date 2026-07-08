@@ -163,6 +163,32 @@ exports.handler=async(event)=>{
       return{statusCode:200,body:JSON.stringify({ok:true,backfilled:rows.length})}
     }
 
+    // ═══ KNOW: 'I know this' — a trusted prior, not a rep ═══════════
+    // No-assumption principle: outside knowledge (Victor, Vidigal, life) is
+    // accommodated without proof-of-knowledge grinding. Writes a 30-day
+    // production+recognition prior and marks the stage controlled. Decay
+    // self-corrects if the tap was optimistic. Never inserts a ledger event —
+    // priors are beliefs, reps are evidence.
+    if(action==='know'){
+      const{scaffold_id,stage=1}=body
+      if(!scaffold_id)return{statusCode:400,body:JSON.stringify({error:'scaffold_id required'})}
+      const due=new Date(Date.now()+30*86400000).toISOString()
+      for(const skill of['production','recognition']){
+        await sb.from('ng_memory').upsert({
+          user_id:UID,scaffold_id,stage:Number(stage),skill,
+          stability:30,difficulty:4,next_due:due,
+          last_review:new Date().toISOString(),reps:1,lapses:0
+        },{onConflict:'user_id,scaffold_id,stage,skill'})
+      }
+      const{data:prof}=await sb.from('ng_learner_profile').select('controlled').eq('user_id',UID).single()
+      const controlled=Array.isArray(prof?.controlled)?prof.controlled:[]
+      if(!controlled.some(c=>c.scaffold_id===scaffold_id&&Number(c.stage)===Number(stage))){
+        controlled.push({scaffold_id,stage:Number(stage),acquired_at:new Date().toISOString(),review_count:0,last_review:null,source:'known'})
+        await sb.from('ng_learner_profile').update({controlled}).eq('user_id',UID)
+      }
+      return{statusCode:200,body:JSON.stringify({ok:true,scaffold_id,stage:Number(stage)})}
+    }
+
     return{statusCode:400,body:JSON.stringify({error:'Unknown action'})}
   }catch(e){
     console.error('ng-memory:',e.message)
