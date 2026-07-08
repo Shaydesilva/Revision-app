@@ -5626,19 +5626,27 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     }catch(_){setStage('pick')}
   }
   const atomWRef=useRef({})
+  const dialRef=useRef({})
+  const[why,setWhy]=useState('')
   const refetchingRef=useRef(false)
   const start=async(m,unitId)=>{
     setMins(m);setStage('load')
     try{
-      const[due,def]=await Promise.all([
-        (unitId||seedDeck)?Promise.resolve({}):ngFetch('ng-frontier',{deck:'due'}).catch(()=>({})),
-        unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId}).catch(()=>({}))
-          :seedDeck==='grammar'?ngFetch('ng-frontier',{deck:'grammar'}).catch(()=>({}))
-          :ngFetch('ng-frontier',{deck:'session'}).catch(()=>({}))
-      ])
+      // GUIDED DECK (Calçadão): one fetch — keep floor + new valve + room, with
+      // the why-line. Unit/grammar seeds keep their dedicated decks.
+      // (The old separate {deck:'due'} fetch was vestigial — ng-frontier has no
+      // 'due' branch, so it always returned an empty frontier; reviews arrive
+      // inside the session/guided deck itself, already flagged isReview.)
+      const def=await(
+        unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId})
+          :seedDeck==='grammar'?ngFetch('ng-frontier',{deck:'grammar'})
+          :ngFetch('ng-frontier',{deck:'guided'})
+      ).catch(()=>({}))
       atomWRef.current=def?.atom_weights||{}
-      const dueItems=(due?.frontier||[]).map(x=>({...x,isReview:true}))
-      let front=(def?.frontier||[]).filter(x=>!dueItems.some(d=>d.scaffold_id===x.scaffold_id&&d.stage===x.stage))
+      dialRef.current=def?.guide_dial||{}
+      setWhy((!unitId&&!seedDeck&&def?.why)?def.why:'')
+      const dueItems=(def?.frontier||[]).filter(x=>x.isReview)
+      let front=(def?.frontier||[]).filter(x=>!x.isReview)
       // GRAMMAR GUARANTEE: grammar cells surface at least every 3rd frontier slot
       const gram=front.filter(x=>(x.context||'')==='grammar')
       const rest=front.filter(x=>(x.context||'')!=='grammar')
@@ -5670,16 +5678,43 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     if(item.force==='recog')return'recog'
     if(item.force==='reorder')return (item.pt||'').split(' ').length>=3?'reorder':'recog'
     if(item.force==='constructor')return isOnline?'constructor':'reorder'
-    if(item.isReview)return'flip'
     const words=(item.pt||'').split(' ')
     const isGram=(item.context||'')==='grammar'
-    // Grammar gets the signature rotation; aspect made spatial + adversarial.
-    // Layer-3 weighted rotation: struggled atoms appear more, aced ones less.
-    // 'escuta' = graded listening comprehension — the ear gets reps too.
-    const base=isGram?['timeline','duel','conserta','constructor','escuta']:['reorder','cloze','escuta','constructor','duel']
+    // RUNG LADDER (Calçadão): a brick is met at its own evidence level —
+    // 0 conhecer (flip/recog) → 1 apoiado (reorder/cloze/escuta) →
+    // 2 discriminar (duel/conserta/timeline) → 3 produzir (constructor).
+    // The server derives rung from events+memory; struggle already dropped it there.
+    // The card→write cliff is gone: nothing meets the constructor before passing rung 2.
+    const rung=Number.isInteger(item.rung)?item.rung:(item.isReview?3:(item.practice_count>0?1:0))
+    if(item.isReview){
+      // Reviews retrieve at the strength you own (dial: guide_dial.review_style
+      // 'gentle' keeps all reviews as flips). Production reviews only ever hit
+      // bricks that already passed discrimination — gentle by construction.
+      if(dialRef.current?.review_style==='gentle')return'flip'
+      if(rung<=1)return'flip'
+      if(rung===2){
+        let r=isGram&&tlClassify(item.pt)?'timeline':'duel'
+        if(r==='duel'&&!corruptPT(item.pt))r='flip'
+        return r
+      }
+      return isOnline?'constructor':'flip'
+    }
+    // Non-review: rotate WITHIN the rung's pool, weighted by Layer-3 atom_weights
+    // (struggled atom types appear more, aced ones less — inside the rung, never above it).
+    const pools={
+      0:['flip','recog'],
+      1:['reorder','cloze','escuta'],
+      2:isGram?['timeline','duel','conserta']:['duel','conserta','cloze'],
+      3:['constructor']
+    }
+    const base=pools[rung]||pools[1]
     const w=atomWRef.current||{}
     const bag=[]
-    for(const a of base){const rep=Math.max(1,Math.round((w[a]||1)*2));for(let k=0;k<rep;k++)bag.push(a)}
+    // typeof guard: w['constructor'] on a plain object returns the Object
+    // constructor (truthy!) → NaN reps → the atom silently vanished from the
+    // rotation. This exact leak kept the constructor atom out of every Treino
+    // rotation in the pre-rung app.
+    for(const a of base){const wv=typeof w[a]==='number'?w[a]:1;const rep=Math.max(1,Math.round(wv*2));for(let k=0;k<rep;k++)bag.push(a)}
     let rot=bag[(i*7+3)%bag.length]
     if(rot==='timeline'&&!tlClassify(item.pt))rot='duel'
     if(rot==='conserta'&&!corruptPT(item.pt))rot='cloze'
@@ -5689,6 +5724,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     if(rot==='escuta'&&(!isOnline||queue.length<3))rot='cloze'
     if(rot==='constructor'&&!isOnline)rot=isGram?'conserta':'reorder'
     if(rot==='conserta'&&!corruptPT(item.pt))rot='cloze'
+    if(rot==='recog'&&queue.length<3)rot='flip'
     return rot
   }
   const shuffleArr=a=>{const x=[...a];for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[x[i],x[j]]=[x[j],x[i]]}return x}
@@ -5788,7 +5824,9 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       // only if that's empty do we reshuffle what we have. Never end on time left.
       if(isOnline&&!refetchingRef.current){
         refetchingRef.current=true
-        ngFetch('ng-frontier',{deck:'session'}).then(d=>{
+        // Guided refetch keeps the governors live mid-session (catches newly-due
+        // reviews, respects the valve); seeded modes keep their original behavior.
+        ngFetch('ng-frontier',{deck:(seedUnit||seedDeck)?'session':'guided'}).then(d=>{
           refetchingRef.current=false
           const seen=new Set(queue.map(x=>x.scaffold_id+'|'+x.stage))
           const incoming=(d?.frontier||[]).filter(x=>!seen.has(x.scaffold_id+'|'+x.stage))
@@ -5915,11 +5953,13 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
 
   // ═══ RUN ═══
   return<div style={{padding:'20px 20px 100px',animation:'up 0.3s ease'}}>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-      <button onClick={finish} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0}}>encerrar</button>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:why?6:16}}>
+      <button onClick={finish} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0}}>end</button>
       <div style={{background:left<=60?`${RE}18`:S,border:`1px solid ${left<=60?RE+'66':BD}`,borderRadius:20,padding:'6px 14px',fontSize:13,fontWeight:800,color:left<=60?RE:AC,fontVariantNumeric:'tabular-nums'}}>⏱ {mmss(left)}</div>
       <div style={{fontSize:11,color:MU}}>{qi+1}/{queue.length}</div>
     </div>
+    {/* The why-line: the guide explains today's session in one plain sentence. */}
+    {why&&!speed&&<div style={{fontSize:11.5,color:MU,lineHeight:1.5,marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${BD}`}}>{why}</div>}
     {speed&&<div style={{animation:'up 0.25s ease'}}>
       <div style={{textAlign:'center',marginBottom:14}}>
         <span style={{fontSize:10,color:COR_SPEED,fontWeight:800,letterSpacing:3}}>⚡ RODADA RELÂMPAGO</span>
