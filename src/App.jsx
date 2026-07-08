@@ -20,7 +20,10 @@ const GD='#f0a92c'        // frontier gold — deeper than ouro, same family
 const CORAL='#fb7185'
 const BZ='#3d7bff'        // globo blue
 const FONT="-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif"
-const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+button{transition:transform 0.09s cubic-bezier(0.2,0.8,0.4,1.4)}
+button:active{transform:scale(0.955)}
+body{background:${BG};overscroll-behavior:none;font-family:${FONT}}textarea,input{-webkit-user-select:text;user-select:text;font-family:${FONT}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes popIn{0%{transform:scale(0.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
 @keyframes confettiFall{0%{transform:translateY(-10vh) rotate(0deg);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0.6}}
@@ -29,7 +32,7 @@ const CSS=`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-colo
 @keyframes eq{0%,100%{transform:scaleY(0.25)}50%{transform:scaleY(1)}}
 button{transition:transform 0.08s ease}
 button:active{transform:scale(0.96)}
-@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
+@keyframes up{0%{opacity:0;transform:translateY(14px)}70%{opacity:1;transform:translateY(-2px)}100%{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@keyframes glow{0%,100%{opacity:0.6}50%{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}::-webkit-scrollbar{display:none}*{scrollbar-width:none}`
 
 
 const mk=(id,p,e,t,x={})=>({id:String(id),portuguese:p,english:e,type:t,cluster:null,contrast:null,scenario:null,exampleSentence:null,mnemonic:null,priority:false,priorityStreak:0,mastery:0,easeFactor:2.5,interval:0,reps:0,nextReview:new Date().toISOString(),sentenceScore:0,sentenceCount:0,recognitionMastery:0,productionMastery:0,...x})
@@ -2494,11 +2497,41 @@ const SFX=(()=>{
       o.start(s);o.stop(s+d)
     }catch(_){}
   }
+  // Percussion voices: filtered-noise hits, not oscillator chimes.
+  const hit=(freq,dur,g=0.2,when=0,q=1.2)=>{
+    try{
+      ctx=ctx||new(window.AudioContext||window.webkitAudioContext)()
+      if(ctx.state==='suspended')ctx.resume()
+      const n=Math.max(1,Math.floor(ctx.sampleRate*dur))
+      const b=ctx.createBuffer(1,n,ctx.sampleRate)
+      const d=b.getChannelData(0)
+      for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.2)
+      const s=ctx.createBufferSource(),f=ctx.createBiquadFilter(),v=ctx.createGain()
+      f.type='bandpass';f.frequency.value=freq;f.Q.value=q
+      s.buffer=b;s.connect(f);f.connect(v);v.connect(ctx.destination)
+      v.gain.value=g
+      s.start(ctx.currentTime+when)
+    }catch(_){}
+  }
+  const surdo=(f0=150,f1=55,dur=0.28,g=0.3,when=0)=>{
+    try{
+      ctx=ctx||new(window.AudioContext||window.webkitAudioContext)()
+      if(ctx.state==='suspended')ctx.resume()
+      const o=ctx.createOscillator(),v=ctx.createGain()
+      o.type='sine';o.connect(v);v.connect(ctx.destination)
+      const s=ctx.currentTime+when
+      o.frequency.setValueAtTime(f0,s)
+      o.frequency.exponentialRampToValueAtTime(f1,s+dur*0.7)
+      v.gain.setValueAtTime(g,s)
+      v.gain.exponentialRampToValueAtTime(0.001,s+dur)
+      o.start(s);o.stop(s+dur+0.02)
+    }catch(_){}
+  }
   return{
-    tap:()=>{if(on())tone(700,0.05,'sine',0.06)},
-    flip:()=>{if(on())tone(520,0.07,'triangle',0.09)},
-    good:()=>{if(!on())return;tone(659,0.09,'sine',0.11);tone(880,0.13,'sine',0.11,0.08)},
-    bad:()=>{if(on())tone(196,0.16,'sine',0.1)},
+    tap:()=>{if(on())hit(3400,0.05,0.16)}, // tamborim tick — touch answered
+    flip:()=>{if(on())hit(1800,0.06,0.14,0,0.9)},
+    good:()=>{if(!on())return;hit(2600,0.05,0.15);tone(820,0.07,'square',0.05,0.03);tone(1080,0.09,'square',0.045,0.1)}, // tick + agogo answer
+    bad:()=>{if(on())surdo(140,58,0.22,0.26)}, // dry surdo thud — never a buzzer,
     acende:()=>{if(!on())return;tone(440,0.26,'sine',0.12,0);tone(554.37,0.26,'sine',0.12,0.11);tone(659.25,0.3,'sine',0.12,0.22);tone(880,0.32,'triangle',0.05,0.24)},
     cuica:()=>{
       if(!on())return
@@ -2516,7 +2549,11 @@ const SFX=(()=>{
         o.start(s);o.stop(s+0.42)
       }catch(_){}
     },
-    complete:()=>{if(!on())return;SFX.acende();setTimeout(()=>{try{SFX.cuica()}catch(_){}},260)},
+    complete:()=>{if(!on())return;
+      // pandeiro roll into a surdo drop — the session lands, samba-school style
+      [0,0.07,0.14,0.21,0.28].forEach((t,i)=>hit(2200+i*240,0.05,0.12,t))
+      surdo(170,60,0.34,0.32,0.4)
+      setTimeout(()=>{try{SFX.cuica()}catch(_){}},650)},
     unlock:()=>{if(!on())return;[784,988,1175,1568].forEach((f,i)=>tone(f,0.22,'sine',0.09,i*0.06))}
   }
 })()
