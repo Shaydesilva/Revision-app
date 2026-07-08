@@ -364,7 +364,12 @@ exports.handler=async(event)=>{
         }
       }else if(deck==='victor'){
         // The tutor lens: only what came from Victor's notes — homework, first-class.
-        deckItems=frontier.filter(it=>it.source==='victor').slice(0,20)
+        // Recency = the doc's own day-structure (stages[].source_day), newest days first.
+        const dayOf=sid=>{const sc=scaffolds.find(s=>s.id===sid);return Math.max(0,...((sc?.stages||[]).map(st=>st.source_day||0)))}
+        deckItems=frontier.filter(it=>it.source==='victor')
+          .map(it=>({...it,source_day:dayOf(it.scaffold_id)||null}))
+          .sort((a,b)=>(b.source_day||0)-(a.source_day||0)||(dateById[b.scaffold_id]||'').localeCompare(dateById[a.scaffold_id]||''))
+          .slice(0,20)
         if(deckItems.length<20){
           const have=new Set(deckItems.map(x=>x.scaffold_id+'|'+x.stage))
           for(const sc of scaffolds){

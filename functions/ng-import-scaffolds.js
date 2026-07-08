@@ -57,6 +57,10 @@ exports.handler=async(event)=>{
     const chunks=splitDays(notes)
     if(chunk>=chunks.length)return{statusCode:200,body:JSON.stringify({done:true,total_chunks:chunks.length})}
     const text=chunks[chunk]
+    // The doc's own day-structure defines recency for the Victor loop —
+    // capture the real 'Day N' number, not the chunk index.
+    const dayM=text.match(/^\s*(?:Day|Dia)\s*(\d+)/i)
+    const sourceDay=dayM?Number(dayM[1]):null
 
     // Dedupe surface: bank bases + every stage + already-pending suggestions
     const[{data:bank},{data:pending}]=await Promise.all([
@@ -118,7 +122,8 @@ Max 8 scaffolds per chunk — pick the highest-value. JSON only:
           category:sc.category||'social_foundation',context:sc.context||'victor',
           phase:sc.phase||1,stages},
         tapped_stage:0,
-        day_chunk:chunk
+        day_chunk:chunk,
+        source_day:sourceDay
       }
       const{data:ins,error}=await sb.from('ng_suggestions').insert({
         user_id:UID,source:'victor',phrase:stages[0].pt,payload,status:'pending'

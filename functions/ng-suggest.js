@@ -94,6 +94,8 @@ exports.handler=async(event)=>{
         const t=stages.splice(p.tapped_stage,1)[0];stages.unshift(t)
       }
       stages=stages.map((s,i)=>stageFlags({stage:i+1,pt:s.pt,en:s.en}))
+      // Victor recency: the doc's day number rides on every brick it produced.
+      if(p.source_day!=null)stages=stages.map(s=>({...s,source_day:p.source_day}))
       const id='sc_sug_'+Date.now()+'_'+Math.random().toString(36).slice(2,5)
       const{error}=await sb.from('ng_scaffolds').insert({
         id,user_id:UID,
