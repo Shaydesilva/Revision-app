@@ -4721,6 +4721,7 @@ function NGRadio({isOnline,onBack}){
     }catch(e){setRadioSug({error:e.message})}
   }
   const[phase,setPhase]=useState('off') // off|tuning|playing
+  const[radioErr,setRadioErr]=useState('') // fail loudly: a tune that dies must say so, not just re-show the button
   const[paused,setPaused]=useState(false)
   const[speed,setSpeed]=useState(1)
   const[follow,setFollow]=useState(true)
@@ -4739,6 +4740,8 @@ function NGRadio({isOnline,onBack}){
   const bufferingRef=useRef(false)
   const stopRef=useRef(false)
   const pausedRef=useRef(false)
+  const epochRef=useRef(0) // show generation token — bumped on stop/tune so stale loops & in-flight fetches self-discard
+  const audioDoneRef=useRef(null) // resolver for the line currently playing — lets stop() unstick playQueue mid-line
   const speedRef=useRef(1)
   const currentAudioRef=useRef(null)
   const followRef=useRef(true)
@@ -4747,7 +4750,7 @@ function NGRadio({isOnline,onBack}){
 
   useEffect(()=>{followRef.current=follow},[follow])
   useEffect(()=>{if(follow)endRef.current?.scrollIntoView({behavior:'smooth'})},[currentLine,follow])
-  useEffect(()=>()=>{stopRef.current=true;try{currentAudioRef.current?.pause()}catch{}},[])
+  useEffect(()=>()=>{stopRef.current=true;epochRef.current+=1;try{currentAudioRef.current?.pause()}catch{};audioDoneRef.current?.()},[])
 
   const setSpeedLive=v=>{
     speedRef.current=v;setSpeed(v)
@@ -4771,20 +4774,23 @@ function NGRadio({isOnline,onBack}){
   const playQueue=async()=>{
     if(playingRef.current)return
     playingRef.current=true
-    while(!stopRef.current){
+    const epoch=epochRef.current
+    const live=()=>!stopRef.current&&epoch===epochRef.current
+    while(live()){
       // Hold here while paused between lines
-      while(pausedRef.current&&!stopRef.current){await new Promise(r=>setTimeout(r,200))}
-      if(stopRef.current)break
+      while(pausedRef.current&&live()){await new Promise(r=>setTimeout(r,200))}
+      if(!live())break
       const next=audioQueueRef.current.shift()
       if(!next){
         playingRef.current=false
         maybeBuffer()
-        if(!stopRef.current)setTimeout(()=>{if(audioQueueRef.current.length&&!stopRef.current)playQueue()},800)
+        if(live())setTimeout(()=>{if(audioQueueRef.current.length&&live())playQueue()},800)
         return
       }
       maybeBuffer() // stay ahead while consuming — this is what makes it infinite
       setCurrentLine(next.lineIdx)
       await new Promise(res=>{
+        audioDoneRef.current=res // stop() calls this — pause() alone never fires onended, which froze this loop forever
         try{
           const a=new Audio('data:audio/mp3;base64,'+next.b64)
           a.playbackRate=speedRef.current
@@ -4793,10 +4799,13 @@ function NGRadio({isOnline,onBack}){
           a.play().catch(res)
         }catch{res()}
       })
+      audioDoneRef.current=null
       currentAudioRef.current=null
       await new Promise(r=>setTimeout(r,300))
     }
-    playingRef.current=false
+    // Only the loop that owns the current epoch may clear the flag —
+    // a stale loop exiting must never clobber a newer show's playback.
+    if(epoch===epochRef.current)playingRef.current=false
   }
 
   const ingestSegment=(data,baseLineIdx)=>{
@@ -4811,10 +4820,11 @@ function NGRadio({isOnline,onBack}){
   const bufferNext=async()=>{
     if(bufferingRef.current||stopRef.current)return
     bufferingRef.current=true
+    const epoch=epochRef.current // a 'next' fetch takes seconds — if the show changed meanwhile, discard the result
     try{
       segIndexRef.current+=1
       const d=await ngFetch('ng-radio',{action:'next',session_key:sessionRef.current,segment_index:segIndexRef.current,station:stationPrompt})
-      if(d.lines&&!stopRef.current){
+      if(d.lines&&!stopRef.current&&epoch===epochRef.current){
         setLines(prev=>{
           const base=prev.length
           const segLines=d.lines.map((l,i)=>({...l,lineIdx:base+i}))
@@ -4829,25 +4839,35 @@ function NGRadio({isOnline,onBack}){
 
   const tune=async()=>{
     if(!isOnline)return
+    epochRef.current+=1 // new show — any stale loop or in-flight fetch from the last one is now void
+    const epoch=epochRef.current
+    playingRef.current=false // a stale loop can't clear this itself anymore (epoch guard), so release it here or the new show never starts
+    bufferingRef.current=false
+    radioCreditRef.current=new Set() // fresh show — recognition credits re-arm
     stopRef.current=false;pausedRef.current=false;setPaused(false)
-    setPhase('tuning')
+    setPhase('tuning');setRadioErr('')
     setLines([]);setCurrentLine(-1);setFollow(true)
     audioQueueRef.current=[];segIndexRef.current=0
     localStorage.setItem('radio_station',stationPrompt)
     try{
       const d=await ngFetch('ng-radio',{action:'tune',station:stationPrompt})
+      if(epoch!==epochRef.current)return // stopped (or re-tuned) while sintonizando — don't resurrect a dead show
+      if(!Array.isArray(d.lines)||!d.lines.length)throw new Error(d.error||'empty show') // fail loudly, not into a silent dead deck
       sessionRef.current=d.session_key
       setFrontierPatterns(Array.isArray(d.frontier_ref)?d.frontier_ref:[])
       setPhase('playing')
       ingestSegment(d,0)
       setTimeout(()=>maybeBuffer(),600)
-    }catch{setPhase('off')}
+    }catch(e){if(epoch===epochRef.current){setPhase('off');setRadioErr(e?.message||'sem sinal')}}
   }
 
   const stop=()=>{
     stopRef.current=true
+    epochRef.current+=1 // void the current show's loop + fetches
     try{currentAudioRef.current?.pause()}catch{}
     currentAudioRef.current=null
+    audioDoneRef.current?.() // unstick playQueue if it's parked awaiting the line we just paused
+    audioDoneRef.current=null
     audioQueueRef.current=[]
     pausedRef.current=false;setPaused(false)
     setPhase('off')
@@ -5067,6 +5087,7 @@ function NGRadio({isOnline,onBack}){
           placeholder="Station vibe (optional): trading, Ipanema nightlife…"
           style={{width:'100%',background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'11px 14px',color:TX,fontSize:13,outline:'none',fontFamily:FONT,marginBottom:10}}/>
         <PBtn label={isOnline?'📻 Tune in':'Needs connection'} onClick={tune} disabled={!isOnline}/>
+        {radioErr&&<div style={{marginTop:8,padding:'9px 12px',background:`${RE}10`,border:`1px solid ${RE}33`,borderRadius:10,fontSize:11.5,color:RE,textAlign:'center'}}>📡 Não sintonizou ({radioErr}) — tenta de novo.</div>}
       </>}
       {phase==='tuning'&&<PBtn label="Sintonizando…" disabled/>}
       {phase==='playing'&&<>
