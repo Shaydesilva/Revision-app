@@ -3,6 +3,7 @@ exports.handler=async(event)=>{
   try{
     const{spectrum=0.5,speed='normal'}=JSON.parse(event.body||'{}')
     const{createClient}=require('@supabase/supabase-js')
+const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
 
@@ -96,7 +97,7 @@ Violating this rule breaks the experience. One attempt. Done. Move on.`
       ?`KNOWN ERROR PATTERNS: ${(errors||[]).map(e=>e.error_type).join(', ')} — be aware but don't lecture.`
       :''
 
-    const instructions=`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'First-person plural is 'nos', NEVER 'a gente' (this learner's Vidigal register). Agreement is a MIX, mostly REDUCED (nos takes the 3rd-singular verb form: nos vai, nos ta, nos foi, nos tava, nos tem, nos fez); standard 1st-plural also occurs and is the taught anchor (nos estamos, nos vamos, nos fomos, nos estavamos). BOTH correct - favor reduced in casual speech, standard when teaching the paradigm. Future stays periphrastic (nos vamos estar / nos vai estar), never synthetic (estaremos). Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise). CORRECTION STYLE (recast law): NEVER halt the conversation to correct a mistake. Instead RECAST - naturally repeat their meaning back in correct Carioca within your reply and keep the flow. The system logs slips elsewhere; your job is momentum. ACTIVE UNIT AWARENESS: if unit context is provided below, naturally weave 1-2 of its patterns into conversation and stealth-test one — never announce it.\n\n${speedRule}
+    const instructions=`${REGISTER_LAW_GENERATE} CORRECTION STYLE (recast law): NEVER halt the conversation to correct a mistake. Instead RECAST - naturally repeat their meaning back in correct Carioca within your reply and keep the flow. The system logs slips elsewhere; your job is momentum. ACTIVE UNIT AWARENESS: if unit context is provided below, naturally weave 1-2 of its patterns into conversation and stealth-test one — never announce it.\n\n${speedRule}
 
 ${complexityRule}
 

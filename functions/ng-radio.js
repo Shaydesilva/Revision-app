@@ -6,6 +6,7 @@
 // Buffer model: client plays segment N while requesting N+1.
 
 const{createClient}=require('@supabase/supabase-js')
+const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
 const UID='00000000-0000-0000-0000-000000000001'
 
 async function brainLog(sb,proc,thought,data=null,importance=1){
@@ -44,7 +45,7 @@ async function generateSegment(sb,profile,scaffolds,mem,prevLines,station,segInd
     headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
     body:JSON.stringify({
       model:'claude-sonnet-4-6',max_tokens:1400,
-      system:`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'First-person plural is 'nos', NEVER 'a gente' (this learner's Vidigal register). Agreement is a MIX, mostly REDUCED (nos takes the 3rd-singular verb form: nos vai, nos ta, nos foi, nos tava, nos tem, nos fez); standard 1st-plural also occurs and is the taught anchor (nos estamos, nos vamos, nos fomos, nos estavamos). BOTH correct - favor reduced in casual speech, standard when teaching the paradigm. Future stays periphrastic (nos vamos estar / nos vai estar), never synthetic (estaremos). Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\nYou write Radio Carioca — a continuous comedy radio show. Two hosts:
+      system:`${REGISTER_LAW_GENERATE}\n\nYou write Radio Carioca — a continuous comedy radio show. Two hosts:
 Chico (speaker "echo"): cynical, dry, complains about everything, secretly soft.
 Bia (speaker "shimmer"): chaotic, warm, always has a story that escalates.
 Natural Carioca street register. Funny. Never explain vocabulary. Never break character.
@@ -72,6 +73,11 @@ ${prevContext||'(fresh tune-in — start mid-flow)'}`}]
   })
   const data=await res.json()
   const parsed=JSON.parse((data.content?.[0]?.text||'{}').replace(/```json|```/g,'').trim())
+  // Register lint (observe-only): hard law violations get logged loudly, never silently.
+  try{
+    const lint=require('./register-lint.cjs').lintLines(parsed.lines)
+    if(!lint.ok)await brainLog(sb,'radio',`Register lint flagged ${lint.hits.length} line(s): ${lint.hits[0].flags.join(', ')} — "${lint.hits[0].pt}"`,lint.hits,2)
+  }catch(_){}
   return parsed
 }
 
