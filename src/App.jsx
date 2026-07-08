@@ -2807,7 +2807,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
   return<div style={{padding:'52px 0 110px',animation:'up 0.35s ease',minHeight:'70vh'}}>
     <div style={{padding:'0 20px'}}>
       <div style={{fontSize:24,fontWeight:900,color:TX,marginBottom:2,fontFamily:FONTD}}>Learn</div>
-      <div style={{fontSize:12,color:MU,marginBottom:8}}>A trilha — clustered by your knowledge graph, verified by your memory.</div>
+      <div style={{fontSize:12,color:MU,marginBottom:8}}>Your path — clustered by your knowledge graph, verified by your memory.</div>
     </div>
 
     {status==='loading'&&<div style={{textAlign:'center',padding:'60px 20px'}}><Spinner size={22}/></div>}
@@ -4310,7 +4310,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       </div>}
 
       {atom.type==='recog'&&<div>
-        <div style={{fontSize:12,color:MU,marginBottom:8}}>O que significa?</div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>What does it mean?</div>
         <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'20px 16px',fontSize:17,fontWeight:800,color:AC,textAlign:'center',marginBottom:14}}>{item.pt}</div>
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           {atom.options.map((op,i)=><button key={i} disabled={!!atom.result} onClick={async()=>{
@@ -4578,7 +4578,7 @@ function NGHome({isOnline,go,active=true}){
       {phase.streak>=2&&<div style={{position:'absolute',right:20,top:12,background:`${GD}12`,border:`1px solid ${GD}44`,borderRadius:14,padding:'4px 10px',fontSize:11.5,fontWeight:800,color:GD}}>🔥 {phase.streak}</div>}
       <div style={{flex:1}}>
         <div style={{fontSize:26,fontWeight:900,color:TX,fontFamily:FONTD}}>E aí</div>
-        <div style={{fontSize:12,color:MU,marginTop:2}}>Fase {phase.n} · {phase.name}</div>
+        <div style={{fontSize:12,color:MU,marginTop:2}}>Phase {phase.n} · {phase.name}</div>
       </div>
       <div style={{textAlign:'center',flexShrink:0}}>
         <div style={{fontSize:22,fontWeight:900,color:AC,fontFamily:FONTD}}>{phase.controlled}</div>
@@ -4600,7 +4600,7 @@ function NGHome({isOnline,go,active=true}){
       </button>
       <button onClick={()=>{SFX.tap();go('ng-oficina')}} style={{width:'100%',padding:'11px 18px',background:S,border:`1px solid ${BD}`,borderRadius:14,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <span style={{fontSize:12.5,color:TX,fontWeight:600}}>🛠 Sentence Workshop</span>
-        <span style={{fontSize:10,color:MU}}>construção livre · 8 frases</span>
+        <span style={{fontSize:10,color:MU}}>free construction · 8 sentences</span>
       </button>
       <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
         style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#e6a900)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:`ringGlow ${phase.due>=8?1.6:phase.due>=4?2.2:3.2}s ease-in-out infinite`}}>
@@ -4619,7 +4619,7 @@ function NGHome({isOnline,go,active=true}){
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'14px 20px 0'}}>
       <div onClick={()=>go&&go('ng-learn')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
         <div style={{fontSize:20,marginBottom:6}}>⛰</div>
-        <div style={{fontSize:13,fontWeight:800,color:TX}}>Trilha</div>
+        <div style={{fontSize:13,fontWeight:800,color:TX}}>Path</div>
         <div style={{fontSize:11,color:MU,marginTop:2}}>{currentUnit?`${currentUnit.title} · ${currentUnit.pct||0}%`:'Building…'}</div>
         {currentUnit&&<div style={{height:3,background:BD,borderRadius:3,overflow:'hidden',marginTop:8}}>
           <div style={{height:'100%',width:`${currentUnit.pct||0}%`,background:AC,borderRadius:3}}/>
@@ -4628,17 +4628,17 @@ function NGHome({isOnline,go,active=true}){
       <div onClick={()=>go&&go('ng-study')} style={{background:S,border:`1px solid ${phase.due?YE+'44':BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
         <div style={{fontSize:20,marginBottom:6}}>◌</div>
         <div style={{fontSize:13,fontWeight:800,color:TX}}>Reviews</div>
-        <div style={{fontSize:11,color:phase.due?YE:MU,marginTop:2}}>{phase.due?`${phase.due} luzes piscando — Chico duvida de você`:'Nada vencendo. Até eu tô surpreso ✓'}</div>
+        <div style={{fontSize:11,color:phase.due?YE:MU,marginTop:2}}>{phase.due?`${phase.due} lights blinking — Chico doubts you`:"Nothing due. Even I'm surprised ✓"}</div>
       </div>
       <div onClick={()=>go&&go('ng-radio')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
         <div style={{fontSize:20,marginBottom:6}}>📻</div>
         <div style={{fontSize:13,fontWeight:800,color:TX}}>Rádio Carioca</div>
-        <div style={{fontSize:11,color:MU,marginTop:2}}>Chico & Bia · sempre no ar</div>
+        <div style={{fontSize:11,color:MU,marginTop:2}}>Chico & Bia · always on air</div>
       </div>
       <div onClick={()=>go&&go('ng-voice')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
         <div style={{fontSize:20,marginBottom:6}}>◉</div>
         <div style={{fontSize:13,fontWeight:800,color:TX}}>Luna</div>
-        <div style={{fontSize:11,color:MU,marginTop:2}}>Fala comigo, vai</div>
+        <div style={{fontSize:11,color:MU,marginTop:2}}>Come talk to me</div>
       </div>
     </div>
 

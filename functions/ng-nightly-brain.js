@@ -359,6 +359,10 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
         const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200)
         await fetch(`${siteUrlBK}/.netlify/functions/ng-brick-kinds`,{method:'POST',body:'{}',signal:_ac.signal}).catch(()=>{})
         clearTimeout(_tm)
+        // Register sweep: heal pre-rewire 'a gente' bricks still in the bank
+        const _ac2=new AbortController();const _tm2=setTimeout(()=>_ac2.abort(),1200)
+        await fetch(`${siteUrlBK}/.netlify/functions/ng-register-sweep`,{method:'POST',body:'{}',signal:_ac2.signal}).catch(()=>{})
+        clearTimeout(_tm2)
       }
     }catch(_){}
 
