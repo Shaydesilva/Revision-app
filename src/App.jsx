@@ -2528,10 +2528,14 @@ const SFX=(()=>{
     }catch(_){}
   }
   return{
-    tap:()=>{if(on())hit(3400,0.05,0.16)}, // tamborim tick — touch answered
+    tap:()=>{if(on())hit(4200,0.035,0.10)}, // light tick — touch answered
     flip:()=>{if(on())hit(1800,0.06,0.14,0,0.9)},
-    good:()=>{if(!on())return;hit(2600,0.05,0.15);tone(820,0.07,'square',0.05,0.03);tone(1080,0.09,'square',0.045,0.1)}, // tick + agogo answer
-    bad:()=>{if(on())surdo(140,58,0.22,0.26)}, // dry surdo thud — never a buzzer,
+    good:()=>{if(!on())return; // puh-TING — light, bouncy, up
+      hit(3000,0.03,0.08)
+      tone(659,0.09,'triangle',0.10,0.015)
+      tone(988,0.22,'triangle',0.12,0.09)
+      tone(1976,0.18,'sine',0.035,0.10)},
+    bad:()=>{if(on())surdo(150,62,0.18,0.18)}, // soft dry thud — never a buzzer,
     acende:()=>{if(!on())return;tone(440,0.26,'sine',0.12,0);tone(554.37,0.26,'sine',0.12,0.11);tone(659.25,0.3,'sine',0.12,0.22);tone(880,0.32,'triangle',0.05,0.24)},
     cuica:()=>{
       if(!on())return
