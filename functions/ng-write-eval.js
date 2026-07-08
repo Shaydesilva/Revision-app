@@ -10,7 +10,7 @@ const UID='00000000-0000-0000-0000-000000000001'
 exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
-    const{target_pt='',user_answer='',en_prompt='',scaffold_id,stage}=JSON.parse(event.body||'{}')
+    const{target_pt='',user_answer='',en_prompt='',scaffold_id,stage,mode='',bricks=[]}=JSON.parse(event.body||'{}')
     let phase=1
     try{
       const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
@@ -33,7 +33,9 @@ Judge THREE tiers independently:
 QUALITY: meaning wrong -> max 2. meaning ok + grammar rough -> 3. + grammar clean -> 4. + form perfect -> 5.
 TIP: exactly ONE line, warm Bia voice, targeting ONLY the highest failed tier. If meaning failed, do not mention grammar or accents at all. If quality=5, tip is a specific 4-word praise.
 JSON only: {"quality":1-5,"correct":bool,"meaning_ok":bool,"grammar_ok":bool,"form_ok":bool,"feedback":"one short line","tip":"one line","carioca_correction":"the natural Carioca way to say it","what_was_right":"one specific thing they nailed"}`,
-        messages:[{role:'user',content:`TARGET (a valid answer): "${target_pt}"\nPROMPT SHOWN: "${en_prompt}"\nLEARNER TYPED: "${user_answer}"`}]})
+        messages:[{role:'user',content:mode==='monta'
+          ?`MONTA (free build): the learner was asked to build ANY natural sentence using these bricks (any natural conjugation/inflection of them counts): ${bricks.map(b=>`"${b}"`).join(' + ')}\nThere is NO single target. Judge MEANING as: is it a sensible, natural sentence a Carioca could actually say? ADDITIONAL RULE: if a required brick (or a natural form of it) is missing, quality caps at 3 and the tip names the missing brick. carioca_correction = one natural example sentence that uses ALL the bricks.\nLEARNER TYPED: "${user_answer}"`
+          :`TARGET (a valid answer): "${target_pt}"\nPROMPT SHOWN: "${en_prompt}"\nLEARNER TYPED: "${user_answer}"`}]})
     })
     const data=await res.json()
     let out=null

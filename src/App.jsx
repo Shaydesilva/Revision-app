@@ -3628,19 +3628,19 @@ function NGOficina({isOnline,onBack}){
     {nudge&&!evald&&<div style={{marginTop:8,fontSize:11.5,color:GD,animation:'up 0.3s ease'}}>🤔 Tem certeza? Dá uma olhada no tempo verbal antes de mandar — ou manda mesmo, errar aqui é barato.</div>}
     {evald&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px'}}>
       <div style={{display:'flex',gap:10,marginBottom:6,fontSize:10,fontWeight:800}}>
-        <span style={{color:evald.meaning_ok?GR:RE}}>SIGNIFICADO {evald.meaning_ok?'✓':'✗'}</span>
-        <span style={{color:evald.grammar_ok?GR:GD}}>GRAMÁTICA {evald.grammar_ok?'✓':'~'}</span>
-        <span style={{color:evald.form_ok?GR:MU}}>ACENTOS {evald.form_ok?'✓':'·'}</span>
+        <span style={{color:evald.meaning_ok?GR:RE}}>MEANING {evald.meaning_ok?'✓':'✗'}</span>
+        <span style={{color:evald.grammar_ok?GR:GD}}>GRAMMAR {evald.grammar_ok?'✓':'~'}</span>
+        <span style={{color:evald.form_ok?GR:MU}}>ACCENTS {evald.form_ok?'✓':'·'}</span>
         <span style={{marginLeft:'auto',color:AC}}>q{evald.quality}</span>
       </div>
       <div style={{fontSize:12.5,color:TX,lineHeight:1.6}}>{evald.tip||evald.feedback}</div>
-      {evald.quality<5&&evald.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:6}}>Carioca raiz: <b>{evald.carioca_correction}</b></div>}
+      {evald.quality<5&&evald.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:6}}>The Carioca way: <b>{evald.carioca_correction}</b></div>}
     </div>}
     <div style={{marginTop:12}}>
       {!evald?<PBtn label={busy?'Avaliando…':'Enviar'} onClick={submit}/>
       :(evald.quality<=3&&!retried)?<div style={{display:'flex',gap:8}}>
-        <button onClick={()=>{firstQRef.current=evald.quality||1;setRetried(true);setEvald(null)}} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Tentar de novo</button>
-        <button onClick={commit} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continuar</button>
+        <button onClick={()=>{firstQRef.current=evald.quality||1;setRetried(true);setEvald(null)}} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Try again</button>
+        <button onClick={commit} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continue</button>
       </div>
       :<PBtn label={i>=items.length-1?'Fechar oficina':'Próxima →'} onClick={commit}/>}
     </div>
@@ -3768,13 +3768,13 @@ function NGAula({isOnline,unit,onBack}){
         placeholder="fala do teu jeito…" style={{width:'100%',minHeight:64,background:S2,border:`1.5px solid ${gapEval?(gapEval.quality>=4?GR:GD):BD}`,borderRadius:14,padding:'12px 14px',fontSize:15,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
       {gapEval&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'11px 13px'}}>
         <div style={{fontSize:12,color:TX,lineHeight:1.6}}>{gapEval.tip||gapEval.feedback}</div>
-        {gapEval.quality<5&&gapEval.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:5}}>Carioca raiz: <b>{gapEval.carioca_correction}</b></div>}
+        {gapEval.quality<5&&gapEval.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:5}}>The Carioca way: <b>{gapEval.carioca_correction}</b></div>}
       </div>}
       <div style={{marginTop:12}}>
         {!gapEval?<PBtn label={gapBusy?'Avaliando…':'Falar'} onClick={()=>submitGap(t.gap)}/>
         :(gapEval.quality<=3&&!gapRetried)?<div style={{display:'flex',gap:8}}>
-          <button onClick={()=>{gapFirstQRef.current=gapEval.quality||1;setGapRetried(true);setGapEval(null)}} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Tentar de novo</button>
-          <button onClick={()=>{t.gap._said=gapAns;(turnIdx>=turns.length-1)?(SFX.complete(),setSt('done')):nextTurn()}} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continuar</button>
+          <button onClick={()=>{gapFirstQRef.current=gapEval.quality||1;setGapRetried(true);setGapEval(null)}} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Try again</button>
+          <button onClick={()=>{t.gap._said=gapAns;(turnIdx>=turns.length-1)?(SFX.complete(),setSt('done')):nextTurn()}} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continue</button>
         </div>
         :<PBtn label={turnIdx>=turns.length-1?'Fechar a cena':'Continuar a cena →'} onClick={()=>{
           t.gap._said=gapAns
@@ -3932,7 +3932,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       0:['flip','recog'],
       1:['reorder','cloze','escuta'],
       2:isGram?['timeline','duel','conserta']:['duel','conserta','cloze'],
-      3:['constructor']
+      3:['constructor','constructor','monta'] // produzir: mostly targeted, sometimes free build
     }
     const base=pools[rung]||pools[1]
     const w=atomWRef.current||{}
@@ -3950,6 +3950,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     if(rot==='cloze'&&words.length<3)rot='flip'
     if(rot==='escuta'&&(!isOnline||queue.length<3))rot='cloze'
     if(rot==='constructor'&&!isOnline)rot=isGram?'conserta':'reorder'
+    if(rot==='monta'&&(!isOnline||(item.pt||'').split(' ').length>6))rot=isOnline?'constructor':'reorder'
     if(rot==='conserta'&&!corruptPT(item.pt))rot='cloze'
     if(rot==='recog'&&queue.length<3)rot='flip'
     return rot
@@ -3996,6 +3997,11 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     }else if(t==='conserta'){
       const cor=corruptPT(item.pt)
       setAtom({type:'conserta',...cor,phase2:false,result:null,options:null})
+    }else if(t==='monta'){
+      // LEGO: the target brick + one snap-piece. Build ANY true sentence with both.
+      const SNAPS=['hoje','amanhã','depois','mas','porque','então','agora','sempre']
+      const picks=shuffleArr(SNAPS).slice(0,1)
+      setAtom({type:'monta',bricks:[item.pt,...picks],answer:'',evald:null,retried:false,busy:false})
     }else setAtom({type:'constructor',answer:'',evald:null,retried:false,busy:false})
   }
 
@@ -4232,7 +4238,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
           if(ans===item.pt){setAtom(a=>({...a,result:'right'}));const q=atom.tries>0?3:4;await logEvent(item,q,'reorder');setTimeout(advance,650)}
           else if(atom.tries===0){setAtom(a=>({...a,tries:1,hint:`Começa com "${(item.pt||'').split(' ')[0]}" — tenta de novo`,picked:[],pool:shuffleArr((item.pt||'').split(' '))}));}
           else{setAtom(a=>({...a,result:'wrong'}));await logEvent(item,1,'reorder')}
-        }}/>:atom.result==='wrong'?<PBtn label="Continuar" onClick={advance}/>:<div style={{textAlign:'center',color:GR,fontWeight:800,fontSize:15}}>✓</div>}
+        }}/>:atom.result==='wrong'?<PBtn label="Continue" onClick={advance}/>:<div style={{textAlign:'center',color:GR,fontWeight:800,fontSize:15}}>✓</div>}
       </div>}
 
       {atom.type==='cloze'&&<div>
@@ -4347,32 +4353,66 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         {atom.result==='wrong'&&<div style={{fontSize:12,color:TX}}>Era <b style={{color:AC}}>{atom.rightWord}</b>: {item.pt}</div>}
       </div>}
 
-      {atom.type==='constructor'&&<div>
-        <div style={{fontSize:12,color:MU,marginBottom:8}}>Build it in Portuguese:</div>
-        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px',fontSize:15,fontWeight:700,color:TX,marginBottom:12}}>{item.en}</div>
-        <textarea value={atom.answer} onChange={e=>setAtom(a=>({...a,answer:e.target.value}))} disabled={!!atom.evald&&(atom.retried||atom.evald.quality>=4)} placeholder="digita do teu jeito…" style={{width:'100%',minHeight:74,background:S2,border:`1.5px solid ${atom.evald?(atom.evald.quality>=4?GR:GD):BD}`,borderRadius:14,padding:'12px 14px',fontSize:15,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
+      {atom.type==='monta'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>Build ANY true sentence using these bricks:</div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+          {atom.bricks.map((b,i)=><span key={i} style={{background:i===0?`${AC}18`:S,border:`1.5px solid ${i===0?AC+'66':BD}`,borderRadius:10,padding:'8px 12px',fontSize:14,fontWeight:700,color:i===0?AC:TX}}>{b}</span>)}
+        </div>
+        <textarea value={atom.answer} onChange={e=>setAtom(a=>({...a,answer:e.target.value}))} disabled={!!atom.evald&&(atom.retried||atom.evald.quality>=4)} placeholder="your sentence, your way…" style={{width:'100%',minHeight:74,background:S2,border:`1.5px solid ${atom.evald?(atom.evald.quality>=4?GR:GD):BD}`,borderRadius:14,padding:'12px 14px',fontSize:15,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
         {atom.evald&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px'}}>
           <div style={{display:'flex',gap:10,marginBottom:6,fontSize:10,fontWeight:800}}>
-            <span style={{color:atom.evald.meaning_ok?GR:RE}}>SIGNIFICADO {atom.evald.meaning_ok?'✓':'✗'}</span>
-            <span style={{color:atom.evald.grammar_ok?GR:GD}}>GRAMÁTICA {atom.evald.grammar_ok?'✓':'~'}</span>
-            <span style={{color:atom.evald.form_ok?GR:MU}}>ACENTOS {atom.evald.form_ok?'✓':'·'}</span>
+            <span style={{color:atom.evald.meaning_ok?GR:RE}}>MEANING {atom.evald.meaning_ok?'✓':'✗'}</span>
+            <span style={{color:atom.evald.grammar_ok?GR:GD}}>GRAMMAR {atom.evald.grammar_ok?'✓':'~'}</span>
             <span style={{marginLeft:'auto',color:AC}}>q{atom.evald.quality}</span>
           </div>
           <div style={{fontSize:12,color:TX,lineHeight:1.6}}>{atom.evald.tip||atom.evald.feedback}</div>
-          {atom.evald.quality<5&&atom.evald.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:6}}>Carioca raiz: <b>{atom.evald.carioca_correction}</b></div>}
+          {atom.evald.quality<5&&atom.evald.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:6}}>The Carioca way: <b>{atom.evald.carioca_correction}</b></div>}
         </div>}
         <div style={{marginTop:12}}>
-          {!atom.evald?<PBtn label={atom.busy?'Avaliando…':'Enviar'} onClick={async()=>{
+          {!atom.evald?<PBtn label={atom.busy?'Checking…':'Submit'} onClick={async()=>{
+            if(atom.busy||!atom.answer.trim())return
+            setAtom(a=>({...a,busy:true}))
+            const r=await ngFetch('ng-write-eval',{mode:'monta',bricks:atom.bricks,user_answer:atom.answer,en_prompt:item.en,scaffold_id:item.scaffold_id,stage:item.stage}).catch(()=>({quality:2,feedback:'Could not evaluate'}))
+            setAtom(a=>({...a,busy:false,evald:r,firstQ:r.quality||2}))
+          }}/>
+          :(atom.evald.quality<=3&&!atom.retried)?<div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setAtom(a=>({...a,evald:null,retried:true}))} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Try again</button>
+            <button onClick={async()=>{await logEvent(item,atom.evald.quality,'monta');advance()}} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continue</button>
+          </div>
+          :<PBtn label="Continue" onClick={async()=>{
+            const raw=atom.evald.quality||2
+            const q=atom.retried?Math.max(atom.firstQ||1,Math.max(1,Math.round(raw-0.5))):raw
+            await logEvent(item,q,'monta');advance()
+          }}/>}
+        </div>
+      </div>}
+
+      {atom.type==='constructor'&&<div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>Build it in Portuguese:</div>
+        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px',fontSize:15,fontWeight:700,color:TX,marginBottom:12}}>{item.en}</div>
+        <textarea value={atom.answer} onChange={e=>setAtom(a=>({...a,answer:e.target.value}))} disabled={!!atom.evald&&(atom.retried||atom.evald.quality>=4)} placeholder="your sentence, your way…" style={{width:'100%',minHeight:74,background:S2,border:`1.5px solid ${atom.evald?(atom.evald.quality>=4?GR:GD):BD}`,borderRadius:14,padding:'12px 14px',fontSize:15,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
+        {atom.evald&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px'}}>
+          <div style={{display:'flex',gap:10,marginBottom:6,fontSize:10,fontWeight:800}}>
+            <span style={{color:atom.evald.meaning_ok?GR:RE}}>MEANING {atom.evald.meaning_ok?'✓':'✗'}</span>
+            <span style={{color:atom.evald.grammar_ok?GR:GD}}>GRAMMAR {atom.evald.grammar_ok?'✓':'~'}</span>
+            <span style={{color:atom.evald.form_ok?GR:MU}}>ACCENTS {atom.evald.form_ok?'✓':'·'}</span>
+            <span style={{marginLeft:'auto',color:AC}}>q{atom.evald.quality}</span>
+          </div>
+          <div style={{fontSize:12,color:TX,lineHeight:1.6}}>{atom.evald.tip||atom.evald.feedback}</div>
+          {atom.evald.quality<5&&atom.evald.carioca_correction&&<div style={{fontSize:12,color:AC,marginTop:6}}>The Carioca way: <b>{atom.evald.carioca_correction}</b></div>}
+        </div>}
+        <div style={{marginTop:12}}>
+          {!atom.evald?<PBtn label={atom.busy?'Checking…':'Submit'} onClick={async()=>{
             if(atom.busy||!atom.answer.trim())return
             setAtom(a=>({...a,busy:true}))
             const r=await ngFetch('ng-write-eval',{target_pt:item.pt,user_answer:atom.answer,en_prompt:item.en,scaffold_id:item.scaffold_id,stage:item.stage}).catch(()=>({quality:2,feedback:'Não deu pra avaliar'}))
             setAtom(a=>({...a,busy:false,evald:r,firstQ:r.quality||2}))
           }}/>
           :(atom.evald.quality<=3&&!atom.retried)?<div style={{display:'flex',gap:8}}>
-            <button onClick={()=>setAtom(a=>({...a,evald:null,retried:true}))} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Tentar de novo</button>
-            <button onClick={async()=>{await logEvent(item,atom.evald.quality,'constructor');advance()}} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continuar</button>
+            <button onClick={()=>setAtom(a=>({...a,evald:null,retried:true}))} style={{flex:1,padding:'13px',background:`${GD}14`,border:`1px solid ${GD}55`,borderRadius:12,color:GD,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:FONT}}>↻ Try again</button>
+            <button onClick={async()=>{await logEvent(item,atom.evald.quality,'constructor');advance()}} style={{flex:1,padding:'13px',background:S2,border:`1px solid ${BD}`,borderRadius:12,color:TX,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:FONT}}>Continue</button>
           </div>
-          :<PBtn label="Continuar" onClick={async()=>{
+          :<PBtn label="Continue" onClick={async()=>{
             const raw=atom.evald.quality||2
             const q=atom.retried?Math.max(atom.firstQ||1,Math.max(1,Math.round(raw-0.5))):raw
             await logEvent(item,q,'constructor');advance()
@@ -4446,7 +4486,7 @@ function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
     </div>
     <textarea value={freeText} onChange={e=>setFreeText(e.target.value)} placeholder="algo mais? (opcional) — ex: trabalho com cripto, tenho um cachorro…"
       style={{width:'100%',minHeight:60,background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 14px',fontSize:14,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box',marginBottom:18}}/>
-    <PBtn label="Continuar" onClick={()=>{SFX.tap();setServer('planting',{life_context:composeLifeContext()});setStep('planting')}}/>
+    <PBtn label="Continue" onClick={()=>{SFX.tap();setServer('planting',{life_context:composeLifeContext()});setStep('planting')}}/>
     <div style={{textAlign:'center',marginTop:10}}><button onClick={()=>{setServer('planting',{life_context:composeLifeContext()});setStep('planting')}} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT}}>pular por agora</button></div>
   </div>
 
@@ -4507,6 +4547,10 @@ function NGHome({isOnline,go,active=true}){
     ngFetch('ng-path',{action:'get'}).then(d=>{
       const us=Array.isArray(d?.units)?d.units:[]
       setCurrentUnit(us.find(u=>u.status==='current'||u.status==='in_progress')||us[0]||null)
+      // Aula prefetch: generate the active unit's lesson pack NOW, in the
+      // background, so first-open pays cache instead of ~10s of Sonnet.
+      const cur=us.find(u=>u.status==='current'||u.status==='in_progress')
+      if(cur)ngFetch('ng-lesson-gen',{unit_id:cur.unit_id}).catch(()=>{})
     }).catch(()=>{})
     if(sb)sb.from('ng_brain_log').select('process,thought,created_at')
       .eq('user_id','00000000-0000-0000-0000-000000000001')
