@@ -64,6 +64,8 @@ exports.handler=async(event)=>{
     // ── 1. Nightly brain missing? Dispatch. ──────────────────────────
     if(!daily?.workout&&rioNow.getUTCHours()>=4){
       if(siteUrl){try{const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-nightly-brain`,{method:'POST',signal:_ac.signal}).catch(()=>{});clearTimeout(_tm)}catch(_){}}
+      // First Contact world — plants once, no-op forever after
+      if(siteUrl){try{const _acF=new AbortController();const _tmF=setTimeout(()=>_acF.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-seed-first-contact`,{method:'POST',body:'{}',signal:_acF.signal}).catch(()=>{});clearTimeout(_tmF)}catch(_){}}
       // Register sweep — heal pre-rewire 'a gente' bank bricks (no-op when clean)
       if(siteUrl){try{const _acR=new AbortController();const _tmR=setTimeout(()=>_acR.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-register-sweep`,{method:'POST',body:'{}',signal:_acR.signal}).catch(()=>{});clearTimeout(_tmR)}catch(_){}}
       actions.push('dispatched_nightly_brain')
