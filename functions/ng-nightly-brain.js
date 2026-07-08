@@ -5,7 +5,7 @@
 // Trigger: first ng-frontier call after 4am Rio, or manual POST.
 
 const{createClient}=require('@supabase/supabase-js')
-const REGISTER_LAW="CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'First-person plural is 'nos', NEVER 'a gente' (this learner's Vidigal register). Agreement is a MIX, mostly REDUCED (nos takes the 3rd-singular verb form: nos vai, nos ta, nos foi, nos tava, nos tem, nos fez); standard 1st-plural also occurs and is the taught anchor (nos estamos, nos vamos, nos fomos, nos estavamos). BOTH correct - favor reduced in casual speech, standard when teaching the paradigm. Future stays periphrastic (nos vamos estar / nos vai estar), never synthetic (estaremos). Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise)."
+const{REGISTER_LAW_GENERATE:REGISTER_LAW}=require('./register-law.cjs')
 const UID='00000000-0000-0000-0000-000000000001'
 
 async function brainLog(sb,proc,thought,data=null,importance=1){

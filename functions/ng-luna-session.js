@@ -3,6 +3,7 @@ exports.handler=async(event)=>{
   try{
     const{spectrum=0.5,speed='normal'}=JSON.parse(event.body||'{}')
     const{createClient}=require('@supabase/supabase-js')
+const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
 
@@ -79,7 +80,7 @@ Violating this rule breaks the experience. One attempt. Done. Move on.`
       ?`KNOWN ERROR PATTERNS: ${(errors||[]).map(e=>e.error_type).join(', ')} — be aware but don't lecture.`
       :''
 
-    const instructions=`CARIOCA REGISTER LAW (mandatory for ALL Portuguese you produce): spoken Rio register only. Use 'voce' never 'tu' (nor tu conjugations). Use 'a gente' + 3rd-person singular, never 'nos'. Contractions by default: to, ta, tamo, pra, pro, ce, ne. Prefer the spoken imperfect/periphrastic past where Rio speech uses it, even when textbook grammar prefers the perfect. Never European or literary forms (no vos, no mesoclise).\n\n${speedRule}
+    const instructions=`${REGISTER_LAW_GENERATE}\n\n${speedRule}
 
 ${complexityRule}
 

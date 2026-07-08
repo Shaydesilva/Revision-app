@@ -6,7 +6,7 @@
 // and narration one-liners. Life-context law: themes from the profile
 // principle, never invented private people. Fallback-safe: on any failure
 // returns {fallback:true} and the lesson simply runs without theater.
-const REGISTER_LAW="CARIOCA REGISTER LAW (mandatory): spoken Rio register. 'voce' never 'tu'; 'first-plural is 'nos' not 'a gente' - BOTH reduced (nos vai, nos ta, nos foi) AND standard (nos vamos, nos estamos) are CORRECT, never penalize either; 'a gente' acceptable, not an error; contractions to/ta/tamo/pra/pro/ce; spoken imperfect valid; no European forms. Real giria a Carioca says TODAY - never textbook-flavored or invented slang."
+const{REGISTER_LAW_GENERATE:REGISTER_LAW}=require('./register-law.cjs')
 const{createClient}=require('@supabase/supabase-js')
 const UID='00000000-0000-0000-0000-000000000001'
 exports.handler=async(event)=>{
@@ -48,6 +48,11 @@ JSON only:
     let pack=null
     try{pack=JSON.parse((data.content?.[0]?.text||'{}').replace(/```json|```/g,'').trim())}catch(_){}
     if(!pack||!pack.dialogue?.length)return{statusCode:200,body:JSON.stringify({fallback:true})}
+    // Register lint (observe-only): flag law violations in generated lesson lines.
+    try{
+      const lint=require('./register-lint.cjs').lintLines(pack.dialogue)
+      if(!lint.ok)await sb.from('ng_brain_log').insert({user_id:UID,process:'lesson_gen',thought:`Register lint flagged ${lint.hits.length} lesson line(s): ${lint.hits[0].flags.join(', ')} — "${lint.hits[0].pt}"`,data:lint.hits,importance:2})
+    }catch(_){}
     await sb.from('ng_path_units').update({lesson_cache:{level:unit.level||1,generated_at:new Date().toISOString(),pack}}).eq('id',unit.id)
     return{statusCode:200,body:JSON.stringify({pack,cached:false})}
   }catch(e){return{statusCode:200,body:JSON.stringify({fallback:true,error:e.message})}}

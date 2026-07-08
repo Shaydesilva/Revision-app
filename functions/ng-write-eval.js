@@ -4,7 +4,7 @@
 //  P3+: grammar counts more; register precision at P4.
 // Accents NEVER cost more than one point. Never bare-wrong: always a contrast + ONE tip
 // targeted at the highest failed tier only.
-const REGISTER_LAW="CARIOCA REGISTER LAW: spoken Rio register. 'voce' never 'tu'; 'first-plural is 'nos' not 'a gente' - BOTH reduced (nos vai, nos ta, nos foi) AND standard (nos vamos, nos estamos) are CORRECT, never penalize either; 'a gente' acceptable, not an error; contractions to/ta/tamo/pra/pro/ce are CORRECT and preferred; spoken imperfect valid; no European forms."
+const{REGISTER_LAW_GRADE:REGISTER_LAW}=require('./register-law.cjs')
 const{createClient}=require('@supabase/supabase-js')
 const UID='00000000-0000-0000-0000-000000000001'
 exports.handler=async(event)=>{
