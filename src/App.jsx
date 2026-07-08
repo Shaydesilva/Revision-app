@@ -306,7 +306,7 @@ function VoiceMode({cards=[],onRateMultiple=()=>{},onAddCard=()=>{},isOnline,ngM
           if(testInProgress.current==='answered'){
             const lc=text.toLowerCase()
             const passed=lc.includes('isso')||lc.includes('exato')||lc.includes('perfeito')||lc.includes('correto')||lc.includes('muito bem')||lc.includes('acertou')||lc.includes('show')
-            const failed=lc.includes('quase')||lc.includes('errado')||lc.includes('não foi')||lc.includes('tente')||lc.includes('quase lá')
+            const failed=lc.includes('quase')||lc.includes('errado')||lc.includes('não foi')||lc.includes('tente')||lc.includes('almost there')
             if(passed||failed){
               testEval=passed?'pass':'fail'
               testInProgress.current=false
@@ -723,15 +723,15 @@ function VoiceMode({cards=[],onRateMultiple=()=>{},onAddCard=()=>{},isOnline,ngM
     {/* Word menu */}
     {lunaSuggestion&&<div style={{position:'fixed',left:12,right:12,bottom:118,zIndex:60,maxWidth:456,margin:'0 auto'}}>
       {lunaSuggestion.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Analisando "{lunaSuggestion.phrase}" — onde entra na escada…</div>}
-      {lunaSuggestion.duplicate&&<div onClick={()=>setLunaSuggestion(null)} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>Você já tem esse: <span style={{color:AC,fontWeight:700}}>{lunaSuggestion.existing?.base}</span> · toque pra fechar</div>}
-      {lunaSuggestion.error&&<div onClick={()=>setLunaSuggestion(null)} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{lunaSuggestion.error} · toque pra fechar</div>}
+      {lunaSuggestion.duplicate&&<div onClick={()=>setLunaSuggestion(null)} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>You already have this one: <span style={{color:AC,fontWeight:700}}>{lunaSuggestion.existing?.base}</span> · tap to close</div>}
+      {lunaSuggestion.error&&<div onClick={()=>setLunaSuggestion(null)} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{lunaSuggestion.error} · tap to close</div>}
       {lunaSuggestion.sug&&<SuggestionCard sug={lunaSuggestion.sug} onDone={()=>setLunaSuggestion(null)}/>}
     </div>}
     {wordMenu&&<div style={{position:'fixed',inset:0,zIndex:200}} onClick={()=>setWordMenu(null)}>
       <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:wordMenu.y,left:Math.min(wordMenu.x,window.innerWidth-210),background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'8px',minWidth:200,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',animation:'up 0.15s ease'}}>
         <div style={{fontSize:15,fontWeight:700,color:YE,padding:'6px 12px',borderBottom:`1px solid ${BD}`,marginBottom:4}}>{wordMenu.word}</div>
         {wordMenu.translation&&<div style={{fontSize:12,color:MU,padding:'2px 12px 8px'}}>{wordMenu.translation}</div>}
-        <button onClick={()=>addToDeck(wordMenu.word,wordMenu.translation,wordMenu.sentence)} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',padding:'10px 12px',cursor:'pointer',fontSize:13,color:GR,fontFamily:FONT,borderRadius:8}}>{ngMode?'✦ Analisar padrão':'＋ Add to deck'}</button>
+        <button onClick={()=>addToDeck(wordMenu.word,wordMenu.translation,wordMenu.sentence)} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',padding:'10px 12px',cursor:'pointer',fontSize:13,color:GR,fontFamily:FONT,borderRadius:8}}>{ngMode?'✦ Capture pattern':'＋ Add to deck'}</button>
         <button onClick={()=>setWordMenu(null)} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',padding:'10px 12px',cursor:'pointer',fontSize:13,color:MU,fontFamily:FONT,borderRadius:8}}>Cancel</button>
       </div>
     </div>}
@@ -1150,7 +1150,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
       {k:'weak',i:'🎯',t:'Weak spots',d:'What you struggle with — the data decides'},
       {k:'due',i:'◌',t:'Due'+(dueCount?` · ${dueCount}`:''),d:'Reviews at the forgetting edge'},
       {k:'focus',i:'◈',t:'Focus',d:'The classic frontier — highest priority 12'},
-      {k:'grammar',i:'⚙',t:'Gramática',d:'The Máquina do Tempo — tenses as living sentences'},
+      {k:'grammar',i:'⚙',t:'Grammar',d:'The Máquina do Tempo — tenses as living sentences'},
     ].map(dk=><button key={dk.k} onClick={()=>{if(dk.k==='grammar'&&goTreinoGrammar){goTreinoGrammar();return}startDeck(dk.k)}}
       style={{width:'100%',textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'15px 16px',marginBottom:10,cursor:'pointer',fontFamily:FONT,display:'flex',gap:14,alignItems:'center'}}>
       <span style={{fontSize:22,flexShrink:0}}>{dk.i}</span>
@@ -1218,7 +1218,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
         <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>✦ Ganhos de hoje</div>
         <div style={{display:'flex',gap:18,marginBottom:12}}>
           <div><div style={{fontSize:24,fontWeight:900,color:AC,fontFamily:FONTD}}>{uniq}</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>PATTERNS</div></div>
-          <div><div style={{fontSize:24,fontWeight:900,color:GR,fontFamily:FONTD}}>+{Math.round(total*10)/10}d</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>MEMÓRIA</div></div>
+          <div><div style={{fontSize:24,fontWeight:900,color:GR,fontFamily:FONTD}}>+{Math.round(total*10)/10}d</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>MEMORY</div></div>
         </div>
         {top.map((w,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderTop:`1px solid ${BD}`}}>
           <span style={{fontSize:10,color:MU,flex:1}}>{w.scaffold_id} · s{w.stage} · {w.skill==='recognition'?'recog':'prod'}</span>
@@ -1809,8 +1809,8 @@ function NGScaffoldMap({isOnline,onBack}){
         }
       }
       return<div style={{padding:'0 12px'}}>
-        <div style={{fontSize:10.5,color:MU,textAlign:'center',marginBottom:6,lineHeight:1.6}}>A Linha do Tempo × as três formas vivas.<br/>Cada célula acende com a força REAL da memória. Toca numa célula pra ver a frase.</div>
-        <div style={{fontSize:9.5,color:MU,opacity:0.7,textAlign:'center',marginBottom:12}}>Isso enche conforme você pratica as unidades ⚙ da Máquina do Tempo — vazio agora é normal.</div>
+        <div style={{fontSize:10.5,color:MU,textAlign:'center',marginBottom:6,lineHeight:1.6}}>The Timeline × the three living person-forms.<br/>Each cell lights up with your REAL memory strength. Tap a cell to see its sentence.</div>
+        <div style={{fontSize:9.5,color:MU,opacity:0.7,textAlign:'center',marginBottom:12}}>This fills as you practice the ⚙ Máquina do Tempo units — empty at first is normal.</div>
         <div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'separate',borderSpacing:3,margin:'0 auto'}}>
           <thead><tr><th></th>{TL_POINTS.map(p=><th key={p} style={{fontSize:7.5,color:GD,fontWeight:800,padding:'2px 1px',maxWidth:44,fontFamily:FONT}}>{p}</th>)}</tr></thead>
@@ -1831,7 +1831,7 @@ function NGScaffoldMap({isOnline,onBack}){
         {matrixSel&&<div style={{margin:'14px auto 0',maxWidth:360,background:S,border:`1px solid ${GD}55`,borderRadius:14,padding:'12px 15px',animation:'up 0.25s ease'}}>
           <div style={{fontSize:8.5,color:GD,fontWeight:800,letterSpacing:1.5,marginBottom:5}}>{matrixSel.person} × {matrixSel.point}</div>
           <div style={{fontSize:14.5,fontWeight:700,color:AC}}>{matrixSel.pt}</div>
-          <div style={{fontSize:11,color:MU,marginTop:2}}>{matrixSel.en} · {matrixSel.s>0?`${Math.round(matrixSel.s*10)/10}d de memória`:'ainda não praticada'}</div>
+          <div style={{fontSize:11,color:MU,marginTop:2}}>{matrixSel.en} · {matrixSel.s>0?`${Math.round(matrixSel.s*10)/10}d de memória`:'not practiced yet'}</div>
         </div>}
         <div style={{fontSize:9.5,color:MU,textAlign:'center',marginTop:12}}>número = dias de estabilidade · ★ = sólido (7d+) · vazio = célula ainda não existe no teu banco</div>
       </div>
@@ -2169,16 +2169,16 @@ function NGSayIt({isOnline,onBack}){
       {/* Add to bank */}
       <div style={{display:'flex',gap:10,marginBottom:16}}>
         <button onClick={addToBank} disabled={addedToBank} style={{flex:1,padding:'12px',background:addedToBank?`${GR}20`:S,border:`1px solid ${addedToBank?GR+'44':BD}`,borderRadius:12,cursor:addedToBank?'default':'pointer',fontFamily:FONT,fontSize:13,color:addedToBank?GR:TX,fontWeight:600}}>
-          {addedToBank?'✓ Sugestão pronta — revisa abaixo ↓':'✦ Analisar como padrão'}
+          {addedToBank?'✓ Suggestion ready — review below ↓':'✦ Capture as pattern'}
         </button>
         <button onClick={()=>{setInput(result.carioca||'');setResult(null)}} style={{padding:'12px 16px',background:S,border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,color:MU}}>
           Edit
         </button>
       </div>
       {saySug&&<div style={{marginBottom:16}}>
-        {saySug.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Analisando onde entra na escada…</div>}
-        {saySug.duplicate&&<div onClick={()=>{setSaySug(null);setAddedToBank(false)}} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>Você já tem esse: <span style={{color:AC,fontWeight:700}}>{saySug.existing?.base}</span> · toque pra fechar</div>}
-        {saySug.error&&<div onClick={()=>{setSaySug(null);setAddedToBank(false)}} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{saySug.error} · toque pra fechar</div>}
+        {saySug.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Finding where this fits…</div>}
+        {saySug.duplicate&&<div onClick={()=>{setSaySug(null);setAddedToBank(false)}} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>You already have this one: <span style={{color:AC,fontWeight:700}}>{saySug.existing?.base}</span> · tap to close</div>}
+        {saySug.error&&<div onClick={()=>{setSaySug(null);setAddedToBank(false)}} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{saySug.error} · tap to close</div>}
         {saySug.sug&&<SuggestionCard sug={saySug.sug} onDone={()=>{setSaySug(null)}}/>}
       </div>}
 
@@ -2285,7 +2285,7 @@ function NGImport({isOnline,onBack}){
   if(phase==='review')return<div style={{padding:'20px 20px 100px',animation:'up 0.35s ease'}}>
     <button onClick={()=>setPhase('input')} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:16}}>← Back</button>
     <div style={{fontSize:20,fontWeight:800,color:TX,marginBottom:4,fontFamily:FONTD}}>{suggestions.length} padr{suggestions.length!==1?'ões':'ão'} proposto{suggestions.length!==1?'s':''}</div>
-    <div style={{fontSize:12.5,color:MU,marginBottom:6}}>Do caderno do Victor — escadas montadas; tabelas, fonética e meta ignoradas. Marcas !?* tratadas como ruído.</div>
+    <div style={{fontSize:12.5,color:MU,marginBottom:6}}>From Victor's notes — pattern ladders assembled; tables, phonetics and meta ignored. !?* marks treated as noise.</div>
     {importProg?.skipped&&<div style={{fontSize:10.5,color:MU,opacity:0.7,marginBottom:16}}>
       Ignorado: {importProg.skipped.tables||0} tabelas · {importProg.skipped.phonics||0} fonética · {importProg.skipped.meta||0} meta
     </div>}
@@ -2521,6 +2521,19 @@ const SFX=(()=>{
   }
 })()
 
+// Flow-first: the guided deck is fetched BEFORE it's wanted, so opening a
+// session starts in motion instead of a spinner. 3-minute freshness window.
+let GUIDED_PREFETCH=null
+const prefetchGuided=()=>{
+  ngFetch('ng-frontier',{deck:'guided'})
+    .then(d=>{if(d&&Array.isArray(d.frontier))GUIDED_PREFETCH={data:d,ts:Date.now()}})
+    .catch(()=>{})
+}
+const takeGuidedPrefetch=()=>{
+  const p=GUIDED_PREFETCH
+  GUIDED_PREFETCH=null
+  return(p&&Date.now()-p.ts<180000)?p.data:null
+}
 const ngFetch=async(fn,body={})=>{
   const r=await fetch(`/.netlify/functions/${fn}`,{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -2636,7 +2649,7 @@ function SuggestionCard({sug,onDone}){
   }
   return<div style={{background:S,border:`1px solid ${GD}55`,borderRadius:16,padding:'14px 15px',marginBottom:10,animation:'up 0.3s ease'}}>
     <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>
-      ✦ Sugestão · {sug.source} · {isExt?'estende padrão existente':`escada de ${stages.length}`}
+      ✦ Sugestão · {sug.source} · {isExt?'extends an existing pattern':`escada de ${stages.length}`}
     </div>
     {isExt?<div>
       <div style={{fontSize:12,color:MU,marginBottom:4}}>Novo degrau ({p.extension?.position==='below'?'abaixo':'acima'}) num padrão que você já tem:</div>
@@ -2648,7 +2661,7 @@ function SuggestionCard({sug,onDone}){
         <span style={{fontSize:9,color:MU,width:14,flexShrink:0}}>{i+1}</span>
         <div style={{flex:1}}>
           <span style={{fontSize:13.5,fontWeight:i===p.tapped_stage?800:600,color:i===p.tapped_stage?AC:TX}}>
-            {s.pt}{i===p.tapped_stage&&<span style={{fontSize:8,color:GD,marginLeft:6,letterSpacing:1}}>VOCÊ FALOU</span>}
+            {s.pt}{i===p.tapped_stage&&<span style={{fontSize:8,color:GD,marginLeft:6,letterSpacing:1}}>YOU SAID</span>}
           </span>
           <div style={{fontSize:10,color:MU}}>{s.en}</div>
         </div>
@@ -2729,7 +2742,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
       if(r?.error){setErrMsg(r.error);setStatus('error');setEvolving(null);return}
       SFX.unlock()
       setEvolving(null)
-      setCelebrate({emoji:u.emoji,title:`${u.title} — Nível ${r.new_level}`,sub:'NÍVEL DESBLOQUEADO'})
+      setCelebrate({emoji:u.emoji,title:`${u.title} — Nível ${r.new_level}`,sub:'LEVEL UNLOCKED'})
       load()
     }catch(e){setEvolving(null);setErrMsg('Evolution failed: '+(e?.message||''));setStatus('error')}
   }
@@ -2808,7 +2821,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
 
     {status==='empty'&&<div style={{textAlign:'center',padding:'50px 24px'}}>
       <div style={{fontSize:40,marginBottom:12,opacity:0.5}}>⛰</div>
-      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>Sem padrões, sem trilha. Lógico.</div>
+      <div style={{fontSize:15,fontWeight:800,color:TX,marginBottom:6}}>No patterns, no path yet. Fair enough.</div>
       <div style={{fontSize:12,color:MU,lineHeight:1.7}}>Your content bank is empty. Import a lesson or add patterns via Say It, then come back — the path builds itself.</div>
     </div>}
 
@@ -2849,7 +2862,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
             </button>
             <div style={{fontSize:11.5,fontWeight:700,color:u.status==='locked'?MU:TX,marginTop:7,lineHeight:1.3}}>{u.title}</div>
             <div style={{fontSize:9.5,color:u.status==='complete'?GR:u.pct>0?AC:MU,marginTop:1,fontWeight:600}}>
-              {u.status==='complete'?'completa':u.pct>0?u.pct+'%':u.status==='current'?'← começa aqui':''}
+              {u.status==='complete'?'completa':u.pct>0?u.pct+'%':u.status==='current'?'← start here':''}
             </div>
           </div>
         </div>
@@ -2887,17 +2900,17 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
           </div>
         </div>)}
         <div style={{marginTop:16}}>
-          <PBtn label={sheet.status==='complete'?'↻ Revisar unidade':'▶ Praticar esta unidade'} onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startUnit(u)}}/>
+          <PBtn label={sheet.status==='complete'?'↻ Review this unit':'▶ Practice this unit'} onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startUnit(u)}}/>
           <div style={{marginTop:8}}><GBtn label="🎓 Aula guiada — Escuta · Pratica · Cena" onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startAula&&startAula(u)}}/></div>
           {sheet.level_ready&&<div style={{marginTop:10}}>
             <PBtn label={`⬆ Evoluir para nível ${(sheet.level||1)+1}`} color={GR} onClick={()=>levelUp(sheet)}/>
-            <div style={{fontSize:10,color:MU,textAlign:'center',marginTop:6}}>Claude forja 4-5 padrões mais difíceis desta situação, no momento — dos seus pontos fracos.</div>
+            <div style={{fontSize:10,color:MU,textAlign:'center',marginTop:6}}>Claude forges 4-5 harder patterns for this exact situation — built from your weak spots.</div>
           </div>}
           {!sheet.level_ready&&sheet.pct>=100&&sheet.level_wait_hours>0&&<div style={{marginTop:10,textAlign:'center',fontSize:11.5,color:GD,fontWeight:600}}>
             ⏳ Evolui em {Math.ceil(sheet.level_wait_hours/24)}d — deixa a memória assentar
           </div>}
           {(sheet.level||1)>1&&sheet.pct===0&&<div style={{marginTop:10}}>
-            <GBtn label="↻ Refazer este nível (nada praticado ainda)" small onClick={()=>redoLevel(sheet)}/>
+            <GBtn label="↻ Redo this level (nothing practiced yet)" small onClick={()=>redoLevel(sheet)}/>
           </div>}
         </div>
         <div style={{fontSize:10,color:MU,opacity:0.65,textAlign:'center',marginTop:10}}>Progress = real memory strength. Fades if neglected — units can reopen.</div>
@@ -2907,8 +2920,8 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
     {/* Evolving — Claude forging the next level, live */}
     {evolving&&<div style={{position:'fixed',inset:0,background:'rgba(4,16,9,0.93)',zIndex:400,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:30}}>
       <div style={{animation:'float 2s ease-in-out infinite'}}><Poste size={48}/></div>
-      <div style={{fontSize:16,fontWeight:800,color:TX,marginTop:18,fontFamily:FONTD}}>A trilha está evoluindo…</div>
-      <div style={{fontSize:12,color:MU,marginTop:8,textAlign:'center',lineHeight:1.7}}>Claude está forjando os próximos padrões de<br/>"{evolving.title}" — nível {(evolving.level||1)+1}. ~10 segundos.</div>
+      <div style={{fontSize:16,fontWeight:800,color:TX,marginTop:18,fontFamily:FONTD}}>The path is evolving…</div>
+      <div style={{fontSize:12,color:MU,marginTop:8,textAlign:'center',lineHeight:1.7}}>Claude is forging the next patterns for<br/>"{evolving.title}" — nível {(evolving.level||1)+1}. ~10 segundos.</div>
       <div style={{marginTop:18}}><Spinner size={20}/></div>
     </div>}
 
@@ -2918,7 +2931,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
       <div style={{fontSize:74,animation:'popIn 0.6s cubic-bezier(0.34,1.56,0.64,1)'}}>{celebrate.emoji}</div>
       <div style={{fontSize:13,color:GD,fontWeight:700,letterSpacing:3,textTransform:'uppercase',marginTop:18,animation:'up 0.5s ease 0.2s both'}}>{celebrate.sub||'Unidade completa · every pattern memory-verified'}</div>
       <div style={{fontSize:26,fontWeight:900,color:'#fff',marginTop:6,textAlign:'center',animation:'up 0.5s ease 0.3s both'}}>{celebrate.title}</div>
-      <div style={{fontSize:13,color:'#aab',marginTop:8,textAlign:'center',animation:'up 0.5s ease 0.4s both'}}>AI SIM! Registra no cartório! 🔥</div>
+      <div style={{fontSize:13,color:'#aab',marginTop:8,textAlign:'center',animation:'up 0.5s ease 0.4s both'}}>THAT'S IT! Get it notarized! 🔥</div>
       <div style={{fontSize:11,color:'#778',marginTop:26,animation:'up 0.5s ease 0.6s both'}}>tap anywhere</div>
     </div>}
   </div>
@@ -3314,13 +3327,13 @@ function NGRadio({isOnline,onBack}){
         <div style={{fontSize:24}}>📻</div>
         <div>
           <div style={{fontSize:20,fontWeight:900,color:TX,fontFamily:FONTD}}>Rádio Carioca</div>
-          <div style={{fontSize:11,color:MU}}>{phase==='playing'?(paused?'⏸ Pausado':'● AO VIVO — Chico & Bia'):phase==='tuning'?'Sintonizando…':'Toca aí'}</div>
+          <div style={{fontSize:11,color:MU}}>{phase==='playing'?(paused?'⏸ Paused':'● LIVE — Chico & Bia'):phase==='tuning'?'Tuning in…':'Tap in'}</div>
         </div>
         {phase==='playing'&&<div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
           {!paused&&<div style={{display:'flex',gap:2.5,alignItems:'flex-end',height:16}}>
             {[0,1,2,3,4].map(i=><div key={i} style={{width:3,height:16,background:'#fbbf24',borderRadius:2,transformOrigin:'bottom',animation:`eq ${0.55+i*0.13}s ease-in-out ${i*0.09}s infinite`}}/>)}
           </div>}
-          <div style={{background:'#3a2a10',border:'1px solid #fbbf2466',borderRadius:6,padding:'3px 9px',fontSize:9,fontWeight:800,letterSpacing:1.5,color:'#fbbf24'}}>{paused?'PAUSA':'ON AIR'}</div>
+          <div style={{background:'#3a2a10',border:'1px solid #fbbf2466',borderRadius:6,padding:'3px 9px',fontSize:9,fontWeight:800,letterSpacing:1.5,color:'#fbbf24'}}>{paused?'PAUSED':'ON AIR'}</div>
         </div>}
       </div>
     </div>
@@ -3356,9 +3369,9 @@ function NGRadio({isOnline,onBack}){
     </div>
 
     {radioSug&&<div style={{position:'fixed',left:12,right:12,bottom:110,zIndex:60,maxWidth:456,margin:'0 auto'}}>
-      {radioSug.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Analisando onde entra na escada…</div>}
-      {radioSug.duplicate&&<div onClick={()=>setRadioSug(null)} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>Você já tem esse: <span style={{color:RADIO_A,fontWeight:700}}>{radioSug.existing?.base}</span> · toque pra fechar</div>}
-      {radioSug.error&&<div onClick={()=>setRadioSug(null)} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{radioSug.error} · toque pra fechar</div>}
+      {radioSug.loading&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,display:'flex',gap:10,alignItems:'center'}}><Spinner size={14}/>Finding where this fits…</div>}
+      {radioSug.duplicate&&<div onClick={()=>setRadioSug(null)} style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:12,color:MU,cursor:'pointer'}}>You already have this one: <span style={{color:RADIO_A,fontWeight:700}}>{radioSug.existing?.base}</span> · tap to close</div>}
+      {radioSug.error&&<div onClick={()=>setRadioSug(null)} style={{background:`${RE}10`,border:`1px solid ${RE}44`,borderRadius:14,padding:'12px 15px',fontSize:12,color:RE,cursor:'pointer'}}>{radioSug.error} · tap to close</div>}
       {radioSug.sug&&<SuggestionCard sug={radioSug.sug} onDone={()=>setRadioSug(null)}/>}
     </div>}
 
@@ -3402,7 +3415,7 @@ function NGRadio({isOnline,onBack}){
         </div>}
         {!patternPopup.loading&&!patternPopup.scaffold&&<div style={{fontSize:12,color:MU,textAlign:'center',padding:'12px'}}>Couldn't load details</div>}
         <button onClick={closePattern} style={{width:'100%',marginTop:6,padding:'12px',background:`${RADIO_A}15`,border:`1px solid ${RADIO_A}44`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:700,color:RADIO_A}}>
-          ▶ Voltar pro programa
+          ▶ Back to the show
         </button>
       </div>
     </div>}
@@ -3414,12 +3427,12 @@ function NGRadio({isOnline,onBack}){
           placeholder="Station vibe (optional): trading, Ipanema nightlife…"
           style={{width:'100%',background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'11px 14px',color:TX,fontSize:13,outline:'none',fontFamily:FONT,marginBottom:10}}/>
         <PBtn label={isOnline?'📻 Tune in':'Needs connection'} onClick={tune} disabled={!isOnline}/>
-        {radioErr&&<div style={{marginTop:8,padding:'9px 12px',background:`${RE}10`,border:`1px solid ${RE}33`,borderRadius:10,fontSize:11.5,color:RE,textAlign:'center'}}>📡 Não sintonizou ({radioErr}) — tenta de novo.</div>}
+        {radioErr&&<div style={{marginTop:8,padding:'9px 12px',background:`${RE}10`,border:`1px solid ${RE}33`,borderRadius:10,fontSize:11.5,color:RE,textAlign:'center'}}>📡 No signal ({radioErr}) — try again.</div>}
       </>}
-      {phase==='tuning'&&<PBtn label="Sintonizando…" disabled/>}
+      {phase==='tuning'&&<PBtn label="Tuning in…" disabled/>}
       {phase==='playing'&&<>
         <div style={{display:'flex',gap:6,marginBottom:10,alignItems:'center'}}>
-          <span style={{fontSize:10,color:MU,flexShrink:0}}>Velocidade</span>
+          <span style={{fontSize:10,color:MU,flexShrink:0}}>Speed</span>
           {SPEEDS.map(v=><button key={v} onClick={()=>setSpeedLive(v)}
             style={{flex:1,padding:'7px 0',background:speed===v?`${RADIO_A}20`:S2,border:`1px solid ${speed===v?RADIO_A+'55':BD}`,borderRadius:9,cursor:'pointer',fontFamily:FONT,fontSize:11,fontWeight:speed===v?700:400,color:speed===v?RADIO_A:MU}}>
             {v===1?'1×':v+'×'}
@@ -3428,7 +3441,7 @@ function NGRadio({isOnline,onBack}){
         <div style={{display:'flex',gap:8}}>
           <button onClick={togglePause}
             style={{flex:2,padding:'13px',background:paused?`${GR}18`:S2,border:`1px solid ${paused?GR+'55':BD}`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:14,fontWeight:700,color:paused?GR:TX}}>
-            {paused?'▶ Continuar':'⏸ Pausar'}
+            {paused?'▶ Resume':'⏸ Pause'}
           </button>
           <button onClick={stop}
             style={{flex:1,padding:'13px',background:`${RE}12`,border:`1px solid ${RE}33`,borderRadius:14,cursor:'pointer',fontFamily:FONT,fontSize:14,fontWeight:700,color:RE}}>
@@ -3648,7 +3661,7 @@ function NGOficina({isOnline,onBack}){
       <div style={{fontSize:11,color:MU}}>{i+1}/{items.length}</div>
     </div>
     <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:6}}>🛠 OFICINA DE FRASES · fase {it?.phase||1}</div>
-    <div style={{fontSize:12,color:MU,marginBottom:8}}>Constrói em português:</div>
+    <div style={{fontSize:12,color:MU,marginBottom:8}}>Build it in Portuguese:</div>
     <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'15px 16px',fontSize:15.5,fontWeight:700,color:TX,marginBottom:12}}>{it?.en}</div>
     <textarea value={ans} onChange={e=>onType(e.target.value)} disabled={!!evald&&(retried||evald.quality>=4)}
       placeholder="do teu jeito — significado primeiro…" style={{width:'100%',minHeight:80,background:S2,border:`1.5px solid ${evald?(evald.quality>=4?GR:GD):nudge?GD:BD}`,borderRadius:14,padding:'12px 14px',fontSize:15.5,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
@@ -3741,8 +3754,8 @@ function NGAula({isOnline,unit,onBack}){
   </div>
 
   if(st==='nopack')return<div style={{padding:'80px 20px',textAlign:'center'}}>
-    <div style={{fontSize:13,color:MU,marginBottom:18}}>A aula guiada não carregou — mas o treino da unidade tá de pé.</div>
-    <PBtn label="▶ Praticar a unidade" onClick={()=>setSt('practice')}/>
+    <div style={{fontSize:13,color:MU,marginBottom:18}}>The guided lesson didn't load — but the unit practice is ready to go.</div>
+    <PBtn label="▶ Practice the unit" onClick={()=>setSt('practice')}/>
     <div style={{marginTop:10}}><GBtn label="← Voltar" onClick={onBack}/></div>
   </div>
 
@@ -3844,13 +3857,12 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const tickRef=useRef(null)
   const startedRef=useRef(false)
   useEffect(()=>{
-    if(seedUnit){if(!startedRef.current){startedRef.current=true;start(8,seedUnit)}return} // Aula practice: fixed 8 min
-    if(seedDeck){setStage('pick');return} // deck-seeded treino: pick time, skip placement gate
-    if(!isOnline){setStage('pick');return}
-    ngFetch('ng-placement-seed',{action:'status'})
-      .then(r=>setStage(r?.done?'pick':'placement-intro'))
-      .catch(()=>setStage('pick'))
-  },[isOnline])
+    // FLOW FIRST: no placement gate, no minute-picking toll booth. The session
+    // starts the moment you arrive (10 min default — the timer chip extends it).
+    if(startedRef.current)return
+    startedRef.current=true
+    start(seedUnit?8:10,seedUnit)
+  },[])
 
   useEffect(()=>()=>{if(tickRef.current)clearInterval(tickRef.current)},[])
 
@@ -3883,7 +3895,8 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       // (The old separate {deck:'due'} fetch was vestigial — ng-frontier has no
       // 'due' branch, so it always returned an empty frontier; reviews arrive
       // inside the session/guided deck itself, already flagged isReview.)
-      const def=await(
+      const prefetched=(!unitId&&!seedDeck)?takeGuidedPrefetch():null
+      const def=prefetched||await(
         unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId})
           :seedDeck==='grammar'?ngFetch('ng-frontier',{deck:'grammar'})
           :ngFetch('ng-frontier',{deck:'guided'})
@@ -3902,8 +3915,15 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         if(rest.length)mixed.push(rest.shift())
         if(gram.length)mixed.push(gram.shift())
       }
-      const q=[...dueItems.slice(0,14),...mixed].slice(0,40)
-      if(!q.length){setStage('pick');return}
+      let q=[...dueItems.slice(0,14),...mixed].slice(0,40)
+      // ARC — open hot: the first two reps are easy wins (low rung), so the
+      // session starts with motion and confidence, not a wall.
+      const arcWarm=[],arcRest=[]
+      for(const it of q){
+        if(arcWarm.length<2&&(it.rung??0)<=1&&!it.isReview)arcWarm.push(it);else arcRest.push(it)
+      }
+      q=[...arcWarm,...arcRest]
+      if(!q.length){setStage('empty');return}
       setQueue(q);setQi(0)
       setStats({done:0,qsum:0,byType:{}});setGains([])
       timeUpRef.current=false
@@ -3917,7 +3937,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       },1000)
       buildAtom(q[0],0)
       setStage('run')
-    }catch(e){setStage('pick')}
+    }catch(e){setStage('empty')}
   }
 
   const atomFor=(item,i)=>{
@@ -4138,41 +4158,22 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
 
   if(stage==='gate')return<div style={{padding:'140px 20px',textAlign:'center'}}><Spinner size={20}/></div>
 
-  if(stage==='placement-intro')return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease'}}>
-    <div style={{fontSize:40,textAlign:'center',marginBottom:14}}>📍</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:8}}>Antes de tudo: o teste de nível</div>
-    <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:8,textAlign:'center'}}>10 minutos, uma vez só. O app mede onde você REALMENTE está — compreensão, montagem e uma frase livre — e semeia o motor com o que você já domina.</div>
-    <div style={{fontSize:11,color:MU,opacity:0.75,textAlign:'center',marginBottom:24}}>Errar não pune nada: ausência de evidência não é evidência negativa. O que você acertar entra como memória provisória (2 dias) — os treinos reais confirmam.</div>
-    <PBtn label="▶ Começar o teste (10 min)" onClick={()=>{SFX.tap();startPlacement()}}/>
+  if(stage==='empty')return<div style={{padding:'120px 20px',textAlign:'center',animation:'up 0.3s ease'}}>
+    <div style={{fontSize:40,marginBottom:12}}>🌴</div>
+    <div style={{fontSize:16,fontWeight:700,color:TX,marginBottom:6}}>Nothing to train right now</div>
+    <div style={{fontSize:12,color:MU,lineHeight:1.7,marginBottom:20}}>The deck came back empty — that usually means you're offline or the bank is still planting. Try again in a moment.</div>
+    <PBtn label="Try again" onClick={()=>{SFX.tap();start(10)}}/>
+    <div style={{marginTop:10}}><GBtn label="Back to Home" onClick={onBack}/></div>
   </div>
 
-  if(stage==='placed')return<div style={{padding:'70px 20px 100px',animation:'up 0.4s ease',textAlign:'center'}}>
-    <div style={{fontSize:44}}>🧭</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'12px 0 6px'}}>Você começa na Fase {placeOut?.phase||1}</div>
-    <div style={{fontSize:12.5,color:MU,lineHeight:1.7,marginBottom:24}}>{placeOut?.seeded||0} padrões entraram com memória provisória — os treinos desta semana confirmam.<br/>O começo agora é medido, não chutado.</div>
-    <PBtn label="Bora treinar" onClick={()=>setStage('pick')}/>
-  </div>
-
-  if(stage==='pick')return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease'}}>
-    <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0,marginBottom:18}}>← Home</button>
-    <div style={{fontSize:24,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:6}}>{seedDeck==='grammar'?'⚙ Treino de Gramática':'Treino do dia'}</div>
-    <div style={{fontSize:13.5,color:MU,marginBottom:26,lineHeight:1.6}}>Quanto tempo você tem agora?<br/><span style={{fontSize:11,opacity:0.8}}>Revisões primeiro, gramática garantida, tudo alimenta o motor.</span></div>
-    {[[5,'☕ Café rápido','revisões que não podem esperar'],[10,'⚡ Treino honesto','revisões + fronteira'],[15,'🔥 Sessão cheia','o dia completo em um bloco'],[25,'🧘 Modo monge','profundidade total']].map(([m,t,d])=>
-      <button key={m} onClick={()=>{SFX.tap();start(m)}} style={{display:'block',width:'100%',textAlign:'left',padding:'16px 18px',background:S,border:`1px solid ${BD}`,borderRadius:16,marginBottom:10,cursor:'pointer',fontFamily:FONT}}>
-        <span style={{fontSize:15,fontWeight:700,color:TX}}>{t}</span>
-        <span style={{float:'right',fontSize:14,fontWeight:800,color:AC}}>{m} min</span>
-        <div style={{fontSize:11,color:MU,marginTop:3}}>{d}</div>
-      </button>)}
-  </div>
-
-  if(stage==='load')return<div style={{padding:'120px 20px',textAlign:'center'}}><Spinner size={22}/><div style={{fontSize:12,color:MU,marginTop:14}}>Montando o treino…</div></div>
+  if(stage==='load')return<div style={{padding:'120px 20px',textAlign:'center'}}><Spinner size={22}/><div style={{fontSize:12,color:MU,marginTop:14}}>Building your session…</div></div>
 
   if(stage==='done'){
     const avg=stats.done?Math.round(stats.qsum/stats.done*10)/10:0
     return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease',textAlign:'center'}}>
     <div style={{fontSize:44}}>🏁</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'10px 0 4px'}}>Treino fechado</div>
-    <div style={{fontSize:12.5,color:MU,marginBottom:20}}>{mins} minutos · {stats.done} reps · qualidade média {avg}</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'10px 0 4px'}}>Session complete</div>
+    <div style={{fontSize:12.5,color:MU,marginBottom:20}}>{mins} min · {stats.done} reps · avg quality {avg}</div>
     {gains.length>0&&(()=>{
       // Dedupe by phrase — one row per pattern, strongest gain kept. Show ALL, scroll if long.
       const byPhrase={}
@@ -4184,7 +4185,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       const rows=Object.values(byPhrase)
       return<div style={{textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px 16px',marginBottom:16}}>
         <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:8,display:'flex',justifyContent:'space-between'}}>
-          <span>GANHOS DE MEMÓRIA</span><span style={{color:GR}}>{rows.length} padrões</span>
+          <span>MEMORY GAINS</span><span style={{color:GR}}>{rows.length} patterns</span>
         </div>
         <div style={{maxHeight:280,overflowY:'auto'}}>
         {rows.map((g,i)=><div key={i} style={{fontSize:11.5,color:TX,padding:'3px 0',display:'flex',justifyContent:'space-between',gap:8}}>
@@ -4194,21 +4195,21 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         </div>
       </div>
     })()}
-    <PBtn label={onDone?"Continuar pra Cena →":"Voltar pro Home"} onClick={onDone||onBack}/>
+    <PBtn label={onDone?"Continue to the Scene →":"Back to Home"} onClick={onDone||onBack}/>
   </div>}
 
   // ═══ RUN ═══
   return<div style={{padding:'20px 20px 100px',animation:'up 0.3s ease'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:why?6:16}}>
       <button onClick={finish} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0}}>end</button>
-      <div style={{background:left<=60?`${RE}18`:S,border:`1px solid ${left<=60?RE+'66':BD}`,borderRadius:20,padding:'6px 14px',fontSize:13,fontWeight:800,color:left<=60?RE:AC,fontVariantNumeric:'tabular-nums'}}>⏱ {mmss(left)}</div>
+      <button onClick={()=>{endAtRef.current+=5*60000;setMins(m=>m+5);setLeft(l=>l+300);SFX.tap()}} title="+5 min" style={{background:left<=60?`${RE}18`:S,border:`1px solid ${left<=60?RE+'66':BD}`,borderRadius:20,padding:'6px 14px',fontSize:13,fontWeight:800,color:left<=60?RE:AC,fontVariantNumeric:'tabular-nums',cursor:'pointer',fontFamily:FONT}}>⏱ {mmss(left)} +</button>
       <div style={{fontSize:11,color:MU}}>{qi+1}/{queue.length}</div>
     </div>
     {/* The why-line: the guide explains today's session in one plain sentence. */}
     {why&&!speed&&<div style={{fontSize:11.5,color:MU,lineHeight:1.5,marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${BD}`}}>{why}</div>}
     {speed&&<div style={{animation:'up 0.25s ease'}}>
       <div style={{textAlign:'center',marginBottom:14}}>
-        <span style={{fontSize:10,color:COR_SPEED,fontWeight:800,letterSpacing:3}}>⚡ RODADA RELÂMPAGO</span>
+        <span style={{fontSize:10,color:COR_SPEED,fontWeight:800,letterSpacing:3}}>⚡ LIGHTNING ROUND</span>
         <span style={{marginLeft:12,fontSize:12,color:speed.streak>=5?AC:MU,fontWeight:800}}>{speed.streak>=3?'🔥':''} streak {speed.streak}</span>
       </div>
       <SpeedTimer deadline={speed.deadline} onExpire={()=>{
@@ -4229,18 +4230,18 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     </div>}
     {!speed&&item&&atom&&<div>
       <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>
-        {placementRef.current?'📍 Teste de nível':(item.isReview?'◌ Revisão':(item.context==='grammar'?'⚙ Gramática':'✦ Fronteira'))} · {atom.type}
+        {placementRef.current?'📍 Placement':(item.isReview?'◌ Review':(item.context==='grammar'?'⚙ Grammar':(item.isNew?'✦ New':'✦ Frontier')))} · {atom.type}
       </div>
 
       {atom.type==='flip'&&<div>
         <div style={{background:S,border:`1px solid ${BD}`,borderRadius:18,padding:'26px 20px',textAlign:'center',marginBottom:14}}>
-          <div style={{fontSize:11,color:MU,marginBottom:8}}>Diz em português:</div>
+          <div style={{fontSize:11,color:MU,marginBottom:8}}>Say it in Portuguese:</div>
           <div style={{fontSize:17,fontWeight:700,color:TX}}>{item.en}</div>
           {atom.revealed&&<div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${BD}`,fontSize:18,fontWeight:800,color:AC}}>{item.pt}</div>}
         </div>
         {!atom.revealed?<PBtn label="Mostrar" onClick={()=>setAtom(a=>({...a,revealed:true}))}/>
         :<div style={{display:'flex',gap:8}}>
-          {[[1,'Esqueci',RE],[3,'Difícil',GD],[4,'Bom',GR],[5,'Fácil',AC]].map(([q,l,col])=>
+          {[[1,'Forgot',RE],[3,'Hard',GD],[4,'Good',GR],[5,'Easy',AC]].map(([q,l,col])=>
             <button key={q} onClick={async()=>{await logEvent(item,q,'flip');advance()}} style={{flex:1,padding:'12px 4px',background:`${col}14`,border:`1px solid ${col}55`,borderRadius:12,color:col,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:FONT}}>{l}</button>)}
         </div>}
       </div>}
@@ -4280,7 +4281,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       </div>}
 
       {atom.type==='escuta'&&<div>
-        <div style={{fontSize:12,color:MU,marginBottom:10}}>Só o ouvido — o que você escutou?</div>
+        <div style={{fontSize:12,color:MU,marginBottom:10}}>Ears only — what did you hear?</div>
         <div style={{textAlign:'center',marginBottom:16}}>
           <button onClick={async()=>{
             if(atom.plays>=2)return
@@ -4338,7 +4339,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       </div>}
 
       {atom.type==='duel'&&<div>
-        <div style={{fontSize:12,color:MU,marginBottom:6}}>{atom.isTense?'Qual soa certo pra essa situação?':'Qual é a frase de verdade?'}</div>
+        <div style={{fontSize:12,color:MU,marginBottom:6}}>{atom.isTense?'Qual soa certo pra essa situação?':'Which one is the real sentence?'}</div>
         <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 15px',fontSize:13.5,fontWeight:700,color:TX,marginBottom:14}}>{item.en}</div>
         <div style={{display:'flex',flexDirection:'column',gap:9}}>
           {atom.pair.map((p,i)=><button key={i} disabled={!!atom.result} onClick={async()=>{
@@ -4348,7 +4349,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
             setTimeout(advance,right?600:1900)
           }} style={{padding:'15px 16px',textAlign:'left',background:atom.result&&p===item.pt?`${GR}16`:atom.chosen===p&&atom.result==='wrong'?`${RE}12`:S2,border:`1.5px solid ${atom.result&&p===item.pt?GR:atom.chosen===p&&atom.result==='wrong'?RE:BD}`,borderRadius:13,color:TX,fontWeight:700,fontSize:14.5,cursor:'pointer',fontFamily:FONT}}>{p}</button>)}
         </div>
-        {atom.result==='wrong'&&<div style={{fontSize:11.5,color:TX,marginTop:10}}>A certa era a outra — o tempo verbal muda a história.</div>}
+        {atom.result==='wrong'&&<div style={{fontSize:11.5,color:TX,marginTop:10}}>The other one was right — the tense changes the story.</div>}
       </div>}
 
       {atom.type==='conserta'&&<div>
@@ -4376,7 +4377,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       </div>}
 
       {atom.type==='constructor'&&<div>
-        <div style={{fontSize:12,color:MU,marginBottom:8}}>Constrói em português:</div>
+        <div style={{fontSize:12,color:MU,marginBottom:8}}>Build it in Portuguese:</div>
         <div style={{background:S,border:`1px solid ${BD}`,borderRadius:14,padding:'14px 16px',fontSize:15,fontWeight:700,color:TX,marginBottom:12}}>{item.en}</div>
         <textarea value={atom.answer} onChange={e=>setAtom(a=>({...a,answer:e.target.value}))} disabled={!!atom.evald&&(atom.retried||atom.evald.quality>=4)} placeholder="digita do teu jeito…" style={{width:'100%',minHeight:74,background:S2,border:`1.5px solid ${atom.evald?(atom.evald.quality>=4?GR:GD):BD}`,borderRadius:14,padding:'12px 14px',fontSize:15,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box'}}/>
         {atom.evald&&<div style={{marginTop:10,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'12px 14px'}}>
@@ -4461,13 +4462,13 @@ function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
       30 minutos por dia. Português de verdade — o do bar, da praia, da rua. Não é sala de aula.
       Vamos montar tudo em 5 passos rápidos.
     </div>
-    <PBtn label="Bora começar" onClick={()=>{SFX.tap();setServer('world');setStep('world')}}/>
+    <PBtn label="Let's go" onClick={()=>{SFX.tap();setServer('world');setStep('world')}}/>
   </div>
 
   if(step==='world')return<div style={{...box,paddingTop:56,animation:'up 0.4s ease'}}>
     <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,marginBottom:6}}>PASSO 1 DE 5 · SEU MUNDO</div>
     <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:8}}>O que faz parte da sua vida?</div>
-    <div style={{fontSize:12.5,color:MU,lineHeight:1.6,marginBottom:18}}>Toca no que te descreve. Cada cena, conversa e exercício vai sair do SEU mundo — sem nomes, só temas.</div>
+    <div style={{fontSize:12.5,color:MU,lineHeight:1.6,marginBottom:18}}>Tap what describes you. Every scene, conversation and exercise will come from YOUR world — no names, just themes.</div>
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>
       {CHIPS.map(([c])=><button key={c} onClick={()=>toggle(c)} style={{padding:'9px 14px',borderRadius:20,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:FONT,
         background:chips.includes(c)?AC:S,border:`1px solid ${chips.includes(c)?AC:BD}`,color:chips.includes(c)?'#16240f':TX}}>{c}</button>)}
@@ -4481,7 +4482,7 @@ function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
   if(step==='planting')return<div style={{...box,paddingTop:150,textAlign:'center'}}>
     <div style={{animation:'float 2s ease-in-out infinite',display:'inline-block'}}><Poste size={44}/></div>
     <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,margin:'20px 0 8px'}}>PASSO 2 DE 5 · PLANTANDO</div>
-    <div style={{fontSize:16,fontWeight:700,color:TX,fontFamily:FONTD}}>Montando seu currículo…</div>
+    <div style={{fontSize:16,fontWeight:700,color:TX,fontFamily:FONTD}}>Planting your curriculum…</div>
     <div style={{fontSize:12,color:MU,marginTop:8,lineHeight:1.6}}>25 unidades da Máquina do Tempo,<br/>e organizando tudo que já existe no seu banco.</div>
     <div style={{marginTop:20}}><Spinner size={18}/></div>
   </div>
@@ -4489,24 +4490,24 @@ function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
   if(step==='organizing')return<div style={{...box,paddingTop:70,animation:'up 0.4s ease'}}>
     <div style={{textAlign:'center',fontSize:44}}>🗺️</div>
     <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textAlign:'center',margin:'14px 0 6px'}}>PASSO 3 DE 5 · ORGANIZADO</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:14}}>Sua trilha tá pronta</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:14}}>Your path is ready</div>
     <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'16px 18px',marginBottom:8}}>
       <Row k="Espinha dorsal" v={`${seedOut?.units||25} unidades`}/>
       <Row k="Padrões plantados" v={`${(seedOut?.planted||0)+(seedOut?.attached||0)}`}/>
       {seedOut?.wild_units>0&&<Row k="Missões extras (da rua)" v={`${seedOut.wild_units} unidades · ${seedOut.wild_patterns} padrões`}/>}
     </div>
-    <div style={{fontSize:11.5,color:MU,lineHeight:1.6,marginBottom:20,textAlign:'center'}}>A espinha dorsal é curada e fixa. As missões extras são tudo que você já tinha, agrupado por situação — opcionais, exploráveis.</div>
-    <PBtn label="Continuar pro teste de nível" onClick={()=>{SFX.tap();setServer('placement');setStep('placement')}}/>
+    <div style={{fontSize:11.5,color:MU,lineHeight:1.6,marginBottom:20,textAlign:'center'}}>The spine is curated and fixed. The side quests are everything you already had, grouped by situation — optional, explorable.</div>
+    <PBtn label="Continue" onClick={()=>{SFX.tap();setServer('placement');setStep('placement')}}/>
   </div>
 
   if(step==='placement')return<div style={{...box,paddingTop:70,animation:'up 0.4s ease'}}>
     <div style={{textAlign:'center',fontSize:42}}>📍</div>
-    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textAlign:'center',margin:'14px 0 6px'}}>PASSO 4 DE 5 · NÍVEL</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:10}}>O teste de nível</div>
-    <div style={{fontSize:13,color:MU,lineHeight:1.7,textAlign:'center',marginBottom:8}}>10 minutos. O app mede onde você REALMENTE está e semeia o motor com o que já domina.</div>
-    <div style={{fontSize:11,color:MU,opacity:0.75,textAlign:'center',marginBottom:24}}>Errar não pune nada. O que acertar entra como memória provisória — os treinos confirmam.</div>
-    <PBtn label="▶ Fazer o teste (10 min)" onClick={()=>{SFX.tap();setServer('done');onPlacement()}}/>
-    <div style={{textAlign:'center',marginTop:10}}><button onClick={()=>{setServer('done');onEnterApp()}} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT}}>fazer depois</button></div>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textAlign:'center',margin:'14px 0 6px'}}>STEP 4 OF 5 · FIRST SESSION</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:10}}>Your first session</div>
+    <div style={{fontSize:13,color:MU,lineHeight:1.7,textAlign:'center',marginBottom:8}}>No placement test, no level lock. Your first real session starts gently and the engine learns you from actual reps.</div>
+    <div style={{fontSize:11,color:MU,opacity:0.75,textAlign:'center',marginBottom:24}}>Nothing here ever assumes what you know — and never blocks what you want to reach for.</div>
+    <PBtn label="▶ Start your first session" onClick={()=>{SFX.tap();setServer('done');onPlacement()}}/>
+    <div style={{textAlign:'center',marginTop:10}}><button onClick={()=>{setServer('done');onEnterApp()}} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT}}>later</button></div>
   </div>
 
   return null
@@ -4523,6 +4524,7 @@ function NGHome({isOnline,go,active=true}){
 
   useEffect(()=>{
     if(!active||!isOnline){setLoading(false);return}
+    prefetchGuided() // flow-first: today's session is ready before it's asked for
     // Three light parallel reads — no frontier list, no legacy recommendation
     ngFetch('ng-frontier').then(d=>{
       setPhase({n:d.phase||1,name:d.phase_name||'Survival → Social',
@@ -4575,7 +4577,7 @@ function NGHome({isOnline,go,active=true}){
     <div style={{padding:'14px 20px 6px',display:'flex',alignItems:'center',gap:14}}>
       {phase.streak>=2&&<div style={{position:'absolute',right:20,top:12,background:`${GD}12`,border:`1px solid ${GD}44`,borderRadius:14,padding:'4px 10px',fontSize:11.5,fontWeight:800,color:GD}}>🔥 {phase.streak}</div>}
       <div style={{flex:1}}>
-        <div style={{fontSize:26,fontWeight:900,color:TX,fontFamily:FONTD}}>E aí, Shay</div>
+        <div style={{fontSize:26,fontWeight:900,color:TX,fontFamily:FONTD}}>E aí</div>
         <div style={{fontSize:12,color:MU,marginTop:2}}>Fase {phase.n} · {phase.name}</div>
       </div>
       <div style={{textAlign:'center',flexShrink:0}}>
@@ -4593,11 +4595,11 @@ function NGHome({isOnline,go,active=true}){
     {/* CONTINUE — the one big button */}
     <div style={{margin:'16px 20px 0'}}>
       <button onClick={()=>{SFX.tap();go('ng-treino')}} style={{width:'100%',padding:'15px 18px',background:`${GR}14`,border:`1.5px solid ${GR}66`,borderRadius:18,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left'}}>
-        <span style={{display:'block',fontSize:10,color:GR,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>▶ Treino do dia</span>
-        <span style={{display:'block',fontSize:15,color:TX,fontWeight:700}}>Quanto tempo você tem?</span>
+        <span style={{display:'block',fontSize:10,color:GR,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>▶ Daily Training</span>
+        <span style={{display:'block',fontSize:15,color:TX,fontWeight:700}}>Opens straight into today's session</span>
       </button>
       <button onClick={()=>{SFX.tap();go('ng-oficina')}} style={{width:'100%',padding:'11px 18px',background:S,border:`1px solid ${BD}`,borderRadius:14,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontSize:12.5,color:TX,fontWeight:600}}>🛠 Oficina de frases</span>
+        <span style={{fontSize:12.5,color:TX,fontWeight:600}}>🛠 Sentence Workshop</span>
         <span style={{fontSize:10,color:MU}}>construção livre · 8 frases</span>
       </button>
       <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
