@@ -63,7 +63,7 @@ exports.handler=async(event)=>{
     try{
       const raw=await claude(
 `You are the nightly analysis brain for a Carioca Portuguese learning system.
-The learner: Shay, British, lives in Rio, learns street Carioca not textbook Portuguese.
+The learner lives in Rio and learns street Carioca, not textbook Portuguese.
 Analyse the last 24h of learning events. Return JSON only:
 {
  "error_autopsy":{"clusters":[{"pattern":"description of error mechanism","examples":[],"prescription":"what drill fixes it"}]},
@@ -349,6 +349,18 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
         }
       }catch(_){}
     }catch(pathErr){console.log('path maintenance skipped:',pathErr.message)}
+
+    // ── Brick-kind backfill — classify a batch of unkinded bricks (Calçadão) ──
+    // Awaited-send dispatch: the request leaves before this container freezes;
+    // ng-brick-kinds does its own chunked, progressive writes.
+    try{
+      const siteUrlBK=process.env.URL||process.env.DEPLOY_URL||''
+      if(siteUrlBK){
+        const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200)
+        await fetch(`${siteUrlBK}/.netlify/functions/ng-brick-kinds`,{method:'POST',body:'{}',signal:_ac.signal}).catch(()=>{})
+        clearTimeout(_tm)
+      }
+    }catch(_){}
 
     // ── Final update — remaining fields (row was created progressively) ──
     await sb.from('ng_daily').update({

@@ -1,5 +1,9 @@
 // ng-frontier.js — computes frontier, review queue, recommendation
 // Category rotation, hybrid eligibility, urgency engine
+// Phase 0 (Calçadão): per-brick rung derivation + the 'guided' deck (keep floor /
+// new valve / room pick / why-line). Pure logic lives in ng-brain-core.js.
+
+const CORE=require('./ng-brain-core.cjs')
 
 exports.handler=async(event)=>{
   if(event.httpMethod!=='POST'&&event.httpMethod!=='GET')return{statusCode:405}
@@ -15,7 +19,7 @@ exports.handler=async(event)=>{
       {data:profile,error:profileErr},
       {data:scaffolds,error:scaffoldErr},
       {data:recentEvents},
-      {data:memDue}
+      {data:memDueRaw}
     ]=await Promise.all([
       sb.from('ng_learner_profile').select('*').eq('user_id',UID).single(),
       sb.from('ng_scaffolds')
@@ -27,14 +31,21 @@ exports.handler=async(event)=>{
         .order('created_at',{ascending:false})
         .limit(500),
       // ONE CLOCK: reviews are scheduled by the memory engine, nothing else.
+      // Fetch all production rows (due derived below) so rung derivation can
+      // read stability for every brick, not just the due ones.
       sb.from('ng_memory')
         .select('scaffold_id,stage,skill,stability,next_due,last_review')
         .eq('user_id',UID)
         .eq('skill','production')
-        .lte('next_due',new Date().toISOString())
         .order('next_due',{ascending:true})
-        .limit(60)
+        .limit(1000)
     ])
+    const memProd=memDueRaw||[]
+    const nowISO=new Date().toISOString()
+    // Same due set as before: next_due <= now, soonest-due first, cap 60.
+    const memDue=memProd.filter(m=>m.next_due&&m.next_due<=nowISO).slice(0,60)
+    const prodStab={} // 'scaffold|stage' → production stability (days)
+    memProd.forEach(m=>{prodStab[m.scaffold_id+'|'+m.stage]=m.stability||0})
 
     console.log('ng-frontier: scaffolds=',scaffolds?.length||0,'err=',scaffoldErr?.message||'none')
 
@@ -49,16 +60,35 @@ exports.handler=async(event)=>{
     const now=Date.now()
     const controlled=new Set((profile?.controlled||[]).map(c=>c.scaffold_id+'|'+c.stage))
 
-    // Build event map
+    // Build event map (recent[] keeps newest-first mode+quality for rung derivation)
     const eventMap={}
     ;(recentEvents||[]).forEach(ev=>{
       const key=ev.scaffold_id+'_'+ev.stage
-      if(!eventMap[key])eventMap[key]={total:0,modes:{},qualities:[],lastPracticed:null}
+      if(!eventMap[key])eventMap[key]={total:0,modes:{},qualities:[],lastPracticed:null,recent:[]}
       eventMap[key].total++
       eventMap[key].modes[ev.mode]=(eventMap[key].modes[ev.mode]||0)+1
       eventMap[key].qualities.push(ev.quality)
+      if(eventMap[key].recent.length<12)eventMap[key].recent.push({mode:ev.mode,quality:ev.quality})
       if(!eventMap[key].lastPracticed)eventMap[key].lastPracticed=ev.created_at
     })
+
+    // Per-brick rung — derived from evidence, memoized per (scaffold, stage).
+    const recogStab={} // filled lazily only if ever needed cheaply; recognition rows aren't fetched here
+    const rungCache={}
+    const getRung=(sid,stage)=>{
+      const key=sid+'|'+stage
+      if(rungCache[key]!==undefined)return rungCache[key]
+      const ev=eventMap[sid+'_'+stage]
+      const r=CORE.deriveRung({
+        recentEvents:ev?ev.recent:[],
+        prodStability:prodStab[key]||0,
+        recogStability:recogStab[key]||0,
+        isControlled:controlled.has(key)
+      })
+      rungCache[key]=r
+      return r
+    }
+    const withRung=arr=>(arr||[]).map(it=>({...it,rung:getRung(it.scaffold_id,it.stage)}))
 
     const shArr=Array.isArray(profile?.session_history)?profile.session_history:[]
     const lastSession=shArr[0]?.date?new Date(shArr[0].date):null
@@ -141,6 +171,7 @@ exports.handler=async(event)=>{
           en:stage.en,
           context:scaffold.context,
           category:scaffold.category,
+          source:scaffold.source,
           phase:scaffold.phase,
           urgency:Math.round(urgency*10)/10,
           practice_count:events.total,
@@ -315,10 +346,45 @@ exports.handler=async(event)=>{
         const practiced=pool.filter(it=>it.practice_count>0)
         const fresh=pool.filter(it=>it.practice_count===0).sort(()=>Math.random()-0.5)
         deckItems=[...practiced,...fresh].slice(0,12)
+      }else if(deck==='guided'){
+        // ═══ THE GUIDED DECK — keep floor, new valve, room, why-line ═══
+        // Keep floor: every due review is served (ONE CLOCK decides, never a ratio).
+        // New valve: dial appetite, throttled by review debt.
+        // Room: relevance picks what today is about; why explains it in plain English.
+        const dial={...CORE.defaultDial(),...(profile?.guide_dial||{})}
+        if(!profile?.guide_dial){
+          sb.from('ng_learner_profile').upsert({user_id:UID,guide_dial:dial},{onConflict:'user_id'})
+            .then(({error})=>{if(error)console.log('guide_dial write err:',error.message)})
+            .catch(()=>{})
+        }
+        const{data:unitsLite}=await sb.from('ng_path_units')
+          .select('unit_id,title,scaffold_ids,completed_at,sort_order,is_side_quest')
+          .eq('user_id',UID).order('sort_order')
+        // Bank pool: same depth source as the session deck, so long sessions never starve.
+        const inFrontier=new Set(frontier.map(x=>x.scaffold_id+'|'+x.stage))
+        const gBank=[]
+        for(const sc of scaffolds){
+          const st=(sc.stages||[]).find(s=>s.stage===(sc.current_stage||1))||sc.stages?.[0]
+          if(!st?.pt)continue
+          const key=sc.id+'|'+(st.stage||1)
+          if(inFrontier.has(key))continue
+          if(controlled.has(key))continue
+          gBank.push({scaffold_id:sc.id,base:sc.base_portuguese,stage:st.stage||1,pt:st.pt,en:st.en||'',context:sc.context,category:sc.category,source:sc.source,phase:sc.phase||1,practice_count:0})
+        }
+        const guided=CORE.composeGuidedDeck({
+          due:reviewQueue,frontier,bankPool:gBank,units:unitsLite||[],dial
+        })
+        return{statusCode:200,headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            deck,frontier:withRung(guided.items),review:withRung(reviewQueue.slice(0,8)),
+            review_count:reviewQueue.length,all_categories:allCategories,
+            total_controlled:controlled.size,phase:profile?.phase||1,atom_weights:profile?.atom_weights||{},streak:profile?.streak||{},
+            why:guided.why,room:guided.room,kept_count:guided.kept_count,new_count:guided.new_count,guide_dial:guided.dial
+          })}
       }
       return{statusCode:200,headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
-          deck,frontier:deckItems,review:reviewQueue.slice(0,8),
+          deck,frontier:withRung(deckItems),review:withRung(reviewQueue.slice(0,8)),
           review_count:reviewQueue.length,all_categories:allCategories,
           total_controlled:controlled.size,phase:profile?.phase||1,atom_weights:profile?.atom_weights||{},streak:profile?.streak||{}
         })}
@@ -431,8 +497,8 @@ exports.handler=async(event)=>{
       statusCode:200,
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        frontier:workingFrontier,
-        review:reviewQueue.slice(0,8),
+        frontier:withRung(workingFrontier),
+        review:withRung(reviewQueue.slice(0,8)),
         review_count:reviewQueue.length,
         recommendation,
         phase:newPhase,
