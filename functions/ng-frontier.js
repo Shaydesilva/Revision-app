@@ -11,8 +11,8 @@ exports.handler=async(event)=>{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
-    let deck=null,deckCategory=null,deckUnitId=null
-    try{const b=JSON.parse(event.body||'{}');deck=b.deck||null;deckCategory=b.category||null;deckUnitId=b.unit_id||null}catch(_){}
+    let deck=null,deckCategory=null,deckUnitId=null,deckScope=null
+    try{const b=JSON.parse(event.body||'{}');deck=b.deck||null;deckCategory=b.category||null;deckUnitId=b.unit_id||null;deckScope=b.scope||null}catch(_){}
     console.log('ng-frontier: start deck=',deck)
 
     const[
@@ -366,10 +366,16 @@ exports.handler=async(event)=>{
         // The tutor lens: only what came from Victor's notes — homework, first-class.
         // Recency = the doc's own day-structure (stages[].source_day), newest days first.
         const dayOf=sid=>{const sc=scaffolds.find(s=>s.id===sid);return Math.max(0,...((sc?.stages||[]).map(st=>st.source_day||0)))}
-        deckItems=frontier.filter(it=>it.source==='victor')
+        let vPool=frontier.filter(it=>it.source==='victor')
           .map(it=>({...it,source_day:dayOf(it.scaffold_id)||null}))
           .sort((a,b)=>(b.source_day||0)-(a.source_day||0)||(dateById[b.scaffold_id]||'').localeCompare(dateById[a.scaffold_id]||''))
-          .slice(0,20)
+        // Scope by the DOC's day-structure: 'recent' = the two newest days present.
+        if(deckScope==='recent'||deckScope==='older'){
+          const days=[...new Set(vPool.map(x=>x.source_day||0))].sort((a,b)=>b-a)
+          const cut=new Set(days.slice(0,2))
+          vPool=vPool.filter(x=>deckScope==='recent'?cut.has(x.source_day||0):!cut.has(x.source_day||0))
+        }
+        deckItems=vPool.slice(0,20)
         if(deckItems.length<20){
           const have=new Set(deckItems.map(x=>x.scaffold_id+'|'+x.stage))
           for(const sc of scaffolds){

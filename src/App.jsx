@@ -985,18 +985,19 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
     }
   },[seed])
 
-  const startDeck=(deck,category)=>{
+  const[victorPick,setVictorPick]=useState(false) // Victor scope chips visible?
+  const startDeck=(deck,category,scope)=>{
     setActiveDeck(deck==='category'?category:deck)
     setDeckPhase('session')
     setIdx(0);setFlipped(false);setSessionEvents([]);setDone(false);setSummary({})
     gainsRef.current=[]
-    loadFrontier(deck,category)
+    loadFrontier(deck,category,undefined,scope)
   }
 
-  const loadFrontier=async(deck,category,unitId)=>{
+  const loadFrontier=async(deck,category,unitId,scope)=>{
     setLoading(true)
     try{
-      const data=await ngFetch('ng-frontier',deck&&deck!=='focus'&&deck!=='due'?{deck,category,unit_id:unitId}:{})
+      const data=await ngFetch('ng-frontier',deck&&deck!=='focus'&&deck!=='due'?{deck,category,unit_id:unitId,scope}:{})
       if(data.error)throw new Error(data.error)
       ngFetch('ng-today',{action:'get'}).then(t=>{if(t?.coach_note)setCoachNote(t.coach_note)}).catch(()=>{})
     ngFetch('ng-suggest',{action:'list'}).then(d=>setPendCount((d.suggestions||[]).length)).catch(()=>{})
@@ -1150,13 +1151,18 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
     {[
       {k:'fading',i:'🌗',t:'Fading',d:'The half-known — catch them before they slip away'},
       {k:'victor',i:'📓',t:'Victor',d:"Your tutor's material — the homework loop"},
+      ...(victorPick?[
+        {k:'victor_recent',i:'🕐',t:'→ Recent days',d:"The newest 1-2 days from his doc"},
+        {k:'victor_older',i:'📚',t:'→ Older material',d:'Everything before that'},
+        {k:'victor_all',i:'⛰',t:'→ Everything',d:'The whole Victor bank, newest first'},
+      ]:[]),
       {k:'fresh',i:'🔥',t:'Fresh',d:"Newest additions — today's lesson, latest imports"},
       {k:'mix',i:'🎲',t:'Mix',d:'A little of everything, across all categories'},
       {k:'weak',i:'🎯',t:'Weak spots',d:'What you struggle with — the data decides'},
       {k:'due',i:'◌',t:'Due'+(dueCount?` · ${dueCount}`:''),d:'Reviews at the forgetting edge'},
       {k:'focus',i:'◈',t:'Focus',d:'The classic frontier — highest priority 12'},
       {k:'grammar',i:'⚙',t:'Grammar',d:'The Máquina do Tempo — tenses as living sentences'},
-    ].map(dk=><button key={dk.k} onClick={()=>{if(dk.k==='grammar'&&goTreinoGrammar){goTreinoGrammar();return}startDeck(dk.k)}}
+    ].map(dk=><button key={dk.k} onClick={()=>{if(dk.k==='grammar'&&goTreinoGrammar){goTreinoGrammar();return}if(dk.k==='victor'){setVictorPick(v=>!v);return}if(dk.k.startsWith('victor_')){setVictorPick(false);startDeck('victor',null,dk.k.split('_')[1]==='all'?null:dk.k.split('_')[1]);return}startDeck(dk.k)}}
       style={{width:'100%',textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'15px 16px',marginBottom:10,cursor:'pointer',fontFamily:FONT,display:'flex',gap:14,alignItems:'center'}}>
       <span style={{fontSize:22,flexShrink:0}}>{dk.i}</span>
       <span>
