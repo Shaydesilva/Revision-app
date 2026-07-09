@@ -71,6 +71,22 @@ function deriveRung({recentEvents=[],prodStability=0,recogStability=0,isControll
   return rung
 }
 
+// Leech: a brick that keeps failing without ever passing — grinding it more
+// is punishment, not teaching. Detection is deliberately conservative:
+// at least 6 recognized reps in the recent window, none passing (q>=4, or
+// two q>=3 in a row), and a fail rate >= 70%. Leeches get PARKED (excluded
+// from new/fading fill; due reviews still honor the clock) and surfaced for
+// reframing — never silently recycled.
+function isLeech(recentEvents=[]){
+  const qs=recentEvents.map(e=>Number(e.quality)||0)
+  if(qs.length<6)return false
+  const fails=qs.filter(q=>q<=2).length
+  if(fails/qs.length<0.7)return false
+  if(qs.some(q=>q>=4))return false
+  for(let i=0;i+1<qs.length;i++)if(qs[i]>=3&&qs[i+1]>=3)return false
+  return true
+}
+
 // The new-material valve: appetite throttled by review debt.
 // Debt is real workload — forcing new material onto a heavy review day digs the hole deeper.
 function newValve({dueCount=0,dial}={}){
@@ -128,6 +144,9 @@ function composeWhy({dueCount=0,newCount=0,roomTitle=null,victorNew=0}={}){
 function composeGuidedDeck({due=[],frontier=[],bankPool=[],units=[],dial}={}){
   const d=dial||defaultDial()
   const newCount=newValve({dueCount:due.length,dial:d})
+  // Leeches are parked: excluded from fill (due reviews still honor the clock).
+  const parked=frontier.filter(f=>f.isLeech)
+  frontier=frontier.filter(f=>!f.isLeech)
   const room=pickRoom({units,frontier,due})
   const roomIds=new Set(room&&Array.isArray(room.scaffold_ids)?room.scaffold_ids:[])
   const inDeck=new Set(due.map(x=>x.scaffold_id+'|'+x.stage))
@@ -142,7 +161,21 @@ function composeGuidedDeck({due=[],frontier=[],bankPool=[],units=[],dial}={}){
   const items=[...due,...newItems,...fading,...spare].slice(0,120)
   const victorNew=newItems.filter(x=>x.source==='victor').length
   const why=composeWhy({dueCount:due.length,newCount:newItems.length,roomTitle:room?.title||null,victorNew})
-  return{items,why,room:room?{unit_id:room.unit_id,title:room.title}:null,kept_count:due.length,new_count:newItems.length,dial:d}
+  return{items,why,room:room?{unit_id:room.unit_id,title:room.title}:null,kept_count:due.length,new_count:newItems.length,dial:d,parked_count:parked.length,parked:parked.slice(0,5).map(p=>({scaffold_id:p.scaffold_id,stage:p.stage,pt:p.pt}))}
 }
 
-module.exports={RUNG_OF_MODE,RUNG_NAMES,ATOMS_AT_RUNG,defaultDial,deriveRung,newValve,pickRoom,composeWhy,composeGuidedDeck}
+// The success governor: sessions should live in the ~80-88% success band
+// (the 'eighty-five percent rule', held as a band, not a constant).
+// Under the band -> meet bricks one rung gentler. Over it -> stretch every
+// third item one rung up. Needs a minimum of evidence before acting, and
+// NEVER overrides the review clock or the placement force.
+function governRung({rung,index=0,sessionN=0,sessionOk=0}={}){
+  const r=Math.max(0,Math.min(3,Number(rung)||0))
+  if(sessionN<6)return r
+  const rate=sessionOk/sessionN
+  if(rate<0.78)return Math.max(0,r-1)
+  if(rate>0.92&&index%3===0)return Math.min(3,r+1)
+  return r
+}
+
+module.exports={RUNG_OF_MODE,RUNG_NAMES,ATOMS_AT_RUNG,defaultDial,deriveRung,newValve,pickRoom,composeWhy,composeGuidedDeck,isLeech,governRung}

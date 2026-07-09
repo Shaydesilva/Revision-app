@@ -3816,6 +3816,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const[stats,setStats]=useState({done:0,qsum:0,byType:{}})
   const[gains,setGains]=useState([])
   const[flash,setFlash]=useState(null) // 'pop' | 'shake' — verdict motion
+  const bandRef=useRef({n:0,ok:0}) // session success band — the governor's evidence
   const timeUpRef=useRef(false)
   const[speed,setSpeed]=useState(null) // {items,idx,streak,best,deadline}
   const speedRef=useRef(false)
@@ -3918,7 +3919,18 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     // 2 discriminar (duel/conserta/timeline) → 3 produzir (constructor).
     // The server derives rung from events+memory; struggle already dropped it there.
     // The card→write cliff is gone: nothing meets the constructor before passing rung 2.
-    const rung=Number.isInteger(item.rung)?item.rung:(item.isReview?3:(item.practice_count>0?1:0))
+    let rung=Number.isInteger(item.rung)?item.rung:(item.isReview?3:(item.practice_count>0?1:0))
+    // SUCCESS GOVERNOR: hold the session in the ~80-88% band. Under it, meet
+    // bricks one rung gentler; cruising above it, stretch every third item.
+    // Never touches reviews (the clock owns those) or placement forces.
+    if(!item.isReview){
+      const b=bandRef.current
+      if(b.n>=6){
+        const rate=b.ok/b.n
+        if(rate<0.78)rung=Math.max(0,rung-1)
+        else if(rate>0.92&&i%3===0)rung=Math.min(3,rung+1)
+      }
+    }
     if(item.isReview){
       // Reviews retrieve at the strength you own (dial: guide_dial.review_style
       // 'gentle' keeps all reviews as flips). Production reviews only ever hit
@@ -4029,6 +4041,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     const secs=Math.max(3,Math.round((Date.now()-atomStartRef.current)/1000))
     setStats(s=>({done:s.done+1,qsum:s.qsum+quality,byType:{...s.byType,[atomType]:(s.byType[atomType]||0)+1}}))
     // Verdict choreography: the card answers physically before it answers verbally.
+    bandRef.current={n:bandRef.current.n+1,ok:bandRef.current.ok+(quality>=3?1:0)}
     setFlash(quality>=4?'pop':quality<=2?'shake':null)
     setTimeout(()=>setFlash(null),450)
     if(quality>=4)SFX.tap()

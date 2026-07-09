@@ -164,6 +164,7 @@ exports.handler=async(event)=>{
         if(struggles>=2)urgency+=Math.min(struggles*2,8)
 
         frontier.push({
+          isLeech:CORE.isLeech(events.recent||[]),
           scaffold_id:scaffold.id,
           base:scaffold.base_portuguese,
           stage:stage.stage,
@@ -427,7 +428,8 @@ exports.handler=async(event)=>{
             deck,frontier:withRung(guided.items),review:withRung(reviewQueue.slice(0,8)),
             review_count:reviewQueue.length,all_categories:allCategories,
             total_controlled:controlled.size,phase:profile?.phase||1,atom_weights:profile?.atom_weights||{},streak:profile?.streak||{},
-            why:guided.why,room:guided.room,kept_count:guided.kept_count,new_count:guided.new_count,guide_dial:guided.dial
+            why:guided.why,room:guided.room,kept_count:guided.kept_count,new_count:guided.new_count,guide_dial:guided.dial,
+            parked_count:guided.parked_count||0,parked:guided.parked||[]
           })}
       }
       return{statusCode:200,headers:{'Content-Type':'application/json'},
