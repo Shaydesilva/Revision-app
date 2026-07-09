@@ -4487,7 +4487,7 @@ function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
 
   if(step==='welcome')return<div style={{...box,paddingTop:80,animation:'up 0.4s ease'}}>
     <div style={{textAlign:'center'}}><Poste size={54}/></div>
-    <div style={{fontSize:28,fontWeight:900,color:TX,fontFamily:FONTD,textAlign:'center',marginTop:20}}>Bem-vindo ao Carioca</div>
+    <div style={{fontSize:28,fontWeight:900,color:TX,fontFamily:FONTD,textAlign:'center',marginTop:20}}>Welcome to Carioca</div>
     <div style={{fontSize:14,color:MU,textAlign:'center',lineHeight:1.7,margin:'12px 0 30px'}}>
       30 minutos por dia. Português de verdade — o do bar, da praia, da rua. Não é sala de aula.
       Vamos montar tudo em 5 passos rápidos.
@@ -4496,8 +4496,8 @@ function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
   </div>
 
   if(step==='world')return<div style={{...box,paddingTop:56,animation:'up 0.4s ease'}}>
-    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,marginBottom:6}}>PASSO 1 DE 5 · SEU MUNDO</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:8}}>O que faz parte da sua vida?</div>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,marginBottom:6}}>STEP 1 OF 5 · YOUR WORLD</div>
+    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,marginBottom:8}}>What's part of your life?</div>
     <div style={{fontSize:12.5,color:MU,lineHeight:1.6,marginBottom:18}}>Tap what describes you. Every scene, conversation and exercise will come from YOUR world — no names, just themes.</div>
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>
       {CHIPS.map(([c])=><button key={c} onClick={()=>toggle(c)} style={{padding:'9px 14px',borderRadius:20,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:FONT,
@@ -4506,20 +4506,20 @@ function NGSetup({isOnline,initialState,onEnterApp,onPlacement}){
     <textarea value={freeText} onChange={e=>setFreeText(e.target.value)} placeholder="algo mais? (opcional) — ex: trabalho com cripto, tenho um cachorro…"
       style={{width:'100%',minHeight:60,background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'12px 14px',fontSize:14,color:TX,fontFamily:FONT,resize:'none',boxSizing:'border-box',marginBottom:18}}/>
     <PBtn label="Continue" onClick={()=>{SFX.tap();setServer('planting',{life_context:composeLifeContext()});setStep('planting')}}/>
-    <div style={{textAlign:'center',marginTop:10}}><button onClick={()=>{setServer('planting',{life_context:composeLifeContext()});setStep('planting')}} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT}}>pular por agora</button></div>
+    <div style={{textAlign:'center',marginTop:10}}><button onClick={()=>{setServer('planting',{life_context:composeLifeContext()});setStep('planting')}} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT}}>skip for now</button></div>
   </div>
 
   if(step==='planting')return<div style={{...box,paddingTop:150,textAlign:'center'}}>
     <div style={{animation:'float 2s ease-in-out infinite',display:'inline-block'}}><Poste size={44}/></div>
-    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,margin:'20px 0 8px'}}>PASSO 2 DE 5 · PLANTANDO</div>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,margin:'20px 0 8px'}}>STEP 2 OF 5 · PLANTING</div>
     <div style={{fontSize:16,fontWeight:700,color:TX,fontFamily:FONTD}}>Planting your curriculum…</div>
-    <div style={{fontSize:12,color:MU,marginTop:8,lineHeight:1.6}}>25 unidades da Máquina do Tempo,<br/>e organizando tudo que já existe no seu banco.</div>
+    <div style={{fontSize:12,color:MU,marginTop:8,lineHeight:1.6}}>25 units — from survival to the Máquina do Tempo —<br/>plus everything already in your bank, organized.</div>
     <div style={{marginTop:20}}><Spinner size={18}/></div>
   </div>
 
   if(step==='organizing')return<div style={{...box,paddingTop:70,animation:'up 0.4s ease'}}>
     <div style={{textAlign:'center',fontSize:44}}>🗺️</div>
-    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textAlign:'center',margin:'14px 0 6px'}}>PASSO 3 DE 5 · ORGANIZADO</div>
+    <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textAlign:'center',margin:'14px 0 6px'}}>STEP 3 OF 5 · ORGANIZED</div>
     <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,textAlign:'center',marginBottom:14}}>Your path is ready</div>
     <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'16px 18px',marginBottom:8}}>
       <Row k="Espinha dorsal" v={`${seedOut?.units||25} unidades`}/>
@@ -4853,7 +4853,8 @@ function NGIntelligence({isOnline,onBack}){
       const result=await ngFetch('ng-reset',{confirmed:true})
       if(result.ok){
         setShowReset(false)
-        setMessages([{role:'assistant',content:'Progress cleared. '+result.scaffolds_reset+' scaffolds reset. Refresh the app to start fresh.'}])
+        setMessages([{role:'assistant',content:'Progress cleared — '+result.scaffolds_reset+' patterns reset. Taking you to the fresh start…'}])
+        setTimeout(()=>{try{window.location.reload()}catch(_){}},1400)
       }
     }catch(e){console.warn('Reset error:',e)}
     setResetting(false)

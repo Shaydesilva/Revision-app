@@ -109,6 +109,18 @@ exports.handler=async(event)=>{
     }
     try{await sb.from('ng_brain_log').insert({user_id:UID,process:'path',importance:3,
       thought:'The spine is planted: '+rows.length+' authored units, '+planted+' patterns planted, '+attached+' reconnected. The spine is sacred.'})}catch(_){}
+    // Zero-floor worlds ride every plant/replant — a reset journey gets the
+    // full shelf immediately, not on the next heartbeat. Awaited-send dispatch.
+    try{
+      const siteUrlW=process.env.URL||process.env.DEPLOY_URL||''
+      if(siteUrlW){
+        for(const fn of['ng-seed-first-contact','ng-seed-worlds']){
+          const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200)
+          await fetch(`${siteUrlW}/.netlify/functions/${fn}`,{method:'POST',body:'{}',signal:_ac.signal}).catch(()=>{})
+          clearTimeout(_tm)
+        }
+      }
+    }catch(_){}
     return{statusCode:200,body:JSON.stringify({ok:true,units:rows.length,proposed,attached})}
   }catch(e){return{statusCode:500,body:JSON.stringify({error:e.message})}}
 }

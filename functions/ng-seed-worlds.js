@@ -43,7 +43,7 @@ exports.handler=async(event)=>{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const norm=s=>(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim()
     const{data:bank}=await sb.from('ng_scaffolds').select('id,base_portuguese').eq('user_id',UID)
-    const known=new Set((bank||[]).map(b=>norm(b.base_portuguese)))
+    const knownId={};(bank||[]).forEach(b=>{knownId[norm(b.base_portuguese)]=b.id})
     let planted=0
     for(const w of WORLDS){
       const{data:existing}=await sb.from('ng_path_units').select('id').eq('user_id',UID).eq('unit_id',w.unit_id).single()
@@ -51,7 +51,8 @@ exports.handler=async(event)=>{
       const ids=[]
       for(const[suf,base,baseEn,stages,kind]of w.bricks){
         const id='sc_'+w.unit_id+'_'+suf
-        if(known.has(norm(base)))continue
+        const existing=knownId[norm(base)]
+        if(existing){ids.push(existing);continue} // brick survived a reset — relink it
         const{error}=await sb.from('ng_scaffolds').insert({
           id,user_id:UID,base_portuguese:base,base_english:baseEn,
           stages:stages.map(([pt,en],i)=>({stage:i+1,pt,en,kind,acquired:false,acquired_at:null,practice_count:0,modes_used:[]})),
