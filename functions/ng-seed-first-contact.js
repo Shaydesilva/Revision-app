@@ -16,13 +16,11 @@ const BRICKS=[
   ['deboa',     'De boa','All good / relaxed',[['De boa','All good / relaxed'],['Tô de boa','I\'m all good']],'chunk'],
   ['naoentendi','Não entendi','I didn\'t understand',[['Não entendi','I didn\'t understand'],['Não entendi nada','I didn\'t understand anything']],'chunk'],
   ['falade',    'Fala de novo?','Say it again?',[['Fala de novo?','Say it again?'],['Fala mais devagar, por favor','Speak slower, please']],'chunk'],
-  ['comofala',  'Como se fala ___?','How do you say ___?',[['Como se fala isso?','How do you say this?'],['Como se fala isso em português?','How do you say this in Portuguese?']],'slot-phrase'],
-  ['oquee',     'O que significa ___?','What does ___ mean?',[['O que significa isso?','What does that mean?']],'slot-phrase'],
   ['desculpa',  'Desculpa','Sorry',[['Desculpa','Sorry'],['Foi mal','My bad (street)']],'chunk'],
   ['licenca',   'Com licença','Excuse me',[['Com licença','Excuse me']],'chunk'],
   ['tchau',     'Tchau','Bye',[['Tchau','Bye'],['Até mais','See you later']],'chunk'],
   ['bora',      'Bora','Let\'s go',[['Bora','Let\'s go'],['Bora amanhã?','Shall we go tomorrow?']],'chunk'],
-  ['sim_nao',   'Sim / Não','Yes / No',[['Sim, pode ser','Yes, could be'],['Não, valeu','No, thanks']],'chunk'],
+  ['podeser',   'Pode ser','Could be / sure',[['Pode ser','Could be / sure'],['Pode ser, bora',"Could be — let's go"]],'chunk'],
   ['meajuda',   'Me ajuda?','Can you help me?',[['Me ajuda?','Can you help me?'],['Me ajuda com isso, por favor?','Help me with this, please?']],'slot-phrase'],
   ['soude',     'Eu sou de ___','I\'m from ___',[['Eu sou da Inglaterra','I\'m from England'],['Moro no Vidigal','I live in Vidigal']],'slot-phrase'],
 ]
@@ -55,7 +53,7 @@ exports.handler=async(event)=>{
     await sb.from('ng_path_units').insert({
       user_id:UID,unit_id:'first_contact',title:'First Contact',emoji:'👋',
       situation:'The true zero: greet, thank, apologize, leave — and the conversation-survival kit that makes every other world learnable on the street.',
-      scaffold_ids:ids,threshold_days:5,sort_order:0,is_side_quest:false,level:1
+      scaffold_ids:ids,threshold_days:5,sort_order:-3,is_side_quest:false,level:1
     })
     try{await sb.from('ng_brain_log').insert({user_id:UID,process:'seed',thought:`First Contact planted — ${ids.length} foundational bricks, from “oi” up. The shelf now starts at absolute zero.`,importance:2})}catch(_){}
     return{statusCode:200,body:JSON.stringify({ok:true,planted:ids.length})}

@@ -68,6 +68,8 @@ exports.handler=async(event)=>{
       if(siteUrl){try{const _acF=new AbortController();const _tmF=setTimeout(()=>_acF.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-seed-first-contact`,{method:'POST',body:'{}',signal:_acF.signal}).catch(()=>{});clearTimeout(_tmF)}catch(_){}}
       // Early worlds (Me & You, Numbers & Money) — plant once, no-op forever
       if(siteUrl){try{const _acW=new AbortController();const _tmW=setTimeout(()=>_acW.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-seed-worlds`,{method:'POST',body:'{}',signal:_acW.signal}).catch(()=>{});clearTimeout(_tmW)}catch(_){}}
+      // Curriculum V2 reconciler — one-shot, no-op after applied
+      if(siteUrl){try{const _acV=new AbortController();const _tmV=setTimeout(()=>_acV.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-curriculum-v2`,{method:'POST',body:'{}',signal:_acV.signal}).catch(()=>{});clearTimeout(_tmV)}catch(_){}}
       // Register sweep — heal pre-rewire 'a gente' bank bricks (no-op when clean)
       if(siteUrl){try{const _acR=new AbortController();const _tmR=setTimeout(()=>_acR.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-register-sweep`,{method:'POST',body:'{}',signal:_acR.signal}).catch(()=>{});clearTimeout(_tmR)}catch(_){}}
       actions.push('dispatched_nightly_brain')

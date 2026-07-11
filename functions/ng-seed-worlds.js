@@ -7,7 +7,7 @@ const{createClient}=require('@supabase/supabase-js')
 const UID='00000000-0000-0000-0000-000000000001'
 
 const WORLDS=[
-  {unit_id:'me_and_you',title:'Me & You',emoji:'🤝',sort_order:0.4,
+  {unit_id:'me_and_you',title:'Me & You',emoji:'🤝',sort_order:-2,
    situation:'Who I am, where I\'m from, what I do — and the same questions back. The first real conversation.',
    bricks:[
     ['nome',    'Meu nome é ___','My name is ___',[['Meu nome é ___','My name is ___'],['Pode me chamar de ___','You can call me ___']],'slot-phrase'],
@@ -21,7 +21,7 @@ const WORLDS=[
     ['tenho',   'Tenho ___ anos','I\'m ___ years old',[['Tenho trinta anos','I\'m thirty years old']],'slot-phrase'],
     ['voce_e',  'Você é ___?','Are you ___?',[['Você é carioca?','Are you carioca?'],['Cê é casado?','Are you married? (street)']],'slot-phrase'],
    ]},
-  {unit_id:'numbers_money',title:'Numbers & Money',emoji:'💰',sort_order:0.6,
+  {unit_id:'numbers_money',title:'Numbers & Money',emoji:'💰',sort_order:-1,
    situation:'Counting, prices, paying, and time — the survival math of daily Rio.',
    bricks:[
     ['quanto',  'Quanto custa?','How much is it?',[['Quanto custa?','How much is it?'],['Quanto que é?','How much is it? (street)']],'chunk'],
