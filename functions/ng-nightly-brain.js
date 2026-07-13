@@ -350,6 +350,16 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
       }catch(_){}
     }catch(pathErr){console.log('path maintenance skipped:',pathErr.message)}
 
+    // ── Bank artifact audit — report-only, lands in the Intel feed ──
+    try{
+      const siteUrlBA=process.env.URL||process.env.DEPLOY_URL||''
+      if(siteUrlBA){
+        const _acA=new AbortController();const _tmA=setTimeout(()=>_acA.abort(),1200)
+        await fetch(`${siteUrlBA}/.netlify/functions/ng-bank-audit`,{method:'POST',body:'{}',signal:_acA.signal}).catch(()=>{})
+        clearTimeout(_tmA)
+      }
+    }catch(_){}
+
     // ── Brick-kind backfill — classify a batch of unkinded bricks (Calçadão) ──
     // Awaited-send dispatch: the request leaves before this container freezes;
     // ng-brick-kinds does its own chunked, progressive writes.

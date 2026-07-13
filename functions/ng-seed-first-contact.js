@@ -9,20 +9,20 @@ const UID='00000000-0000-0000-0000-000000000001'
 
 const BRICKS=[
   // [id-suffix, base_pt, base_en, stages:[[pt,en],...], kind]
-  ['oi',        'Oi, tudo bem?','Hi, all good?',[['Oi, tudo bem?','Hi, all good?'],['E aí, de boa?','Hey, all good? (street)']],'chunk'],
-  ['eai',       'E aí?','What\'s up?',[['E aí?','What\'s up?'],['E aí, beleza?','What\'s up, all good?']],'chunk'],
-  ['beleza',    'Beleza','All good / deal',[['Beleza','All good / deal'],['Beleza, fechou','Cool, done deal']],'chunk'],
-  ['valeu',     'Valeu','Thanks (street)',[['Valeu','Thanks (street)'],['Valeu, irmão','Thanks, brother']],'chunk'],
-  ['deboa',     'De boa','All good / relaxed',[['De boa','All good / relaxed'],['Tô de boa','I\'m all good']],'chunk'],
-  ['naoentendi','Não entendi','I didn\'t understand',[['Não entendi','I didn\'t understand'],['Não entendi nada','I didn\'t understand anything']],'chunk'],
-  ['falade',    'Fala de novo?','Say it again?',[['Fala de novo?','Say it again?'],['Fala mais devagar, por favor','Speak slower, please']],'chunk'],
-  ['desculpa',  'Desculpa','Sorry',[['Desculpa','Sorry'],['Foi mal','My bad (street)']],'chunk'],
-  ['licenca',   'Com licença','Excuse me',[['Com licença','Excuse me']],'chunk'],
-  ['tchau',     'Tchau','Bye',[['Tchau','Bye'],['Até mais','See you later']],'chunk'],
-  ['bora',      'Bora','Let\'s go',[['Bora','Let\'s go'],['Bora amanhã?','Shall we go tomorrow?']],'chunk'],
-  ['podeser',   'Pode ser','Could be / sure',[['Pode ser','Could be / sure'],['Pode ser, bora',"Could be — let's go"]],'chunk'],
-  ['meajuda',   'Me ajuda?','Can you help me?',[['Me ajuda?','Can you help me?'],['Me ajuda com isso, por favor?','Help me with this, please?']],'slot-phrase'],
-  ['soude',     'Eu sou de ___','I\'m from ___',[['Eu sou da Inglaterra','I\'m from England'],['Moro no Vidigal','I live in Vidigal']],'slot-phrase'],
+  ['oi',        'oi, tudo bem?','Hi, all good?',[['oi, tudo bem?','Hi, all good?'],['e aí, de boa?','Hey, all good? (street)']],'chunk'],
+  ['eai',       'e aí?','What\'s up?',[['e aí?','What\'s up?'],['e aí, beleza?','What\'s up, all good?']],'chunk'],
+  ['beleza',    'beleza','All good / deal',[['beleza','All good / deal'],['beleza, fechou','Cool, done deal']],'chunk'],
+  ['valeu',     'valeu','Thanks (street)',[['valeu','Thanks (street)'],['valeu, irmão','Thanks, brother']],'chunk'],
+  ['deboa',     'de boa','All good / relaxed',[['de boa','All good / relaxed'],['tô de boa','I\'m all good']],'chunk'],
+  ['naoentendi','não entendi','I didn\'t understand',[['não entendi','I didn\'t understand'],['não entendi nada','I didn\'t understand anything']],'chunk'],
+  ['falade',    'fala de novo?','Say it again?',[['fala de novo?','Say it again?'],['fala mais devagar, por favor','Speak slower, please']],'chunk'],
+  ['desculpa',  'desculpa','Sorry',[['desculpa','Sorry'],['foi mal','My bad (street)']],'chunk'],
+  ['licenca',   'com licença','Excuse me',[['com licença','Excuse me']],'chunk'],
+  ['tchau',     'tchau','Bye',[['tchau','Bye'],['até mais','See you later']],'chunk'],
+  ['bora',      'bora','Let\'s go',[['bora','Let\'s go'],['bora amanhã?','Shall we go tomorrow?']],'chunk'],
+  ['podeser',   'pode ser','Could be / sure',[['pode ser','Could be / sure'],['pode ser, bora',"Could be — let's go"]],'chunk'],
+  ['meajuda',   'me ajuda?','Can you help me?',[['me ajuda?','Can you help me?'],['me ajuda com isso, por favor?','Help me with this, please?']],'slot-phrase'],
+  ['soude',     'eu sou de ___','I\'m from ___',[['eu sou da Inglaterra','I\'m from England'],['moro no Vidigal','I live in Vidigal']],'slot-phrase'],
 ]
 
 exports.handler=async(event)=>{

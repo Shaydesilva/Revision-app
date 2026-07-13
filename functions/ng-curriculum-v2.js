@@ -15,7 +15,7 @@ exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const{data:done}=await sb.from('ng_brain_log').select('id').eq('user_id',UID).eq('process','curriculum_v2').limit(1)
+    const{data:done}=await sb.from('ng_brain_log').select('id').eq('user_id',UID).eq('process','curriculum_v2_1').limit(1)
     if(done&&done.length)return{statusCode:200,body:JSON.stringify({ok:true,already:true})}
 
     const seed=JSON.parse(SEED)
@@ -39,6 +39,7 @@ exports.handler=async(event)=>{
         used.add(id)
         const{error}=await sb.from('ng_scaffolds').update({
           base_portuguese:sc.base_portuguese,base_english:sc.base_english,
+          category:sc.category,context:sc.context,
           stages:(sc.stages||[]).map(flags)
         }).eq('id',id).eq('user_id',UID)
         if(!error)updated++
@@ -72,7 +73,7 @@ exports.handler=async(event)=>{
       stages:[flags({pt:'Pode ser',en:'Could be / sure'},0),flags({pt:'Pode ser, bora',en:"Could be — let's go"},1)]
     }).eq('id','sc_fc_sim_nao').eq('user_id',UID)
 
-    await sb.from('ng_brain_log').insert({user_id:UID,process:'curriculum_v2',importance:2,
+    await sb.from('ng_brain_log').insert({user_id:UID,process:'curriculum_v2_1',importance:2,
       thought:`Curriculum V2 applied: ${updated} ladders rebuilt (easiest cell first), ${inserted} new bricks planted into the empty rooms, Pillar B resequenced (single tenses before the per-verb labs), First Contact deduped, the 'muitnós' rewire artifact healed.`})
     return{statusCode:200,body:JSON.stringify({ok:true,updated,inserted})}
   }catch(e){

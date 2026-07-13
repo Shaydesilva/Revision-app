@@ -157,7 +157,7 @@ RULES:
 - If it looks like a transcription mishearing, keep the verbatim as required but add a "note" with the likely intended form.
 JSON only:
 {"decision":"new_scaffold"|"extend_existing",
- "scaffold":{"base_portuguese":"stage1 pt","base_english":"","category":"social_foundation|dating_register|personality_humour|deep_fluency","context":"","phase":1,"stages":[{"pt":"","en":""}]},
+ "scaffold":{"base_portuguese":"stage1 pt","base_english":"","category":"survival|grammar_core|identity|social|deep_fluency|personality_humour","context":"","phase":1,"stages":[{"pt":"","en":""}]},
  "tapped_stage":0,
  "extension":{"scaffold_id":"","new_stage":{"pt":"","en":""},"position":"above"|"below"},
  "note":""}`,

@@ -85,7 +85,7 @@ Return JSON only:
     {
       "base_portuguese": "base form",
       "base_english": "translation",
-      "category": "social_foundation|dating_register|personality_humour|deep_fluency",
+      "category": "survival|grammar_core|identity|social|deep_fluency|personality_humour",
       "context": "social|dating|bar|beach|general",
       "stages": [
         {"stage":1,"pt":"base form","en":"translation"},

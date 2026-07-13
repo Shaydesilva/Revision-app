@@ -99,7 +99,7 @@ SKIP (do not output; count in skipped):
 
 VICTOR'S MARKS: the notes may carry !/?/* annotations. Treat them as NOISE — strip them from extracted text and give them ZERO weight in any decision. Extract purely on merit.
 
-Each scaffold: {"base_portuguese":stage-1 text,"base_english":"","category":"social_foundation|dating_register|personality_humour|deep_fluency","context":"","phase":1-4,"stages":[{"pt":"","en":""}] (2-4, stage 1 = simplest)}
+Each scaffold: {"base_portuguese":stage-1 text,"base_english":"","category":"survival|grammar_core|identity|social|deep_fluency|personality_humour","context":"","phase":1-4,"stages":[{"pt":"","en":""}] (2-4, stage 1 = simplest)}
 Max 8 scaffolds per chunk — pick the highest-value. JSON only:
 {"scaffolds":[...],"skipped":{"tables":0,"phonics":0,"marked_solid":0,"meta":0}}`,
         messages:[{role:'user',content:`ALREADY IN THE BANK (do not duplicate): ${bankSample||'empty'}\n\nNOTES CHUNK ${chunk+1}/${chunks.length}:\n${text}`}]})

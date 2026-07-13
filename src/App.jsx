@@ -1653,6 +1653,7 @@ function NGScaffoldMap({isOnline,onBack}){
   }
 
   const categories={
+    survival:'Survival',grammar_core:'Grammar',identity:'Identity',social:'Social',
     social_foundation:'Social',
     dating_register:'Dating',
     personality_humour:'Personality',
@@ -1660,6 +1661,7 @@ function NGScaffoldMap({isOnline,onBack}){
   }
 
   const catColor={
+    survival:AC,grammar_core:GD,identity:BZ,social:GR,
     social_foundation:GR,
     dating_register:AC,
     personality_humour:YE,
@@ -2321,7 +2323,7 @@ function ScaffoldUnlockAnimation({scaffold,onComplete}){
     return()=>[t1,t2,t3,t4,t5].forEach(clearTimeout)
   },[])
 
-  const phaseColor={'social_foundation':'#ffd52e','dating_register':'#fb7185','personality_humour':'#2ee56f','deep_fluency':'#3d7bff'}
+  const phaseColor={'survival':'#ffd52e','grammar_core':'#f0a92c','identity':'#3d7bff','social':'#2ee56f','social_foundation':'#ffd52e','dating_register':'#fb7185','personality_humour':'#2ee56f','deep_fluency':'#3d7bff'}
   const color=phaseColor[scaffold?.category]||AC
 
   return<div style={{
@@ -3440,7 +3442,7 @@ function ConstellationView({scaffolds,memState,edges}){
     if(m.skill!=='production')return
     if(!memBySc[m.scaffold_id]||m.live_r>memBySc[m.scaffold_id])memBySc[m.scaffold_id]=m.live_r
   })
-  const catColor={social_foundation:'#ffd52e',dating_register:'#fb7185',personality_humour:'#2ee56f',deep_fluency:'#3d7bff'}
+  const catColor={survival:'#ffd52e',grammar_core:'#f0a92c',identity:'#3d7bff',social:'#2ee56f',social_foundation:'#ffd52e',dating_register:'#fb7185',personality_humour:'#2ee56f',deep_fluency:'#3d7bff'}
 
   return<svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
     {/* Edges — faint threads between related nodes */}

@@ -76,7 +76,7 @@ EXISTING PATTERNS IN BANK (do not duplicate):
 ${existingPatterns.slice(0,3000)}
 
 For each suggestion, generate 4 escalating stages (base → extension → fuller → expressive).
-Return JSON only: {"suggestions":[{"base_portuguese":"","base_english":"","category":"social_foundation|dating_register|personality_humour|deep_fluency","context":"","reason":"why this emerged from the report","stages":[{"stage":1,"pt":"","en":""},{"stage":2,"pt":"","en":""},{"stage":3,"pt":"","en":""},{"stage":4,"pt":"","en":""}]}]}
+Return JSON only: {"suggestions":[{"base_portuguese":"","base_english":"","category":"survival|grammar_core|identity|social|deep_fluency|personality_humour","context":"","reason":"why this emerged from the report","stages":[{"stage":1,"pt":"","en":""},{"stage":2,"pt":"","en":""},{"stage":3,"pt":"","en":""},{"stage":4,"pt":"","en":""}]}]}
 Maximum 4 suggestions. If nothing genuinely useful, return {"suggestions":[]}.`,
           messages:[{role:'user',content:`Field report from a real conversation:\n\n${text.trim()}`}]
         })
