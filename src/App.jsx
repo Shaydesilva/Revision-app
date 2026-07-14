@@ -3922,6 +3922,9 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     // The server derives rung from events+memory; struggle already dropped it there.
     // The card→write cliff is gone: nothing meets the constructor before passing rung 2.
     let rung=Number.isInteger(item.rung)?item.rung:(item.isReview?3:(item.practice_count>0?1:0))
+    // conhecer: a brand-new brick is INTRODUCED (see it, hear it) before it's
+    // ever tested. Patience — the brick is placed in your hand before you build.
+    if(!item.isReview&&!item.force&&(item.practice_count||0)===0&&rung===0)return'intro'
     // SUCCESS GOVERNOR: hold the session in the ~80-88% band. Under it, meet
     // bricks one rung gentler; cruising above it, stretch every third item.
     // Never touches reviews (the clock owns those) or placement forces.
@@ -3980,6 +3983,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const buildAtom=(item,i)=>{
     atomStartRef.current=Date.now()
     const t=atomFor(item,i)
+    if(t==='intro'){setAtom({type:'intro'});setTimeout(()=>speak(item.pt),350);return}
     if(t==='flip')setAtom({type:'flip',revealed:false})
     else if(t==='reorder'){
       const words=(item.pt||'').split(' ')
@@ -4006,6 +4010,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     }else if(t==='recog'){
       const others=queue.filter(x=>x!==item&&x.en).map(x=>x.en)
       setAtom({type:'recog',options:padOptions(item.en,others,'en'),result:null,chosen:null})
+      setTimeout(()=>speak(item.pt),350)
     }else if(t==='timeline'){
       setAtom({type:'timeline',point:tlClassify(item.pt),result:null,chosen:null})
     }else if(t==='duel'){
@@ -4051,7 +4056,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     try{
       const r=await ngFetch('ng-session-end',{mode:'daily',
         events:[{scaffold_id:item.scaffold_id,stage:item.stage,quality,
-          mode:(atomType==='flip'||atomType==='recog'||atomType==='speed'||atomType==='escuta_audio')?'flashcard':atomType==='constructor'?'write':atomType}],
+          mode:(atomType==='intro'||atomType==='flip'||atomType==='recog'||atomType==='speed'||atomType==='escuta_audio')?'flashcard':atomType==='constructor'?'write':atomType}],
         duration_seconds:secs})
       if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:item.pt}))])
     }catch(_){}
@@ -4224,13 +4229,25 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         {placementRef.current?'📍 Placement':(item.isReview?'◌ Review':(item.context==='grammar'?'⚙ Grammar':(item.isNew?'✦ New':'✦ Frontier')))} · {atom.type}
       </div>
 
+      {atom.type==='intro'&&<div>
+        <div style={{fontSize:11,color:GD,marginBottom:10,textAlign:'center'}}>New brick — meet it first 👋</div>
+        <div style={{background:S,border:`1px solid ${GD}44`,borderRadius:18,padding:'28px 20px',textAlign:'center',marginBottom:14}}>
+          <div onClick={()=>speak(item.pt)} style={{fontSize:22,fontWeight:800,color:AC,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:10}}>
+            {item.pt} <span style={{fontSize:18,opacity:0.7}}>🔊</span>
+          </div>
+          <div style={{fontSize:14,color:MU,marginTop:10}}>{item.en}</div>
+        </div>
+        <PBtn label="Got it — test me →" onClick={async()=>{SFX.tap();await logEvent(item,3,'intro');advance()}}/>
+      </div>}
+
       {atom.type==='flip'&&<div>
         <div style={{background:S,border:`1px solid ${BD}`,borderRadius:18,padding:'26px 20px',textAlign:'center',marginBottom:14}}>
           <div style={{fontSize:11,color:MU,marginBottom:8}}>Say it in Portuguese:</div>
           <div style={{fontSize:17,fontWeight:700,color:TX}}>{item.en}</div>
           {atom.revealed&&<div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${BD}`,fontSize:18,fontWeight:800,color:AC}}>{item.pt}</div>}
         </div>
-        {!atom.revealed?<PBtn label="Show" onClick={()=>setAtom(a=>({...a,revealed:true}))}/>
+          {atom.revealed&&<div onClick={()=>speak(item.pt)} style={{fontSize:12,color:GD,marginTop:8,cursor:'pointer'}}>🔊 hear it</div>}
+        {!atom.revealed?<PBtn label="Show" onClick={()=>{setAtom(a=>({...a,revealed:true}));setTimeout(()=>speak(item.pt),200)}}/>
         :<div style={{display:'flex',gap:8}}>
           {[[1,'Forgot',RE],[3,'Hard',GD],[4,'Good',GR],[5,'Easy',AC]].map(([q,l,col])=>
             <button key={q} onClick={async()=>{await logEvent(item,q,'flip');advance()}} style={{flex:1,padding:'12px 4px',background:`${col}14`,border:`1px solid ${col}55`,borderRadius:12,color:col,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:FONT}}>{l}</button>)}
@@ -4309,7 +4326,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
 
       {atom.type==='recog'&&<div>
         <div style={{fontSize:12,color:MU,marginBottom:8}}>What does it mean?</div>
-        <div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'20px 16px',fontSize:17,fontWeight:800,color:AC,textAlign:'center',marginBottom:14}}>{item.pt}</div>
+        <div onClick={()=>speak(item.pt)} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'20px 16px',fontSize:17,fontWeight:800,color:AC,textAlign:'center',marginBottom:14,cursor:'pointer'}}>{item.pt} <span style={{fontSize:14,opacity:0.6}}>🔊</span></div>
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           {atom.options.map((op,i)=><button key={i} disabled={!!atom.result} onClick={async()=>{
             const right=op===item.en

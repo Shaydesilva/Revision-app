@@ -14,7 +14,7 @@
 // Event ledger mode → rung. 'flashcard' covers flip/recog/speed/escuta (ng-session-end
 // collapses them); typed/spoken production arrives as write/phrase/luna or raw atom names.
 const RUNG_OF_MODE={
-  flashcard:0,flip:0,recog:0,speed:0,escuta:0,escuta_audio:0,
+  intro:0,flashcard:0,flip:0,recog:0,speed:0,escuta:0,escuta_audio:0,
   reorder:1,cloze:1,
   timeline:2,duel:2,conserta:2,
   write:3,constructor:3,monta:3,phrase:3,luna:3
