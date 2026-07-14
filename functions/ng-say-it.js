@@ -115,7 +115,7 @@ Return JSON only:
       const ttsRes=await fetch('https://api.openai.com/v1/audio/speech',{
         method:'POST',
         headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({model:'tts-1',voice:'nova',input:result.carioca,speed:0.9})
+        body:JSON.stringify({model:'tts-1',voice:'echo',input:result.carioca,speed:1.05})
       })
       if(ttsRes.ok){
         const buf=await ttsRes.arrayBuffer()

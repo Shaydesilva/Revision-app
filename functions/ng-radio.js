@@ -15,6 +15,20 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
 const VOICE_MAP={echo:'echo',shimmer:'shimmer'} // Chico=echo, Bia=shimmer
 
 async function tts(text,voice){
+  // ElevenLabs first (cloned Carioca voice, when configured) — so the show and
+  // the single-phrase audio upgrade together the moment the key lands.
+  const elKey=process.env.ELEVENLABS_API_KEY
+  const elMap={echo:process.env.ELEVENLABS_VOICE_CHICO,shimmer:process.env.ELEVENLABS_VOICE_BIA}
+  const elVoice=elMap[voice]||process.env.ELEVENLABS_VOICE_ID
+  if(elKey&&elVoice){
+    try{
+      const r=await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elVoice}`,{
+        method:'POST',headers:{'Content-Type':'application/json','xi-api-key':elKey},
+        body:JSON.stringify({text,model_id:'eleven_multilingual_v2',voice_settings:{stability:0.5,similarity_boost:0.75,style:0.3,use_speaker_boost:true}})
+      })
+      if(r.ok)return Buffer.from(await r.arrayBuffer()).toString('base64')
+    }catch(_){}
+  }
   const res=await fetch('https://api.openai.com/v1/audio/speech',{
     method:'POST',
     headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},

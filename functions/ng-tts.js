@@ -4,7 +4,7 @@
 exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
-    const{text='',voice='nova'}=JSON.parse(event.body||'{}')
+    const{text='',voice='echo'}=JSON.parse(event.body||'{}')  // default = radio's Chico voice
     if(!text.trim())return{statusCode:400,body:JSON.stringify({error:'No text'})}
 
     let audioBase64=null
@@ -35,11 +35,11 @@ exports.handler=async(event)=>{
     // Fallback: OpenAI TTS
     if(!audioBase64){
       const validVoices=['alloy','ash','coral','echo','fable','nova','onyx','sage','shimmer']
-      const safeVoice=validVoices.includes(voice)?voice:'nova'
+      const safeVoice=validVoices.includes(voice)?voice:'echo'
       const res=await fetch('https://api.openai.com/v1/audio/speech',{
         method:'POST',
         headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({model:'tts-1',voice:safeVoice,input:text,speed:0.9})
+        body:JSON.stringify({model:'tts-1',voice:safeVoice,input:text,speed:1.05})  // match radio — not dragged
       })
       if(res.ok){
         const buf=await res.arrayBuffer()

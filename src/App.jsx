@@ -951,7 +951,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
       // Check cache first — should already be there from pre-generation
       let audioData=audioCache.current[text]
       if(!audioData){
-        const data=await ngFetch('ng-tts',{text,voice:'nova'})
+        const data=await ngFetch('ng-tts',{text,voice:'echo'})
         audioData=data.audio
         if(audioData)audioCache.current[text]=audioData
       }
@@ -1012,7 +1012,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
         const texts=[...new Set(allCards.map(c=>c.pt).filter(Boolean))]
         Promise.all(texts.slice(0,12).map(async text=>{
           try{
-            const r=await ngFetch('ng-tts',{text,voice:'nova'})
+            const r=await ngFetch('ng-tts',{text,voice:'echo'})
             if(r.audio)audioCache.current[text]=r.audio
           }catch{}
         })).catch(()=>{})
@@ -3681,7 +3681,7 @@ function NGAula({isOnline,unit,onBack}){
     const l=pack.dialogue[i];if(!l)return
     setPlaying(i)
     try{
-      const r=await ngFetch('ng-tts',{text:l.pt,voice:l.sp==='B'?'nova':'onyx'})
+      const r=await ngFetch('ng-tts',{text:l.pt,voice:l.sp==='B'?'shimmer':'echo'})  // radio cast: Bia / Chico
       if(r?.audio){
         if(audioRef.current)audioRef.current.pause()
         const a=new Audio('data:audio/mp3;base64,'+r.audio)
@@ -4304,7 +4304,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
             if(atom.fetching)return
             setAtom(x=>({...x,fetching:true}))
             try{
-              const r=await ngFetch('ng-tts',{text:item.pt,voice:'nova'})
+              const r=await ngFetch('ng-tts',{text:item.pt,voice:'echo'})
               if(r?.audio){const a=new Audio('data:audio/mp3;base64,'+r.audio);a.play();setAtom(x=>({...x,audio:r.audio,fetching:false,plays:x.plays+1}))}
               else setAtom(x=>({...x,fetching:false}))
             }catch(_){setAtom(x=>({...x,fetching:false}))}
