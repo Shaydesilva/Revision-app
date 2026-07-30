@@ -114,7 +114,10 @@ function pickRoom({units=[],frontier=[],due=[]}={}){
       if(f.practice_count===0){unmet++;if(f.source==='victor')victorUnmet++}
     }
     for(const id of dueIds)if(ids.has(id))dueIn++
-    let score=dueIn*2+unmet+victorUnmet*2
+    // Side quests (the street inbox especially) can hold dozens of unmet
+    // bricks — cap their pull so a fat inbox can't hijack the road for weeks.
+    const unmetW=u.is_side_quest?Math.min(unmet,6):unmet
+    let score=dueIn*2+unmetW+victorUnmet*2
     if(firstIncomplete&&u.unit_id===firstIncomplete.unit_id)score+=4
     if(score>bestScore){bestScore=score;best=u}
   }

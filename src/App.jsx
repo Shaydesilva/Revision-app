@@ -1668,7 +1668,7 @@ function NGScaffoldMap({isOnline,onBack}){
   }
 
   const getStagesControlled=(sc)=>{
-    return sc.stages.filter(st=>controlled.has(`${sc.id}|${st.stage}`)).length
+    return(sc.stages||[]).filter(st=>controlled.has(`${sc.id}|${st.stage}`)).length
   }
 
   // Grid search + source filter — an imported pattern is findable in seconds.

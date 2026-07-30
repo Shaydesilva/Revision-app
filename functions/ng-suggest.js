@@ -37,6 +37,7 @@ exports.handler=async(event)=>{
         return{statusCode:200,body:JSON.stringify({ok:true,rejected:ids.length})}
       }
       let approved=0
+      const toInbox=[]
       for(const sid of ids.slice(0,60)){
         const{data:sug}=await sb.from('ng_suggestions').select('*').eq('user_id',UID).eq('id',sid).single()
         if(!sug||sug.status!=='pending')continue
@@ -58,10 +59,11 @@ exports.handler=async(event)=>{
             if(u)await sb.from('ng_path_units').update({scaffold_ids:[...(u.scaffold_ids||[]),id]}).eq('id',u.id)
           }catch(_){}
         }else{
-          try{await INTEL.attachToInbox(sb,UID,[id])}catch(_){}
+          toInbox.push(id) // batched below — 60 imports is one attach, not 60
         }
         await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
       }
+      try{await INTEL.attachToInbox(sb,UID,toInbox)}catch(_){}
       await brainLog(sb,`Import review: ${approved} patterns approved into the bank.`,2)
       return{statusCode:200,body:JSON.stringify({ok:true,approved})}
     }

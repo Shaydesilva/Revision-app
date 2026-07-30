@@ -326,36 +326,52 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
         }
       }catch(_){}
 
-      // GRADUATION: inbox bricks you've actually practiced (3+ reps) move into
-      // the world where they belong — best fit = the spine unit whose members
-      // share the brick's category most (needs 3+ same-category members).
+      // GRADUATION: inbox bricks you've actually practiced (3+ reps in the
+      // event ledger — the stage practice_count field is seed-frozen, events
+      // are the truth) move into the world where they belong. Best fit =
+      // category kinship + lexical overlap with the unit's members, so a food
+      // phrase lands in Comida, not just "the biggest survival unit".
       // The inbox stays a waiting room, not a landfill.
       try{
+        const chunk=(arr,n)=>{const o=[];for(let i=0;i<arr.length;i+=n)o.push(arr.slice(i,i+n));return o}
         const{data:units}=await sb.from('ng_path_units').select('id,unit_id,title,scaffold_ids,is_side_quest').eq('user_id',UID)
         const inbox=(units||[]).find(u=>u.unit_id===INTEL.INBOX_ID)
         if(inbox&&(inbox.scaffold_ids||[]).length){
-          const{data:inRows}=await sb.from('ng_scaffolds').select('id,base_portuguese,category,stages')
-            .eq('user_id',UID).in('id',inbox.scaffold_ids)
-          const reps=sc=>(sc.stages||[]).reduce((n,s)=>n+(s.practice_count||0),0)
-          const ready=(inRows||[]).filter(sc=>reps(sc)>=3)
-          if(ready.length){
-            const{data:bankCats}=await sb.from('ng_scaffolds').select('id,category').eq('user_id',UID).limit(2000)
-            const catOf={};(bankCats||[]).forEach(b=>catOf[b.id]=b.category)
+          const repCount={}
+          for(const ck of chunk(inbox.scaffold_ids,100)){
+            const{data:evs}=await sb.from('ng_scaffold_events').select('scaffold_id')
+              .eq('user_id',UID).in('scaffold_id',ck).limit(5000)
+            ;(evs||[]).forEach(e=>{repCount[e.scaffold_id]=(repCount[e.scaffold_id]||0)+1})
+          }
+          const readyIds=inbox.scaffold_ids.filter(id=>(repCount[id]||0)>=3)
+          if(readyIds.length){
+            const{data:bankRows}=await sb.from('ng_scaffolds').select('id,category,base_portuguese').eq('user_id',UID).limit(2000)
+            const infoOf={};(bankRows||[]).forEach(b=>infoOf[b.id]=b)
+            const words=s=>new Set((s||'').toLowerCase().split(/\s+/).filter(w=>w.length>2))
             const spine=(units||[]).filter(u=>!u.is_side_quest)
             const moved=[]
             let inboxIds=[...inbox.scaffold_ids]
-            for(const sc of ready){
+            for(const scId of readyIds){
+              const sc=infoOf[scId];if(!sc)continue
               const cat=INTEL.safeCategory(sc.category)
-              let best=null,bestN=0
+              const scWords=words(sc.base_portuguese)
+              let best=null,bestScore=0
               for(const u of spine){
-                const n=(u.scaffold_ids||[]).filter(x=>INTEL.safeCategory(catOf[x])===cat).length
-                if(n>bestN){bestN=n;best=u}
+                let catN=0,overlap=0
+                for(const x of(u.scaffold_ids||[])){
+                  const inf=infoOf[x];if(!inf)continue
+                  if(INTEL.safeCategory(inf.category)===cat)catN++
+                  for(const w of words(inf.base_portuguese))if(scWords.has(w))overlap++
+                }
+                if(catN<3)continue // a unit adopts only where the category already lives
+                const score=catN+overlap*2
+                if(score>bestScore){bestScore=score;best=u}
               }
-              if(!best||bestN<3)continue
-              const grown=[...new Set([...(best.scaffold_ids||[]),sc.id])]
+              if(!best)continue
+              const grown=[...new Set([...(best.scaffold_ids||[]),scId])]
               await sb.from('ng_path_units').update({scaffold_ids:grown}).eq('id',best.id)
               best.scaffold_ids=grown
-              inboxIds=inboxIds.filter(x=>x!==sc.id)
+              inboxIds=inboxIds.filter(x=>x!==scId)
               moved.push(`"${sc.base_portuguese}" → ${best.title}`)
             }
             if(moved.length){
