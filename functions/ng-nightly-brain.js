@@ -6,6 +6,7 @@
 
 const{createClient}=require('@supabase/supabase-js')
 const{REGISTER_LAW_GENERATE:REGISTER_LAW}=require('./register-law.cjs')
+const INTEL=require('./ng-intel.cjs')
 const UID='00000000-0000-0000-0000-000000000001'
 
 async function brainLog(sb,proc,thought,data=null,importance=1){
@@ -300,28 +301,68 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
         }
       }catch(_){}
 
-      // ORPHAN SWEEP: scaffolds not living in ANY unit (fresh Victor imports,
-      // street finds) get adopted into a rolling side-quest unit — the trilha
-      // never loses sight of new material.
+      // ORPHAN SWEEP: scaffolds not living in ANY unit get adopted into the
+      // street inbox — unbounded, no eviction. (The old rolling 12-slot unit
+      // evicted everything older than the newest dozen; those bricks vanished
+      // from every unit-based surface. Never again.)
       try{
         const[{data:allU},{data:allS}]=await Promise.all([
           sb.from('ng_path_units').select('id,unit_id,scaffold_ids').eq('user_id',UID),
-          sb.from('ng_scaffolds').select('id,created_at').eq('user_id',UID)
+          sb.from('ng_scaffolds').select('id,created_at').eq('user_id',UID).limit(2000)
         ])
+        // Legacy migration: fold "Da Rua — Novos" into the inbox, then retire it.
+        const legacy=(allU||[]).find(u=>u.unit_id==='da_rua_novos')
+        if(legacy){
+          await INTEL.attachToInbox(sb,UID,legacy.scaffold_ids||[])
+          await sb.from('ng_path_units').delete().eq('id',legacy.id)
+          const{data:refreshed}=await sb.from('ng_path_units').select('id,unit_id,scaffold_ids').eq('user_id',UID)
+          allU.length=0;(refreshed||[]).forEach(u=>allU.push(u))
+        }
         const placed=new Set();(allU||[]).forEach(u=>(u.scaffold_ids||[]).forEach(x=>placed.add(x)))
         const orphans=(allS||[]).filter(x=>!placed.has(x.id)).map(x=>x.id)
         if(orphans.length){
-          const rua=(allU||[]).find(u=>u.unit_id==='da_rua_novos')
-          if(rua){
-            const merged=[...new Set([...(rua.scaffold_ids||[]),...orphans])].slice(-12)
-            await sb.from('ng_path_units').update({scaffold_ids:merged}).eq('id',rua.id)
-          }else{
-            await sb.from('ng_path_units').insert({user_id:UID,unit_id:'da_rua_novos',
-              title:'Da Rua — Novos',emoji:'📦',
-              situation:'[Fresh Finds] O que chegou da rua e do Victor esta semana — pratica e o cérebro reagrupa',
-              scaffold_ids:orphans.slice(0,12),threshold_days:7,sort_order:998,is_side_quest:true,level:1,levels:[]})
+          await INTEL.attachToInbox(sb,UID,orphans)
+          await brainLog(sb,'path',`${orphans.length} homeless pattern${orphans.length>1?'s':''} adopted into the street inbox — everything you capture stays visible.`,null,1)
+        }
+      }catch(_){}
+
+      // GRADUATION: inbox bricks you've actually practiced (3+ reps) move into
+      // the world where they belong — best fit = the spine unit whose members
+      // share the brick's category most (needs 3+ same-category members).
+      // The inbox stays a waiting room, not a landfill.
+      try{
+        const{data:units}=await sb.from('ng_path_units').select('id,unit_id,title,scaffold_ids,is_side_quest').eq('user_id',UID)
+        const inbox=(units||[]).find(u=>u.unit_id===INTEL.INBOX_ID)
+        if(inbox&&(inbox.scaffold_ids||[]).length){
+          const{data:inRows}=await sb.from('ng_scaffolds').select('id,base_portuguese,category,stages')
+            .eq('user_id',UID).in('id',inbox.scaffold_ids)
+          const reps=sc=>(sc.stages||[]).reduce((n,s)=>n+(s.practice_count||0),0)
+          const ready=(inRows||[]).filter(sc=>reps(sc)>=3)
+          if(ready.length){
+            const{data:bankCats}=await sb.from('ng_scaffolds').select('id,category').eq('user_id',UID).limit(2000)
+            const catOf={};(bankCats||[]).forEach(b=>catOf[b.id]=b.category)
+            const spine=(units||[]).filter(u=>!u.is_side_quest)
+            const moved=[]
+            let inboxIds=[...inbox.scaffold_ids]
+            for(const sc of ready){
+              const cat=INTEL.safeCategory(sc.category)
+              let best=null,bestN=0
+              for(const u of spine){
+                const n=(u.scaffold_ids||[]).filter(x=>INTEL.safeCategory(catOf[x])===cat).length
+                if(n>bestN){bestN=n;best=u}
+              }
+              if(!best||bestN<3)continue
+              const grown=[...new Set([...(best.scaffold_ids||[]),sc.id])]
+              await sb.from('ng_path_units').update({scaffold_ids:grown}).eq('id',best.id)
+              best.scaffold_ids=grown
+              inboxIds=inboxIds.filter(x=>x!==sc.id)
+              moved.push(`"${sc.base_portuguese}" → ${best.title}`)
+            }
+            if(moved.length){
+              await sb.from('ng_path_units').update({scaffold_ids:inboxIds}).eq('id',inbox.id)
+              await brainLog(sb,'path',`Graduated ${moved.length} street find${moved.length>1?'s':''} from the inbox: ${moved.slice(0,4).join(' · ')}${moved.length>4?' …':''}.`,null,2)
+            }
           }
-          await brainLog(sb,'path',`${orphans.length} new pattern${orphans.length>1?'s':''} adopted into "Da Rua — Novos" — nothing you learn goes homeless.`,null,1)
         }
       }catch(_){}
 

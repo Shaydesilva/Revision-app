@@ -6,6 +6,7 @@ exports.handler=async(event)=>{
   try{
     const{createClient}=require('@supabase/supabase-js')
 const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
+const INTEL=require('./ng-intel.cjs')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const UID='00000000-0000-0000-0000-000000000001'
     const{text='',addToBank=false,cardData=null,approvedScaffolds=[],forceScaffold=false}=JSON.parse(event.body||'{}')
@@ -13,23 +14,28 @@ const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
     // Handle adding approved scaffolds to bank
     if(approvedScaffolds.length){
       const results=[]
+      const newIds=[]
       for(const sc of approvedScaffolds){
+        const id='sc_sayit_'+Date.now()+'_'+Math.random().toString(36).slice(2,5)
         const{error}=await sb.from('ng_scaffolds').insert({
-          id:'sc_sayit_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+          id,
           user_id:UID,
           base_portuguese:sc.base_portuguese,
           base_english:sc.base_english||'',
           stages:(sc.stages||[]).map((st,i)=>({stage:st.stage||i+1,pt:st.pt,en:st.en,acquired:false,acquired_at:null,practice_count:0,modes_used:[]})),
           current_stage:1,
           phase:1,
-          category:sc.category||'social_foundation',
+          category:INTEL.safeCategory(sc.category),
           context:sc.context||'general',
           cluster:'say_it',
           source:'say_it',
           last_practiced:null
         })
+        if(!error)newIds.push(id)
         results.push({base:sc.base_portuguese,ok:!error,error:error?.message})
       }
+      // Born with a home: straight into the street inbox, visible everywhere today.
+      try{await INTEL.attachToInbox(sb,UID,newIds)}catch(e){console.log('inbox attach:',e.message)}
       return{statusCode:200,body:JSON.stringify({ok:true,added:results})}
     }
 

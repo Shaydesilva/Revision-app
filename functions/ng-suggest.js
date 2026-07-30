@@ -6,6 +6,7 @@
 
 const{createClient}=require('@supabase/supabase-js')
 const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
+const INTEL=require('./ng-intel.cjs')
 const UID='00000000-0000-0000-0000-000000000001'
 async function brainLog(sb,thought,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process:'suggest',thought,importance})}catch(_){}
@@ -46,7 +47,7 @@ exports.handler=async(event)=>{
         const id='sc_sug_'+Date.now()+'_'+Math.random().toString(36).slice(2,5)
         const{error}=await sb.from('ng_scaffolds').insert({
           id,user_id:UID,base_portuguese:stages[0].pt,base_english:stages[0].en||scf.base_english||'',
-          stages,current_stage:1,phase:scf.phase||1,category:scf.category||'social_foundation',
+          stages,current_stage:1,phase:scf.phase||1,category:INTEL.safeCategory(scf.category),
           context:scf.context||sug.source||'general',cluster:'suggested',source:sug.source||'suggested',last_practiced:null
         })
         if(error)continue
@@ -56,11 +57,13 @@ exports.handler=async(event)=>{
             const{data:u}=await sb.from('ng_path_units').select('id,scaffold_ids').eq('user_id',UID).eq('unit_id',p.curriculum_unit).single()
             if(u)await sb.from('ng_path_units').update({scaffold_ids:[...(u.scaffold_ids||[]),id]}).eq('id',u.id)
           }catch(_){}
+        }else{
+          try{await INTEL.attachToInbox(sb,UID,[id])}catch(_){}
         }
         await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
       }
       await brainLog(sb,`Import review: ${approved} patterns approved into the bank.`,2)
-      return{statusCode:200,body:JSON.stringify({ok:true,approved,boosted:Object.keys(boosts).length})}
+      return{statusCode:200,body:JSON.stringify({ok:true,approved})}
     }
 
     // ── RESOLVE ──────────────────────────────────────────────────────
@@ -102,17 +105,20 @@ exports.handler=async(event)=>{
         base_portuguese:stages[0]?.pt||sug.phrase,
         base_english:stages[0]?.en||scf.base_english||'',
         stages,current_stage:1,
-        phase:scf.phase||1,category:scf.category||'social_foundation',
+        phase:scf.phase||1,category:INTEL.safeCategory(scf.category),
         context:scf.context||sug.source||'general',cluster:'suggested',
         source:sug.source||'suggested',last_practiced:null
       })
       if(error)return{statusCode:500,body:JSON.stringify({error:error.message})}
-      // Curriculum-authored scaffolds attach to their unit (the spine fills itself)
+      // Curriculum-authored scaffolds attach to their unit (the spine fills itself);
+      // everything else is born into the street inbox — never homeless, never invisible.
       if(p.curriculum_unit){
         try{
           const{data:u}=await sb.from('ng_path_units').select('id,scaffold_ids').eq('user_id',UID).eq('unit_id',p.curriculum_unit).single()
           if(u)await sb.from('ng_path_units').update({scaffold_ids:[...(u.scaffold_ids||[]),id]}).eq('id',u.id)
         }catch(_){}
+      }else{
+        try{await INTEL.attachToInbox(sb,UID,[id])}catch(_){}
       }
       await sb.from('ng_suggestions').update({status:'approved'}).eq('id',sug.id)
       await brainLog(sb,`Suggestion approved: new pattern "${stages[0]?.pt}" (${stages.length} stages) from ${sug.source}. Verbatim phrase preserved at stage ${(make_base?1:(p.tapped_stage||0)+1)}.`,2)
@@ -176,7 +182,7 @@ JSON only:
       out.scaffold.stages=stages.slice(0,4)
     }
     const{data:ins,error}=await sb.from('ng_suggestions').insert({
-      user_id:UID,source,phrase,payload:out,status:'pending'
+      user_id:UID,source,phrase,payload:{...out,heard_in:context_sentence||''},status:'pending'
     }).select().single()
     if(error)return{statusCode:500,body:JSON.stringify({error:error.message})}
     await brainLog(sb,`Suggestion proposed from ${source}: "${phrase}" → ${out.decision==='extend_existing'?'extend existing pattern':'new '+((out.scaffold?.stages||[]).length)+'-stage ladder, phrase at stage '+((out.tapped_stage||0)+1)}. Awaiting your verdict.`,1)

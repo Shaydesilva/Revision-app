@@ -1613,6 +1613,7 @@ function NGScaffoldMap({isOnline,onBack}){
   const[selected,setSelected]=useState(null)
   const[starredScaffolds,setStarredScaffolds]=useState(new Set())
   const[unlockScaffold,setUnlockScaffold]=useState(null)
+  const[sugOpen,setSugOpen]=useState(false)
   useEffect(()=>{
     if(!isOnline)return
     ngFetch('ng-suggest',{action:'list'}).then(d=>setPendSugs(d.suggestions||[])).catch(()=>{})
@@ -1635,9 +1636,9 @@ function NGScaffoldMap({isOnline,onBack}){
       const[frontierData,{data:scaffoldData},{data:profileData}]=await Promise.all([
         ngFetch('ng-frontier'),
         sb.from('ng_scaffolds')
-          .select('id,base_portuguese,base_english,phase,category,stages,current_stage,context')
+          .select('id,base_portuguese,base_english,phase,category,stages,current_stage,context,source,cluster,created_at')
           .eq('user_id',UID)
-          .order('phase'),
+          .order('phase').limit(2000),
         sb.from('ng_learner_profile').select('priority_boosts').eq('user_id',UID).single()
       ])
       const ctrl=new Set(
@@ -1652,29 +1653,40 @@ function NGScaffoldMap({isOnline,onBack}){
     setLoading(false)
   }
 
+  // Canonical taxonomy for grouping — legacy keys fold in, unknown keys land
+  // in 'other' so NOTHING can be invisible in the grid ever again.
+  const CANON={survival:'survival',grammar_core:'grammar_core',identity:'identity',social:'social',
+    social_foundation:'social',dating_register:'social',
+    personality_humour:'personality_humour',deep_fluency:'deep_fluency'}
   const categories={
     survival:'Survival',grammar_core:'Grammar',identity:'Identity',social:'Social',
-    social_foundation:'Social',
-    dating_register:'Dating',
-    personality_humour:'Personality',
-    deep_fluency:'Fluency'
+    personality_humour:'Personality',deep_fluency:'Fluency',other:'Uncategorized'
   }
-
   const catColor={
     survival:AC,grammar_core:GD,identity:BZ,social:GR,
-    social_foundation:GR,
-    dating_register:AC,
-    personality_humour:YE,
-    deep_fluency:GD
+    personality_humour:YE,deep_fluency:GD,other:MU
   }
 
   const getStagesControlled=(sc)=>{
     return sc.stages.filter(st=>controlled.has(`${sc.id}|${st.stage}`)).length
   }
 
+  // Grid search + source filter — an imported pattern is findable in seconds.
+  const[gridQ,setGridQ]=useState('')
+  const[srcFilter,setSrcFilter]=useState('all') // all | curriculum | imported
+  const nq=gridQ.trim().toLowerCase()
+  const matchesQ=s=>!nq
+    ||(s.base_portuguese||'').toLowerCase().includes(nq)
+    ||(s.base_english||'').toLowerCase().includes(nq)
+    ||(s.stages||[]).some(st=>(st.pt||'').toLowerCase().includes(nq)||(st.en||'').toLowerCase().includes(nq))
+  const isImported=s=>(s.source&&s.source!=='curriculum')
+  const matchesSrc=s=>srcFilter==='all'||(srcFilter==='imported'?isImported(s):!isImported(s))
+  const visScaffolds=scaffolds.filter(s=>matchesQ(s)&&matchesSrc(s))
+  const recentAdds=[...scaffolds].filter(s=>s.created_at).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,8)
+
   const grouped={}
-  scaffolds.forEach(s=>{
-    const cat=s.category||'social_foundation'
+  visScaffolds.forEach(s=>{
+    const cat=CANON[s.category]||'other'
     if(!grouped[cat])grouped[cat]=[]
     grouped[cat].push(s)
   })
@@ -1695,10 +1707,19 @@ function NGScaffoldMap({isOnline,onBack}){
     {/* Semantics legend — ✓ is history, rings are now */}
     <div style={{padding:'0 20px',marginBottom:10,fontSize:10,color:MU,opacity:0.75,lineHeight:1.5}}>✓ = acquired (historical) · trilha rings & constellation glow = memory strength <i>now</i> — they can fade; that's honesty, not a bug.</div>
 
-    {/* Pendentes — the suggestion shelf */}
+    {/* Suggestion inbox — collapsed by default. The map is YOUR map;
+        pending suggestions wait quietly behind a badge until you open them. */}
     {pendSugs.length>0&&<div style={{padding:'0 20px',marginBottom:18}}>
-      <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>📥 Pendentes · {pendSugs.length}</div>
-      {pendSugs.map(sg=><SuggestionCard key={sg.id} sug={sg} onDone={()=>setPendSugs(p=>p.filter(x=>x.id!==sg.id))}/>)}
+      <button onClick={()=>{SFX.tap();setSugOpen(o=>!o)}} style={{width:'100%',display:'flex',alignItems:'center',gap:10,background:S,border:`1px solid ${sugOpen?GD+'55':BD}`,borderRadius:14,padding:'12px 15px',cursor:'pointer',fontFamily:FONT}}>
+        <span style={{fontSize:15}}>📥</span>
+        <span style={{flex:1,textAlign:'left',fontSize:12.5,fontWeight:700,color:TX}}>Suggestion inbox
+          <span style={{marginLeft:8,fontSize:10.5,fontWeight:800,color:GD,background:`${GD}18`,borderRadius:10,padding:'2px 8px'}}>{pendSugs.length}</span>
+        </span>
+        <span style={{fontSize:11,color:MU}}>{sugOpen?'▾ hide':'▸ review'}</span>
+      </button>
+      {sugOpen&&<div style={{marginTop:10,animation:'up 0.25s ease'}}>
+        {pendSugs.map(sg=><SuggestionCard key={sg.id} sug={sg} onDone={()=>setPendSugs(p=>p.filter(x=>x.id!==sg.id))}/>)}
+      </div>}
     </div>}
     <div style={{padding:'0 20px 20px',display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onBack} style={{background:'none',border:'none',color:MU,fontSize:13,cursor:'pointer',fontFamily:FONT,padding:0}}>← Back</button>
@@ -1756,6 +1777,10 @@ function NGScaffoldMap({isOnline,onBack}){
             </button>
             <button onClick={()=>setSelected(null)} style={{background:'none',border:'none',color:MU,fontSize:22,cursor:'pointer',padding:'0 4px',fontFamily:FONT,lineHeight:1}}>×</button>
           </div>
+        </div>
+        <div style={{fontSize:10,color:MU,marginBottom:10,opacity:0.85}}>
+          {isImported(selected)?<span style={{color:GD}}>✦ Imported from {SUG_SOURCE_NAMES[selected.source]||selected.source}</span>:'Curriculum'}
+          {selected.created_at?` · added ${new Date(selected.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`:''}
         </div>
         {starredScaffolds.has(selected.id)&&<div style={{fontSize:11,color:YE,marginBottom:10}}>★ Priority boosted — this will appear more in Study, Phrase and Shuffle</div>}
         <div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -1825,7 +1850,32 @@ function NGScaffoldMap({isOnline,onBack}){
       </div>
     })()}
 
-    {mapView==='grid'&&Object.entries(categories).map(([cat,label])=>{
+    {mapView==='grid'&&<div>
+      {/* Search — any pattern, any stage, findable in seconds */}
+      <div style={{padding:'0 20px 10px'}}>
+        <input value={gridQ} onChange={e=>setGridQ(e.target.value)} placeholder="Search your patterns…"
+          style={{width:'100%',boxSizing:'border-box',background:S,border:`1px solid ${nq?AC+'55':BD}`,borderRadius:12,padding:'11px 14px',fontSize:13,color:TX,fontFamily:FONT,outline:'none'}}/>
+      </div>
+      {/* Source filter */}
+      <div style={{padding:'0 20px 14px',display:'flex',gap:6}}>
+        {[['all','All'],['curriculum','Curriculum'],['imported','Imported']].map(([k,l])=>
+          <button key={k} onClick={()=>{SFX.tap();setSrcFilter(k)}}
+            style={{padding:'6px 12px',background:srcFilter===k?`${AC}18`:'none',border:`1px solid ${srcFilter===k?AC+'55':BD}`,borderRadius:20,cursor:'pointer',fontFamily:FONT,fontSize:11,fontWeight:srcFilter===k?700:400,color:srcFilter===k?AC:MU}}>{l}</button>)}
+        {nq&&<span style={{marginLeft:'auto',fontSize:11,color:MU,alignSelf:'center'}}>{visScaffolds.length} match{visScaffolds.length===1?'':'es'}</span>}
+      </div>
+      {/* Recently added — imports land here first, always findable */}
+      {!nq&&recentAdds.length>0&&<div style={{marginBottom:20}}>
+        <div style={{padding:'0 20px',fontSize:10,color:MU,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8,opacity:0.8}}>Recently added</div>
+        <div style={{display:'flex',gap:8,overflowX:'auto',padding:'0 20px 4px',WebkitOverflowScrolling:'touch'}}>
+          {recentAdds.map(s=><button key={s.id} onClick={()=>setSelected(s)}
+            style={{flexShrink:0,background:S,border:`1px solid ${BD}`,borderRadius:12,padding:'8px 12px',cursor:'pointer',fontFamily:FONT,textAlign:'left'}}>
+            <div style={{fontSize:11.5,fontWeight:600,color:TX,whiteSpace:'nowrap',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis'}}>{s.base_portuguese}</div>
+            <div style={{fontSize:9,color:MU,marginTop:2}}>{isImported(s)?(SUG_SOURCE_NAMES[s.source]||s.source):'curriculum'}</div>
+          </button>)}
+        </div>
+      </div>}
+      {visScaffolds.length===0&&<div style={{textAlign:'center',padding:'40px 20px',color:MU,fontSize:13}}>Nothing matches{nq?` “${gridQ.trim()}”`:''}.</div>}
+      {Object.entries(categories).map(([cat,label])=>{
       const catScaffolds=grouped[cat]||[]
       if(!catScaffolds.length)return null
       const color=catColor[cat]||AC
@@ -1855,6 +1905,7 @@ function NGScaffoldMap({isOnline,onBack}){
               <div style={{display:'flex',gap:2,justifyContent:'center',marginBottom:6}}>
                 {[...Array(total)].map((_,i)=><div key={i} style={{width:8,height:3,borderRadius:2,background:i<stagesControlled?color:BD}}/>)}
               </div>
+              {isImported(s)&&<div style={{position:'absolute',top:4,right:5,fontSize:7,color:GD,opacity:0.9}}>✦</div>}
               <div style={{fontSize:9,color:pct>0?color:MU,fontWeight:600,lineHeight:1.3,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>
                 {s.base_portuguese}
               </div>
@@ -1863,6 +1914,7 @@ function NGScaffoldMap({isOnline,onBack}){
         </div>
       </div>
     })}
+    </div>}
   </div>
 }
 
@@ -2602,11 +2654,14 @@ function NGBrain({isOnline,onBack}){
 // O Poste — the brand mark: a memory, lit, above the city
 // SuggestionCard — the single approval surface for the unified pipeline.
 // Ouro = the verbatim tapped phrase (the law).
+const SUG_SOURCE_NAMES={radio:'Radio',say_it:'Say It',luna:'Luna',field_report:'Field Report',victor_import:'Lesson Import',import:'Lesson Import',shuffle:'Shuffle',unknown:'the street'}
 function SuggestionCard({sug,onDone}){
   const[busy,setBusy]=useState(false)
   const p=sug.payload||{}
   const isExt=p.decision==='extend_existing'
   const stages=p.scaffold?.stages||[]
+  const srcName=SUG_SOURCE_NAMES[sug.source]||sug.source||'the street'
+  const when=sug.created_at?new Date(sug.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'}):null
   const resolve=async(verdict,make_base)=>{
     setBusy(true)
     try{
@@ -2616,11 +2671,15 @@ function SuggestionCard({sug,onDone}){
     }catch(_){onDone&&onDone('error')}
   }
   return<div style={{background:S,border:`1px solid ${GD}55`,borderRadius:16,padding:'14px 15px',marginBottom:10,animation:'up 0.3s ease'}}>
-    <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>
-      ✦ Sugestão · {sug.source} · {isExt?'extends an existing pattern':`escada de ${stages.length}`}
+    <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>
+      ✦ Suggestion · from {srcName}{when?` · ${when}`:''}
+    </div>
+    <div style={{fontSize:10.5,color:MU,marginBottom:8,lineHeight:1.5}}>
+      {isExt?'A new rung for a pattern you already own.':`A ${stages.length}-stage ladder built around what you tapped.`}
+      {p.heard_in?<span> Heard in: <i style={{color:TX,opacity:0.85}}>“{p.heard_in.length>70?p.heard_in.slice(0,69)+'…':p.heard_in}”</i></span>:null}
     </div>
     {isExt?<div>
-      <div style={{fontSize:12,color:MU,marginBottom:4}}>Novo degrau ({p.extension?.position==='below'?'abaixo':'acima'}) num padrão que você já tem:</div>
+      <div style={{fontSize:12,color:MU,marginBottom:4}}>New rung ({p.extension?.position==='below'?'below — easier':'above — harder'}) on a pattern you already have:</div>
       <div style={{fontSize:14,fontWeight:700,color:AC,marginBottom:2}}>{p.extension?.new_stage?.pt}</div>
       <div style={{fontSize:11,color:MU}}>{p.extension?.new_stage?.en}</div>
     </div>
@@ -2637,9 +2696,9 @@ function SuggestionCard({sug,onDone}){
     </div>}
     {p.note&&<div style={{fontSize:10.5,color:YE,marginTop:6,lineHeight:1.5}}>⚠ {p.note}</div>}
     <div style={{display:'flex',gap:8,marginTop:12}}>
-      <button disabled={busy} onClick={()=>resolve('approve')} style={{flex:1,padding:'10px',background:`${GR}14`,border:`1px solid ${GR}55`,borderRadius:11,color:GR,fontWeight:700,fontSize:12.5,cursor:'pointer',fontFamily:FONT}}>{busy?'…':'✓ Aprovar'}</button>
+      <button disabled={busy} onClick={()=>resolve('approve')} style={{flex:1,padding:'10px',background:`${GR}14`,border:`1px solid ${GR}55`,borderRadius:11,color:GR,fontWeight:700,fontSize:12.5,cursor:'pointer',fontFamily:FONT}}>{busy?'…':'✓ Approve'}</button>
       {!isExt&&typeof p.tapped_stage==='number'&&p.tapped_stage>0&&
-        <button disabled={busy} onClick={()=>resolve('approve',true)} style={{flex:1,padding:'10px',background:S2,border:`1px solid ${BD}`,borderRadius:11,color:TX,fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:FONT}}>⤴ Como base</button>}
+        <button disabled={busy} onClick={()=>resolve('approve',true)} style={{flex:1,padding:'10px',background:S2,border:`1px solid ${BD}`,borderRadius:11,color:TX,fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:FONT}} title="Make your tapped phrase the base of the ladder">⤴ As base</button>}
       <button disabled={busy} onClick={()=>resolve('reject')} style={{padding:'10px 14px',background:'none',border:`1px solid ${BD}`,borderRadius:11,color:MU,fontSize:12.5,cursor:'pointer',fontFamily:FONT}}>✕</button>
     </div>
   </div>
@@ -3856,6 +3915,8 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const atomWRef=useRef({})
   const dialRef=useRef({})
   const[why,setWhy]=useState('')
+  const[nextUnit,setNextUnit]=useState(null) // the road continues: next spine world
+  const[roadOpen,setRoadOpen]=useState(false)
   const refetchingRef=useRef(false)
   const start=async(m,unitId)=>{
     setMins(m);setStage('load')
@@ -3874,6 +3935,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       atomWRef.current=def?.atom_weights||{}
       dialRef.current=def?.guide_dial||{}
       setWhy((!unitId&&!seedDeck&&def?.why)?def.why:'')
+      setNextUnit((!unitId&&!seedDeck)?(def?.next_unit?.title||null):null)
       const dueItems=(def?.frontier||[]).filter(x=>x.isReview)
       let front=(def?.frontier||[]).filter(x=>!x.isReview)
       // GRAMMAR GUARANTEE: grammar cells surface at least every 3rd frontier slot
@@ -4202,7 +4264,19 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       <div style={{fontSize:11,color:MU}}>{qi+1}/{queue.length}</div>
     </div>
     {/* The why-line: the guide explains today's session in one plain sentence. */}
-    {why&&!speed&&<div style={{fontSize:11.5,color:MU,lineHeight:1.5,marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${BD}`}}>{why}</div>}
+    {why&&!speed&&<div style={{fontSize:11.5,color:MU,lineHeight:1.5,marginBottom:6}}>{why}{nextUnit?<span style={{opacity:0.8}}> Then the road continues into <b style={{color:TX,fontWeight:600}}>{nextUnit}</b>.</span>:null}</div>}
+    {/* Up Next — the visible road: what the guide has queued after this brick. */}
+    {why&&!speed&&queue.length>qi+1&&<div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap',marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${BD}`}}>
+      <span style={{fontSize:8.5,color:MU,fontWeight:800,letterSpacing:1.5,opacity:0.7}}>UP NEXT</span>
+      {queue.slice(qi+1,qi+1+(roadOpen?9:3)).map((it,k)=>{
+        const tag=it.isReview?'↻':it.isNew?'★':it.isSpare?'+':'·'
+        // English side only — never pre-cue the Portuguese answer of an upcoming rep.
+        const raw=it.isNew?'new brick':(it.en||it.base_english||'…')
+        const label=raw.length>20?raw.slice(0,19)+'…':raw
+        return<span key={k} style={{fontSize:10,color:it.isReview?AC:it.isNew?GD:MU,background:S,border:`1px solid ${BD}`,borderRadius:8,padding:'3px 8px',whiteSpace:'nowrap'}}>{tag} {label}</span>
+      })}
+      {queue.length>qi+4&&<button onClick={()=>setRoadOpen(o=>!o)} style={{background:'none',border:'none',color:MU,fontSize:10,cursor:'pointer',fontFamily:FONT,padding:'3px 4px',opacity:0.8}}>{roadOpen?'less':`+${queue.length-qi-1-3} more`}</button>}
+    </div>}
     {speed&&<div style={{animation:'up 0.25s ease'}}>
       <div style={{textAlign:'center',marginBottom:14}}>
         <span style={{fontSize:10,color:COR_SPEED,fontWeight:800,letterSpacing:3}}>⚡ LIGHTNING ROUND</span>

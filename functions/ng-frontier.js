@@ -24,7 +24,7 @@ exports.handler=async(event)=>{
       sb.from('ng_learner_profile').select('*').eq('user_id',UID).single(),
       sb.from('ng_scaffolds')
         .select('id,base_portuguese,base_english,stages,current_stage,phase,category,context,source,last_practiced,created_at')
-        .eq('user_id',UID),
+        .eq('user_id',UID).order('created_at').limit(2000),
       sb.from('ng_scaffold_events')
         .select('scaffold_id,stage,mode,quality,created_at')
         .eq('user_id',UID)
@@ -420,16 +420,24 @@ exports.handler=async(event)=>{
           if(controlled.has(key))continue
           gBank.push({scaffold_id:sc.id,base:sc.base_portuguese,stage:st.stage||1,pt:st.pt,en:st.en||'',context:sc.context,category:sc.category,source:sc.source,phase:sc.phase||1,practice_count:0})
         }
+        // The road: curriculum order = unit sort order, then position within the
+        // unit. Unmapped (inbox-only/orphan) bricks fall after the curriculum.
+        const orderOf={};let roadPos=0
+        const roadUnits=[...(unitsLite||[])].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+        for(const u of roadUnits)for(const sid of(u.scaffold_ids||[]))if(!(sid in orderOf))orderOf[sid]=roadPos++
         const guided=CORE.composeGuidedDeck({
-          due:reviewQueue,frontier,bankPool:gBank,units:unitsLite||[],dial
+          due:reviewQueue,frontier,bankPool:gBank,units:unitsLite||[],dial,orderOf
         })
+        // Up Next: the next incomplete spine unit after today's room.
+        const nextUnit=roadUnits.find(u=>!u.is_side_quest&&!u.completed_at&&u.unit_id!==guided.room?.unit_id)
         return{statusCode:200,headers:{'Content-Type':'application/json'},
           body:JSON.stringify({
             deck,frontier:withRung(guided.items),review:withRung(reviewQueue.slice(0,8)),
             review_count:reviewQueue.length,all_categories:allCategories,
             total_controlled:controlled.size,phase:profile?.phase||1,atom_weights:profile?.atom_weights||{},streak:profile?.streak||{},
             why:guided.why,room:guided.room,kept_count:guided.kept_count,new_count:guided.new_count,guide_dial:guided.dial,
-            parked_count:guided.parked_count||0,parked:guided.parked||[]
+            parked_count:guided.parked_count||0,parked:guided.parked||[],
+            next_unit:nextUnit?{unit_id:nextUnit.unit_id,title:nextUnit.title}:null
           })}
       }
       return{statusCode:200,headers:{'Content-Type':'application/json'},

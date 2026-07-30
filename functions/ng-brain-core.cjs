@@ -141,9 +141,14 @@ function composeWhy({dueCount=0,newCount=0,roomTitle=null,victorNew=0}={}){
 // Assemble the guided deck (pure part). Caller supplies the pools; this orders them.
 // Order: keep floor (overdue first) → new bricks (clustered, from the room first) → fading fill.
 // The Phase 1 client turns this into the session arc; the deck just guarantees composition.
-function composeGuidedDeck({due=[],frontier=[],bankPool=[],units=[],dial}={}){
+function composeGuidedDeck({due=[],frontier=[],bankPool=[],units=[],dial,orderOf}={}){
   const d=dial||defaultDial()
   const newCount=newValve({dueCount:due.length,dial:d})
+  // Curriculum order: fresh material follows the road, not database order.
+  // orderOf maps scaffold_id -> position on the road; unmapped ids sort last
+  // (stable, so with no map this is a no-op).
+  const ord=orderOf||{}
+  const byRoad=(a,b)=>((ord[a.scaffold_id]??Infinity)-(ord[b.scaffold_id]??Infinity))
   // Leeches are parked: excluded from fill (due reviews still honor the clock).
   const parked=frontier.filter(f=>f.isLeech)
   frontier=frontier.filter(f=>!f.isLeech)
@@ -151,13 +156,15 @@ function composeGuidedDeck({due=[],frontier=[],bankPool=[],units=[],dial}={}){
   const roomIds=new Set(room&&Array.isArray(room.scaffold_ids)?room.scaffold_ids:[])
   const inDeck=new Set(due.map(x=>x.scaffold_id+'|'+x.stage))
   const unmet=frontier.filter(f=>f.practice_count===0&&!inDeck.has(f.scaffold_id+'|'+f.stage))
-  const fromRoom=unmet.filter(f=>roomIds.has(f.scaffold_id))
-  const elsewhere=unmet.filter(f=>!roomIds.has(f.scaffold_id))
+  const fromRoom=unmet.filter(f=>roomIds.has(f.scaffold_id)).sort(byRoad)
+  const elsewhere=unmet.filter(f=>!roomIds.has(f.scaffold_id)).sort(byRoad)
   const newItems=[...fromRoom,...elsewhere].slice(0,newCount).map(x=>({...x,isNew:true}))
   newItems.forEach(x=>inDeck.add(x.scaffold_id+'|'+x.stage))
   const fading=frontier.filter(f=>f.practice_count>0&&!inDeck.has(f.scaffold_id+'|'+f.stage))
   fading.forEach(x=>inDeck.add(x.scaffold_id+'|'+x.stage))
-  const spare=bankPool.filter(b=>!inDeck.has(b.scaffold_id+'|'+b.stage))
+  // Spare fill runs past the new valve by design (long sessions never starve) —
+  // but it's flagged, so the UI can call it what it is: bonus territory.
+  const spare=bankPool.filter(b=>!inDeck.has(b.scaffold_id+'|'+b.stage)).sort(byRoad).map(x=>({...x,isSpare:true}))
   const items=[...due,...newItems,...fading,...spare].slice(0,120)
   const victorNew=newItems.filter(x=>x.source==='victor').length
   const why=composeWhy({dueCount:due.length,newCount:newItems.length,roomTitle:room?.title||null,victorNew})
