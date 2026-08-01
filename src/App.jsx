@@ -921,8 +921,31 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
   const[loading,setLoading]=useState(true)
   const[sessionEvents,setSessionEvents]=useState([])
   const[deckPhase,setDeckPhase]=useState('pick') // pick | session
-  const[syncMsg,setSyncMsg]=useState(null) // {ok,text} — live write receipt
   const gainsRef=useRef([]) // session memory deltas → today's-gains end screen
+  // Batched write path — same dialect as Treino: buffer, flush every few reps.
+  const bufRef=useRef([])
+  const flushingRef=useRef(false)
+  const flushStudy=async()=>{
+    if(!bufRef.current.length||flushingRef.current)return
+    flushingRef.current=true
+    const events=bufRef.current.splice(0,bufRef.current.length)
+    try{
+      const r=await ngFetch('ng-session-end',{mode:'flashcard',events,duration_seconds:events.length*15})
+      if(r?.memory?.length)gainsRef.current.push(...r.memory)
+      if(r?.newly_acquired?.length)setSummary(s=>({...s,acquired:(s.acquired||0)+r.newly_acquired.length,total_controlled:r.total_controlled||s.total_controlled||0}))
+      setSummary(s=>({...s,inserted:(s.inserted||0)+(r?.events_inserted||0)}))
+    }catch(_){bufRef.current.unshift(...events)}
+    flushingRef.current=false
+  }
+  useEffect(()=>()=>{
+    if(bufRef.current.length){
+      try{
+        fetch('/.netlify/functions/ng-session-end',{method:'POST',keepalive:true,
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({mode:'flashcard',events:bufRef.current.splice(0,bufRef.current.length),duration_seconds:30})})
+      }catch(_){}
+    }
+  },[])
   const[activeDeck,setActiveDeck]=useState(null)
   const[allCats,setAllCats]=useState([])
   const[dueCount,setDueCount]=useState(0)
@@ -1083,9 +1106,10 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
         revealed:true
       })
       if(isOnline)ngFetch('ng-priority-boost',{scaffold_id:card.scaffold_id,boost_type:'failure'}).catch(()=>{})
-      if(isOnline)ngFetch('ng-session-end',{mode:'write',events:[{
-        scaffold_id:card.scaffold_id,stage:card.stage,quality:1,produced:false,mode:'write',isReview:card.isReview||false
-      }],duration_seconds:15}).catch(()=>{})
+      if(isOnline){
+        bufRef.current.push({scaffold_id:card.scaffold_id,stage:card.stage,quality:1,produced:false,mode:'write',isReview:card.isReview||false})
+        if(bufRef.current.length>=5)flushStudy()
+      }
     }
   }
 
@@ -1107,22 +1131,15 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
       }).catch(()=>{})
     }
 
-    // Log immediately, don't batch
+    // Buffer, don't fire — the engine gets everything, the session stays quiet.
     if(isOnline){
-      ngFetch('ng-session-end',{mode:'flashcard',events:[event],duration_seconds:15})
-        .then(r=>{
-          // Live receipt: proof the memory engine got it — or the exact error
-          if(r.memory_error)setSyncMsg({ok:false,text:'⚠ save failed: '+r.memory_error})
-          else if(r.memory?.length){const w=r.memory[0];gainsRef.current.push(...r.memory);setSyncMsg({ok:true,text:`🧠 ${w.skill==='recognition'?'recog':'prod'} memory ${w.before}d → ${w.after}d`})}
-          else if(r.error)setSyncMsg({ok:false,text:'⚠ '+r.error})
-          setTimeout(()=>setSyncMsg(null),2600)
-          if(r.newly_acquired?.length)setSummary(s=>({...s,acquired:(s.acquired||0)+r.newly_acquired.length,total_controlled:r.total_controlled||0}))
-          setSummary(s=>({...s,inserted:(s.inserted||0)+(r.events_inserted||0),events:newEvents.length}))
-        }).catch(()=>{})
+      bufRef.current.push(event)
+      setSummary(s=>({...s,events:newEvents.length}))
+      if(bufRef.current.length>=5)flushStudy()
     }
 
     if(idx>=frontier.length-1){
-      setDone(true);SFX.complete()
+      flushStudy();setDone(true);SFX.complete()
       if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
     }else{
       setIdx(i=>i+1)
@@ -1138,7 +1155,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
     setWriteAnswer('')
     setWriteResult(null)
     if(sessionEvents.length===0){onBack();return}
-    setDone(true);SFX.complete()
+    flushStudy();setDone(true);SFX.complete() // early end = same honest summary, zero guilt
     if(isOnline)ngFetch('ng-frontier').then(d=>{if(d.frontier)setFrontier(d.frontier)}).catch(()=>{})
   }
 
@@ -1193,54 +1210,21 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
     <PBtn label="Back" onClick={onBack}/>
   </div>
 
-  if(done)return<div style={{padding:'48px 24px 100px',animation:'up 0.4s ease'}}>
-    <div style={{fontSize:52,textAlign:'center',marginBottom:16}}>
-      {summary.acquired>0?'🔥':'✓'}
-    </div>
-    <div style={{fontSize:24,fontWeight:800,color:TX,textAlign:'center',marginBottom:4}}>
-      {summary.acquired>0?`${summary.acquired} stage${summary.acquired!==1?'s':''} acquired!`:'Session logged'}
-    </div>
-    <div style={{fontSize:13,color:MU,textAlign:'center',marginBottom:24}}>
-      {summary.events||0} patterns practiced · {summary.inserted||0} logged · {summary.total_controlled||0} controlled
-    </div>
-
-    {summary.acquired===0&&<div style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'18px',marginBottom:20}}>
-      <div style={{fontSize:13,fontWeight:600,color:TX,marginBottom:8}}>Progress recorded ✓</div>
-      <div style={{fontSize:13,color:MU,lineHeight:1.7,marginBottom:12}}>
-        A stage is acquired after 3 sessions with quality ≥ 3. You're building up.
-      </div>
-      <div style={{fontSize:13,color:AC,lineHeight:1.7}}>
-        → Practice these same patterns in Luna or Phrase to acquire them faster.
-      </div>
-    </div>}
-
-    {summary.acquired>0&&<div style={{background:`${GR}12`,border:`1px solid ${GR}33`,borderRadius:16,padding:'18px',marginBottom:20}}>
-      <div style={{fontSize:13,color:GR,lineHeight:1.7}}>
-        {summary.acquired} scaffold stage{summary.acquired!==1?'s':''} acquired and moved to the next level. Your frontier has updated.
-      </div>
-    </div>}
-
-    {gainsRef.current.length>0&&(()=>{
-      const g=gainsRef.current
-      const total=g.reduce((s,w)=>s+Math.max(0,(w.after||0)-(w.before||0)),0)
-      const uniq=[...new Set(g.map(w=>w.scaffold_id))].length
-      const top=[...g].sort((a,b)=>(b.after-b.before)-(a.after-a.before)).slice(0,3)
-      return<div style={{background:'#0a1a11',border:`1px solid ${AC}33`,borderRadius:18,padding:'18px',marginBottom:16}}>
-        <div style={{fontSize:10,color:GD,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>✦ Ganhos de hoje</div>
-        <div style={{display:'flex',gap:18,marginBottom:12}}>
-          <div><div style={{fontSize:24,fontWeight:900,color:AC,fontFamily:FONTD}}>{uniq}</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>PATTERNS</div></div>
-          <div><div style={{fontSize:24,fontWeight:900,color:GR,fontFamily:FONTD}}>+{Math.round(total*10)/10}d</div><div style={{fontSize:9,color:MU,letterSpacing:1}}>MEMORY</div></div>
-        </div>
-        {top.map((w,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderTop:`1px solid ${BD}`}}>
-          <span style={{fontSize:10,color:MU,flex:1}}>{w.scaffold_id} · s{w.stage} · {w.skill==='recognition'?'recog':'prod'}</span>
-          <span style={{fontSize:11,fontWeight:700,color:GR}}>{w.before}d → {w.after}d</span>
-        </div>)}
-      </div>
-    })()}
-    <PBtn label="Back to home" onClick={onBack}/>
-    <div style={{height:10}}/>
-    <GBtn label="Another deck" onClick={()=>setDeckPhase('pick')}/>
-  </div>
+  if(done){
+    // One chip per pattern, human phrase, strongest gain kept.
+    const ptOf={};for(const f of frontier)ptOf[f.scaffold_id]=f.base||f.pt
+    const byId={}
+    for(const w of gainsRef.current){
+      const d=Math.max(0,(w.after||0)-(w.before||0))
+      if(!byId[w.scaffold_id]||d>byId[w.scaffold_id]._d)byId[w.scaffold_id]={pt:ptOf[w.scaffold_id]||w.scaffold_id,delta:`+${Math.round(d*10)/10}d`,_d:d}
+    }
+    return<SessionSummary emoji={summary.acquired>0?'🔥':'✓'}
+      title={summary.acquired>0?'Stages leveled up':'Deck done'}
+      sub={`${summary.events||sessionEvents.length} patterns practiced`}
+      chips={Object.values(byId)} acquired={summary.acquired||0}
+      primary={{label:'Another deck →',onClick:()=>{SFX.tap();setDeckPhase('pick')}}}
+      secondary={{label:'Back to Home',onClick:onBack}}/>
+  }
 
   // Find previous stage for anchor display
   const prevStage=card.stage>1?{pt:`Stage ${card.stage-1} ✓`}:null
@@ -1254,7 +1238,6 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
     </div>
 
     {/* Live write receipt — memory engine proof per rep */}
-    {syncMsg&&<div style={{position:'fixed',bottom:96,left:'50%',transform:'translateX(-50%)',zIndex:80,background:syncMsg.ok?'#12261f':'#2a1416',border:`1px solid ${syncMsg.ok?GR+'55':RE+'55'}`,borderRadius:20,padding:'7px 14px',fontSize:11.5,fontWeight:600,color:syncMsg.ok?GR:RE,animation:'up 0.25s ease',whiteSpace:'nowrap'}}>{syncMsg.text}</div>}
 
     {/* Live coach hint — the brain watching in real time */}
     {coachHint&&<div style={{background:`${GR}0d`,border:`1px solid ${GR}33`,borderRadius:12,padding:'10px 13px',marginBottom:14,display:'flex',gap:10,alignItems:'flex-start',animation:'up 0.3s ease'}}>
@@ -1531,14 +1514,12 @@ Return JSON:
     <GBtn label="Retry" onClick={loadAndGenerate}/>
   </div>
 
-  if(phase==='done')return<div style={{padding:'48px 24px',textAlign:'center',animation:'up 0.4s ease'}}>
-    <div style={{fontSize:40,marginBottom:16}}>{sessionEvents.filter(e=>e.produced).length>=2?'🔥':'💪'}</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,marginBottom:4}}>Session done</div>
-    <div style={{fontSize:13,color:MU,marginBottom:24}}>{sessionEvents.length} scenarios · {sessionEvents.filter(e=>e.produced).length} target patterns used</div>
-    <PBtn label="Another session" onClick={()=>{setRoundNum(0);setSessionEvents([]);loadAndGenerate()}}/>
-    <div style={{height:12}}/>
-    <GBtn label="Back to home" onClick={onBack}/>
-  </div>
+  if(phase==='done')return<SessionSummary
+    emoji={sessionEvents.filter(e=>e.produced).length>=2?'🔥':'💪'}
+    title='Scenes done'
+    sub={`${sessionEvents.length} scenario${sessionEvents.length!==1?'s':''} · ${sessionEvents.filter(e=>e.produced).length} target pattern${sessionEvents.filter(e=>e.produced).length!==1?'s':''} used`}
+    primary={{label:'Another round →',onClick:()=>{setRoundNum(0);setSessionEvents([]);loadAndGenerate()}}}
+    secondary={{label:'Back to Home',onClick:onBack}}/>
 
   return<div style={{padding:'52px 20px 100px',animation:'up 0.35s ease'}}>
     <div style={{display:'flex',alignItems:'center',marginBottom:24}}>
@@ -1704,9 +1685,6 @@ function NGScaffoldMap({isOnline,onBack}){
     {/* Header */}
     {unlockScaffold&&<ScaffoldUnlockAnimation scaffold={unlockScaffold} onComplete={()=>setUnlockScaffold(null)}/>}
 
-    {/* Semantics legend — ✓ is history, rings are now */}
-    <div style={{padding:'0 20px',marginBottom:10,fontSize:10,color:MU,opacity:0.75,lineHeight:1.5}}>✓ = acquired (historical) · trilha rings & constellation glow = memory strength <i>now</i> — they can fade; that's honesty, not a bug.</div>
-
     {/* Suggestion inbox — collapsed by default. The map is YOUR map;
         pending suggestions wait quietly behind a badge until you open them. */}
     {pendSugs.length>0&&<div style={{padding:'0 20px',marginBottom:18}}>
@@ -1756,7 +1734,6 @@ function NGScaffoldMap({isOnline,onBack}){
           <div style={{fontSize:12,color:MU,lineHeight:1.7}}>The constellation lights up from the memory engine and knowledge graph.<br/>Open <b>Intel</b> and tap <b style={{color:AC}}>✦ V2 Setup</b> once — it backfills your whole history.</div>
         </div>
         :<div style={{textAlign:'center',padding:'60px 20px'}}><Spinner size={20}/><div style={{fontSize:12,color:MU,marginTop:12}}>Mapping the constellation…</div></div>}
-      <div style={{fontSize:10,color:MU,opacity:0.6,textAlign:'center',marginTop:10}}>Brightness = memory strength · threads = relationships · tap ⊞ for grid</div>
     </div>}
 
     {/* Selected scaffold — fixed overlay popup */}
@@ -2544,10 +2521,15 @@ const SFX=(()=>{
 // Flow-first: the guided deck is fetched BEFORE it's wanted, so opening a
 // session starts in motion instead of a spinner. 3-minute freshness window.
 let GUIDED_PREFETCH=null
-const prefetchGuided=()=>{
+const prefetchGuided=(onReady)=>{
   ngFetch('ng-frontier',{deck:'guided'})
-    .then(d=>{if(d&&Array.isArray(d.frontier))GUIDED_PREFETCH={data:d,ts:Date.now()}})
+    .then(d=>{if(d&&Array.isArray(d.frontier)){GUIDED_PREFETCH={data:d,ts:Date.now()};onReady&&onReady(d)}})
     .catch(()=>{})
+}
+// Read without consuming — Home shows today's plan from the same fetch the session will use.
+const peekGuidedPrefetch=()=>{
+  const p=GUIDED_PREFETCH
+  return(p&&Date.now()-p.ts<180000)?p.data:null
 }
 const takeGuidedPrefetch=()=>{
   const p=GUIDED_PREFETCH
@@ -2722,6 +2704,27 @@ function Confetti(){
       background:cols[i%cols.length],
       animation:`confettiFall ${2+(i%5)*0.4}s ${(i%7)*0.15}s ease-in forwards`
     }}/>)}
+  </div>
+}
+
+// ── SessionSummary — the one shared ending. ──────────────────────────
+// Every mode closes through the same door: what moved, what leveled up,
+// where the road goes next. No averages, no audit numbers, no guilt.
+function SessionSummary({emoji='🏁',title='Set complete',sub,chips=[],acquired=0,roadNext,primary,secondary}){
+  return<div style={{padding:'64px 24px 100px',textAlign:'center',animation:'up 0.4s ease'}}>
+    <div style={{fontSize:46}}>{emoji}</div>
+    <div style={{fontSize:24,fontWeight:900,color:TX,fontFamily:FONTD,margin:'12px 0 6px'}}>{title}</div>
+    {sub&&<div style={{fontSize:13.5,color:MU,marginBottom:20}}>{sub}</div>}
+    {acquired>0&&<div style={{margin:'0 0 16px',display:'inline-block',background:`${GR}14`,border:`1px solid ${GR}44`,borderRadius:14,padding:'8px 16px',fontSize:13.5,fontWeight:700,color:GR}}>▲ {acquired} stage{acquired!==1?'s':''} leveled up</div>}
+    {chips.length>0&&<div style={{marginBottom:20}}>
+      <div style={{fontSize:10,color:MU,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:10,opacity:0.7}}>What moved</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:7,justifyContent:'center',maxHeight:190,overflowY:'auto'}}>
+        {chips.map((c,i)=><span key={i} style={{background:S,border:`1px solid ${GR}33`,borderRadius:12,padding:'7px 13px',fontSize:13,color:TX}}>{c.pt}<span style={{color:GR,fontWeight:700,marginLeft:6,fontSize:11}}>{c.delta||'↑'}</span></span>)}
+      </div>
+    </div>}
+    {roadNext&&<div style={{fontSize:13,color:MU,marginBottom:24}}>Next on the road: <b style={{color:TX}}>{roadNext}</b></div>}
+    {primary&&<PBtn label={primary.label} onClick={primary.onClick}/>}
+    {secondary&&<><div style={{height:10}}/><GBtn label={secondary.label} onClick={secondary.onClick}/></>}
   </div>
 }
 
@@ -3869,8 +3872,8 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const placementRef=useRef(false)
   const placeResults=useRef([])
   const[placeOut,setPlaceOut]=useState(null)
-  const[mins,setMins]=useState(10)
-  const[left,setLeft]=useState(0)
+  const[left,setLeft]=useState(0)  // placement countdown
+  const[elapsed,setElapsed]=useState(0) // quiet clock — informational, never a governor
   const[queue,setQueue]=useState([])
   const[qi,setQi]=useState(0)
   const[atom,setAtom]=useState(null) // {type,...state}
@@ -3878,22 +3881,50 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const[gains,setGains]=useState([])
   const[flash,setFlash]=useState(null) // 'pop' | 'shake' — verdict motion
   const bandRef=useRef({n:0,ok:0}) // session success band — the governor's evidence
-  const timeUpRef=useRef(false)
+  const timeUpRef=useRef(false) // placement only
   const[speed,setSpeed]=useState(null) // {items,idx,streak,best,deadline}
   const speedRef=useRef(false)
+  const speedDoneRef=useRef(false) // the closer runs once per set
   const endAtRef=useRef(0)
   const atomStartRef=useRef(0)
+  const setStartRef=useRef(0)
   const tickRef=useRef(null)
   const startedRef=useRef(false)
+  // ── Batched write path: ONE dialect. Events buffer here and flush every
+  // few reps + at the end — not one network call per answer.
+  const bufRef=useRef([])
+  const bufSecsRef=useRef(0)
+  const ptMapRef=useRef({})
+  const flushingRef=useRef(false)
+  const flush=async()=>{
+    if(!bufRef.current.length||flushingRef.current)return
+    flushingRef.current=true
+    const events=bufRef.current.splice(0,bufRef.current.length)
+    const secs=Math.max(events.length*3,bufSecsRef.current);bufSecsRef.current=0
+    try{
+      const r=await ngFetch('ng-session-end',{mode:'daily',events,duration_seconds:secs})
+      if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:ptMapRef.current[m.scaffold_id+'|'+m.stage]||m.scaffold_id}))])
+    }catch(_){bufRef.current.unshift(...events)} // failed flush: keep events for the next try
+    flushingRef.current=false
+  }
   useEffect(()=>{
-    // FLOW FIRST: no placement gate, no minute-picking toll booth. The session
-    // starts the moment you arrive (10 min default — the timer chip extends it).
+    // FLOW FIRST: no placement gate, no toll booth. The set starts on arrival.
     if(startedRef.current)return
     startedRef.current=true
-    start(seedUnit?8:10,seedUnit)
+    start(seedUnit)
   },[])
 
-  useEffect(()=>()=>{if(tickRef.current)clearInterval(tickRef.current)},[])
+  useEffect(()=>()=>{
+    if(tickRef.current)clearInterval(tickRef.current)
+    // Leaving mid-set: the buffered reps still land (keepalive survives unmount).
+    if(bufRef.current.length){
+      try{
+        fetch('/.netlify/functions/ng-session-end',{method:'POST',keepalive:true,
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({mode:'daily',events:bufRef.current.splice(0,bufRef.current.length),duration_seconds:Math.max(10,bufSecsRef.current)})})
+      }catch(_){}
+    }
+  },[])
 
   const startPlacement=async()=>{
     setStage('load')
@@ -3918,14 +3949,11 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
   const[nextUnit,setNextUnit]=useState(null) // the road continues: next spine world
   const[roadOpen,setRoadOpen]=useState(false)
   const refetchingRef=useRef(false)
-  const start=async(m,unitId)=>{
-    setMins(m);setStage('load')
+  const start=async(unitId)=>{
+    setStage('load')
     try{
       // GUIDED DECK (Calçadão): one fetch — keep floor + new valve + room, with
       // the why-line. Unit/grammar seeds keep their dedicated decks.
-      // (The old separate {deck:'due'} fetch was vestigial — ng-frontier has no
-      // 'due' branch, so it always returned an empty frontier; reviews arrive
-      // inside the session/guided deck itself, already flagged isReview.)
       const prefetched=(!unitId&&!seedDeck)?takeGuidedPrefetch():null
       const def=prefetched||await(
         unitId?ngFetch('ng-frontier',{deck:'unit',unit_id:unitId})
@@ -3947,7 +3975,14 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         if(rest.length)mixed.push(rest.shift())
         if(gram.length)mixed.push(gram.shift())
       }
-      let q=[...dueItems.slice(0,14),...mixed].slice(0,40)
+      // ═══ THE SET — work-shaped, not time-shaped. One set = today's real
+      // work: due reviews + valve-fresh + fading, capped at 16 bricks. It
+      // ends when the work is done; finishing early is winning. Spare
+      // (beyond-valve) bricks enter ONLY as a bonus set when nothing real
+      // is on the table. No clock decides anything here.
+      const real=mixed.filter(x=>!x.isSpare)
+      let q=[...dueItems.slice(0,14),...real].slice(0,16)
+      if(!q.length)q=mixed.slice(0,10) // caught-up day: a small bonus set, honestly labeled
       // ARC — open hot: the first two reps are easy wins (low rung), so the
       // session starts with motion and confidence, not a wall.
       const arcWarm=[],arcRest=[]
@@ -3959,13 +3994,12 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       setQueue(q);setQi(0)
       setStats({done:0,qsum:0,byType:{}});setGains([])
       timeUpRef.current=false
-      endAtRef.current=Date.now()+m*60000
-      setLeft(m*60)
+      speedDoneRef.current=false
+      setStartRef.current=Date.now()
+      setElapsed(0)
+      if(tickRef.current)clearInterval(tickRef.current)
       tickRef.current=setInterval(()=>{
-        const s=Math.max(0,Math.round((endAtRef.current-Date.now())/1000))
-        setLeft(s)
-        if(s<=75&&!speedRef.current&&m>=10){speedRef.current=true} // finale armed
-        if(s<=0){timeUpRef.current=true;clearInterval(tickRef.current)}
+        setElapsed(Math.round((Date.now()-setStartRef.current)/1000))
       },1000)
       buildAtom(q[0],0)
       setStage('run')
@@ -4115,13 +4149,12 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     setTimeout(()=>setFlash(null),450)
     if(quality>=4)SFX.tap()
     if(!isOnline)return
-    try{
-      const r=await ngFetch('ng-session-end',{mode:'daily',
-        events:[{scaffold_id:item.scaffold_id,stage:item.stage,quality,
-          mode:(atomType==='intro'||atomType==='flip'||atomType==='recog'||atomType==='speed'||atomType==='escuta_audio')?'flashcard':atomType==='constructor'?'write':atomType}],
-        duration_seconds:secs})
-      if(r?.memory?.length)setGains(g=>[...g,...r.memory.map(m=>({...m,pt:item.pt}))])
-    }catch(_){}
+    // Buffer, don't fire: the write path stays ONE, the network calls become few.
+    ptMapRef.current[item.scaffold_id+'|'+item.stage]=item.pt
+    bufRef.current.push({scaffold_id:item.scaffold_id,stage:item.stage,quality,
+      mode:(atomType==='intro'||atomType==='flip'||atomType==='recog'||atomType==='speed'||atomType==='escuta_audio')?'flashcard':atomType==='constructor'?'write':atomType})
+    bufSecsRef.current+=secs
+    if(bufRef.current.length>=5)flush()
   }
 
   const advance=()=>{
@@ -4143,37 +4176,14 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
         }
         finish();return
       }
-      // THE TIMER IS THE ONLY CAP. First try to pull a FRESH deck from the
-      // server (new material — reviews that just came due, unseen frontier);
-      // only if that's empty do we reshuffle what we have. Never end on time left.
-      if(isOnline&&!refetchingRef.current){
-        refetchingRef.current=true
-        // Guided refetch keeps the governors live mid-session (catches newly-due
-        // reviews, respects the valve); seeded modes keep their original behavior.
-        ngFetch('ng-frontier',{deck:(seedUnit||seedDeck)?'session':'guided'}).then(d=>{
-          refetchingRef.current=false
-          const seen=new Set(queue.map(x=>x.scaffold_id+'|'+x.stage))
-          const incoming=(d?.frontier||[]).filter(x=>!seen.has(x.scaffold_id+'|'+x.stage))
-          const add=incoming.length?incoming:shuffleArr(queue.map(x=>({...x,_requeued:false})))
-          if(add.length){
-            setQueue(prev=>[...prev,...add])
-            const ni=qi+1;setQi(ni);buildAtom(add[0],ni)
-          }else finish()
-        }).catch(()=>{
-          refetchingRef.current=false
-          const fresh=shuffleArr(queue.map(x=>({...x,_requeued:false})))
-          if(fresh.length){setQueue(prev=>[...prev,...fresh]);const ni=qi+1;setQi(ni);buildAtom(fresh[0],ni)}else finish()
-        })
-        return
+      // ═ THE SET IS DONE. No refetch, no reshuffle, no manufactured filler —
+      // the work was the work. Close on fire: one bounded lightning pass over
+      // today's bricks (peak-end), then the summary. ═
+      if(!speedDoneRef.current){
+        const pool=queue.filter(x=>x.pt&&x.en).sort(()=>Math.random()-0.5).slice(0,8)
+        if(pool.length>=4){speedDoneRef.current=true;startSpeedItem(pool,0,0,0);return}
       }
-      const fresh=shuffleArr(queue.map(x=>({...x,_requeued:false})))
-      if(fresh.length){setQueue(prev=>[...prev,...fresh]);const ni=qi+1;setQi(ni);buildAtom(fresh[0],ni);return}
       finish();return
-    }
-    if(speedRef.current&&!speed&&!placementRef.current){
-      // ═ A10 SPEED ROUND — peak-end rule: close on fire ═
-      const pool=queue.filter(x=>x.pt&&x.en).sort(()=>Math.random()-0.5)
-      if(pool.length>=4){startSpeedItem(pool,0,0,0);return}
     }
     const ni=qi+1;setQi(ni);buildAtom(queue[ni],ni)
   }
@@ -4181,8 +4191,9 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     atomStartRef.current=Date.now()
     if(timeUpRef.current){finish();return}
     let pool=poolIn,idx=idxIn
-    if(idx>=pool.length){ // timer still alive — recycle the speed pool, keep the streak
-      pool=shuffleArr(pool);idx=0
+    if(idx>=pool.length){
+      if(!placementRef.current){finish();return} // set closer: one pass, then the summary
+      pool=shuffleArr(pool);idx=0 // placement recycles until its clock dies
     }
     const it=pool[idx]
     const wrongs=pool.filter(x=>x!==it&&x.pt!==it.pt).map(x=>x.pt)
@@ -4209,6 +4220,11 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       setPlaceOut(out);SFX.complete();setStage('placed')
       return
     }
+    if(tickRef.current)clearInterval(tickRef.current)
+    // Wait out any in-flight flush, then land the tail — the summary reads it live.
+    let guard=0
+    while(flushingRef.current&&guard++<25)await new Promise(r=>setTimeout(r,120))
+    await flush()
     SFX.complete();setStage('done')
   }
   const mmss=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
@@ -4220,62 +4236,58 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
     <div style={{fontSize:40,marginBottom:12}}>🌴</div>
     <div style={{fontSize:16,fontWeight:700,color:TX,marginBottom:6}}>Nothing to train right now</div>
     <div style={{fontSize:12,color:MU,lineHeight:1.7,marginBottom:20}}>The deck came back empty — that usually means you're offline or the bank is still planting. Try again in a moment.</div>
-    <PBtn label="Try again" onClick={()=>{SFX.tap();start(10)}}/>
+    <PBtn label="Try again" onClick={()=>{SFX.tap();start(seedUnit)}}/>
     <div style={{marginTop:10}}><GBtn label="Back to Home" onClick={onBack}/></div>
   </div>
 
   if(stage==='load')return<div style={{padding:'120px 20px',textAlign:'center'}}><Spinner size={22}/><div style={{fontSize:12,color:MU,marginTop:14}}>Building your session…</div></div>
 
   if(stage==='done'){
-    const avg=stats.done?Math.round(stats.qsum/stats.done*10)/10:0
-    return<div style={{padding:'56px 20px 100px',animation:'up 0.4s ease',textAlign:'center'}}>
-    <div style={{fontSize:44}}>🏁</div>
-    <div style={{fontSize:22,fontWeight:800,color:TX,fontFamily:FONTD,margin:'10px 0 4px'}}>Session complete</div>
-    <div style={{fontSize:12.5,color:MU,marginBottom:20}}>{mins} min · {stats.done} reps · avg quality {avg}</div>
-    {gains.length>0&&(()=>{
-      // Dedupe by phrase — one row per pattern, strongest gain kept. Show ALL, scroll if long.
-      const byPhrase={}
-      for(const g of gains){
-        const k=g.pt||g.scaffold_id||JSON.stringify(g)
-        const d=typeof g.delta==='number'?g.delta:parseFloat(g.delta)||0
-        if(!byPhrase[k]||d>byPhrase[k]._d)byPhrase[k]={...g,_d:d}
-      }
-      const rows=Object.values(byPhrase)
-      return<div style={{textAlign:'left',background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px 16px',marginBottom:16}}>
-        <div style={{fontSize:9,color:GD,fontWeight:800,letterSpacing:2,marginBottom:8,display:'flex',justifyContent:'space-between'}}>
-          <span>MEMORY GAINS</span><span style={{color:GR}}>{rows.length} patterns</span>
-        </div>
-        <div style={{maxHeight:280,overflowY:'auto'}}>
-        {rows.map((g,i)=><div key={i} style={{fontSize:11.5,color:TX,padding:'3px 0',display:'flex',justifyContent:'space-between',gap:8}}>
-          <span style={{maxWidth:'72%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.pt}</span>
-          <span style={{color:GR,fontWeight:700,flexShrink:0}}>{g.delta||'↑'}</span>
-        </div>)}
-        </div>
-      </div>
-    })()}
-    <PBtn label={onDone?"Continue to the Scene →":"Back to Home"} onClick={onDone||onBack}/>
-  </div>}
+    // Dedupe by phrase — one chip per pattern, strongest gain kept.
+    const byPhrase={}
+    for(const g of gains){
+      const k=g.pt||g.scaffold_id||JSON.stringify(g)
+      const d=typeof g.delta==='number'?g.delta:parseFloat(g.delta)||0
+      if(!byPhrase[k]||d>byPhrase[k]._d)byPhrase[k]={...g,_d:d}
+    }
+    const em=Math.max(1,Math.round(elapsed/60))
+    const guided=!seedUnit&&!seedDeck
+    const again=()=>{SFX.tap();setGains([]);bandRef.current={n:0,ok:0};start(seedUnit)}
+    return<SessionSummary emoji='🏁' title='Set complete'
+      sub={`${stats.done} brick${stats.done!==1?'s':''} · ${em} min`}
+      chips={Object.values(byPhrase)} roadNext={guided?nextUnit:null}
+      primary={onDone?{label:'Continue to the Scene →',onClick:onDone}
+        :guided?{label:'Another set →',onClick:again}
+        :{label:'Back to Home',onClick:onBack}}
+      secondary={(onDone||!guided)?null:{label:'Done for now',onClick:onBack}}/>
+  }
 
   // ═══ RUN ═══
   return<div style={{padding:'20px 20px 100px',animation:'up 0.3s ease'}}>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:why?6:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:why?8:14}}>
       <button onClick={finish} style={{background:'none',border:'none',color:MU,fontSize:12,cursor:'pointer',fontFamily:FONT,padding:0}}>end</button>
-      <button onClick={()=>{endAtRef.current+=5*60000;setMins(m=>m+5);setLeft(l=>l+300);SFX.tap()}} title="+5 min" style={{background:left<=60?`${RE}18`:S,border:`1px solid ${left<=60?RE+'66':BD}`,borderRadius:20,padding:'6px 14px',fontSize:13,fontWeight:800,color:left<=60?RE:AC,fontVariantNumeric:'tabular-nums',cursor:'pointer',fontFamily:FONT}}>⏱ {mmss(left)} +</button>
-      <div style={{fontSize:11,color:MU}}>{qi+1}/{queue.length}</div>
+      {placementRef.current
+        ?<span style={{fontSize:13,fontWeight:800,color:left<=60?RE:AC,fontVariantNumeric:'tabular-nums'}}>⏱ {mmss(left)}</span>
+        :<span style={{fontSize:11.5,color:MU,opacity:0.7,fontVariantNumeric:'tabular-nums'}}>{mmss(elapsed)}</span>}
+      <span style={{fontSize:12.5,color:TX,fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{Math.min(qi+1,queue.length)}<span style={{color:MU,fontWeight:400}}> / {queue.length}</span></span>
     </div>
-    {/* The why-line: the guide explains today's session in one plain sentence. */}
-    {why&&!speed&&<div style={{fontSize:11.5,color:MU,lineHeight:1.5,marginBottom:6}}>{why}{nextUnit?<span style={{opacity:0.8}}> Then the road continues into <b style={{color:TX,fontWeight:600}}>{nextUnit}</b>.</span>:null}</div>}
-    {/* Up Next — the visible road: what the guide has queued after this brick. */}
-    {why&&!speed&&queue.length>qi+1&&<div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap',marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${BD}`}}>
-      <span style={{fontSize:8.5,color:MU,fontWeight:800,letterSpacing:1.5,opacity:0.7}}>UP NEXT</span>
-      {queue.slice(qi+1,qi+1+(roadOpen?9:3)).map((it,k)=>{
+    {/* The set bar — how much of today's work is behind you. */}
+    {!speed&&<div style={{height:3,background:BD,borderRadius:3,overflow:'hidden',marginBottom:why?10:14}}>
+      <div style={{height:'100%',width:`${queue.length?Math.min(100,qi/queue.length*100):0}%`,background:`linear-gradient(90deg,${GR},${AC})`,borderRadius:3,transition:'width 0.4s ease'}}/>
+    </div>}
+    {/* The why-line: one sentence. The full road unfolds on tap, not by default. */}
+    {why&&!speed&&<div onClick={()=>setRoadOpen(o=>!o)} style={{fontSize:12,color:MU,lineHeight:1.55,marginBottom:roadOpen?6:14,cursor:'pointer'}}>
+      {why}{nextUnit?<span style={{opacity:0.8}}> Then <b style={{color:TX,fontWeight:600}}>{nextUnit}</b>.</span>:null}
+      <span style={{marginLeft:6,fontSize:10,opacity:0.6}}>{roadOpen?'▾':'▸'}</span>
+    </div>}
+    {why&&!speed&&roadOpen&&queue.length>qi+1&&<div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap',marginBottom:14,animation:'up 0.2s ease'}}>
+      {queue.slice(qi+1,qi+10).map((it,k)=>{
         const tag=it.isReview?'↻':it.isNew?'★':it.isSpare?'+':'·'
         // English side only — never pre-cue the Portuguese answer of an upcoming rep.
         const raw=it.isNew?'new brick':(it.en||it.base_english||'…')
         const label=raw.length>20?raw.slice(0,19)+'…':raw
         return<span key={k} style={{fontSize:10,color:it.isReview?AC:it.isNew?GD:MU,background:S,border:`1px solid ${BD}`,borderRadius:8,padding:'3px 8px',whiteSpace:'nowrap'}}>{tag} {label}</span>
       })}
-      {queue.length>qi+4&&<button onClick={()=>setRoadOpen(o=>!o)} style={{background:'none',border:'none',color:MU,fontSize:10,cursor:'pointer',fontFamily:FONT,padding:'3px 4px',opacity:0.8}}>{roadOpen?'less':`+${queue.length-qi-1-3} more`}</button>}
     </div>}
     {speed&&<div style={{animation:'up 0.25s ease'}}>
       <div style={{textAlign:'center',marginBottom:14}}>
@@ -4640,14 +4652,18 @@ function NGHome({isOnline,go,active=true}){
   const[coachNote,setCoachNote]=useState('')
   const[phase,setPhase]=useState({n:1,name:'Survival → Social',controlled:0,due:0})
   const[currentUnit,setCurrentUnit]=useState(null)
-  const[brainLine,setBrainLine]=useState(null)
   const[loading,setLoading]=useState(true)
   const[milestone,setMilestone]=useState(null)
   const[pendCount,setPendCount]=useState(0)
+  const[plan,setPlan]=useState(null) // today's plan, from the same fetch the session will use
 
   useEffect(()=>{
     if(!active||!isOnline){setLoading(false);return}
-    prefetchGuided() // flow-first: today's session is ready before it's asked for
+    setPlan(p=>p||(peekGuidedPrefetch()?{
+      kept:peekGuidedPrefetch().kept_count||0,fresh:peekGuidedPrefetch().new_count||0,
+      room:peekGuidedPrefetch().room?.title||null,next:peekGuidedPrefetch().next_unit?.title||null}:null))
+    prefetchGuided(d=>setPlan({kept:d.kept_count||0,fresh:d.new_count||0,
+      room:d.room?.title||null,next:d.next_unit?.title||null})) // flow-first: session ready before it's asked for
     // Three light parallel reads — no frontier list, no legacy recommendation
     ngFetch('ng-frontier').then(d=>{
       setPhase({n:d.phase||1,name:d.phase_name||'Survival → Social',
@@ -4664,10 +4680,6 @@ function NGHome({isOnline,go,active=true}){
       const cur=us.find(u=>u.status==='current'||u.status==='in_progress')
       if(cur)ngFetch('ng-lesson-gen',{unit_id:cur.unit_id}).catch(()=>{})
     }).catch(()=>{})
-    if(sb)sb.from('ng_brain_log').select('process,thought,created_at')
-      .eq('user_id','00000000-0000-0000-0000-000000000001')
-      .order('created_at',{ascending:false}).limit(1)
-      .then(({data})=>{if(data?.[0])setBrainLine(data[0])})
     if(sb)sb.from('ng_milestones').select('*')
       .eq('user_id','00000000-0000-0000-0000-000000000001')
       .eq('seen',false).order('created_at').limit(1)
@@ -4679,12 +4691,14 @@ function NGHome({isOnline,go,active=true}){
     setMilestone(null)
   }
 
-  // Smart continue: due reviews → current unit → mix deck
-  const continueTarget=phase.due>=5?{label:`◌ Clear ${phase.due} reviews`,go:'ng-study'}
-    :currentUnit?{label:`▶ ${currentUnit.emoji} ${currentUnit.title}`,unit:currentUnit}
-    :{label:'🎲 Learn a bit of everything',go:'ng-study'}
-
   if(loading)return<div style={{padding:'100px 24px',textAlign:'center'}}><Spinner size={24}/></div>
+
+  // Today's plan, in one human line — from the same fetch the session will use.
+  const planLine=plan
+    ?((plan.kept||plan.fresh)
+      ?[plan.kept?`${plan.kept} to keep`:null,plan.fresh?`${plan.fresh} new${plan.room?` in ${plan.room}`:''}`:null].filter(Boolean).join(' · ')
+      :'Nothing fading — a bonus set awaits')
+    :(phase.due?`${phase.due} pattern${phase.due!==1?'s':''} at the forgetting edge`:'Your set is ready')
 
   return<div style={{padding:'0 0 100px',animation:'up 0.4s ease'}}>
     {/* Brand row — o poste */}
@@ -4700,63 +4714,42 @@ function NGHome({isOnline,go,active=true}){
       <div style={{fontSize:13,color:TX,lineHeight:1.6}}>{milestone.message||milestone.description||''}</div>
     </div>}
 
-    {/* Header: greeting + phase */}
-    <div style={{padding:'14px 20px 6px',display:'flex',alignItems:'center',gap:14}}>
-      {phase.streak>=2&&<div style={{position:'absolute',right:20,top:12,background:`${GD}12`,border:`1px solid ${GD}44`,borderRadius:14,padding:'4px 10px',fontSize:11.5,fontWeight:800,color:GD}}>🔥 {phase.streak}</div>}
-      <div style={{flex:1}}>
-        <div style={{fontSize:26,fontWeight:900,color:TX,fontFamily:FONTD}}>E aí</div>
-        <div style={{fontSize:12,color:MU,marginTop:2}}>Phase {phase.n} · {phase.name}</div>
-      </div>
-      <div style={{textAlign:'center',flexShrink:0}}>
-        <div style={{fontSize:22,fontWeight:900,color:AC,fontFamily:FONTD}}>{phase.controlled}</div>
-        <div style={{fontSize:9,color:MU,letterSpacing:1}}>CONTROLLED</div>
+    {/* Greeting — one line, no dashboard */}
+    <div style={{padding:'18px 20px 0',display:'flex',alignItems:'baseline',gap:14}}>
+      <div style={{flex:1,fontSize:28,fontWeight:900,color:TX,fontFamily:FONTD}}>E aí</div>
+      <div style={{fontSize:12,color:MU}}><b style={{color:AC,fontWeight:800}}>{phase.controlled}</b> stages yours</div>
+    </div>
+
+    {/* ═ THE DOOR — one card. The engine already decided today; you just start. ═ */}
+    <div style={{margin:'16px 20px 0'}}>
+      <div style={{background:S,border:`1px solid ${GR}44`,borderRadius:22,padding:'22px 20px 20px'}}>
+        <div style={{fontSize:10,color:GR,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10}}>Today</div>
+        <div style={{fontSize:20,fontWeight:800,color:TX,lineHeight:1.4,fontFamily:FONTD}}>{planLine}</div>
+        {plan?.next&&<div style={{fontSize:12.5,color:MU,marginTop:6}}>Then the road continues into <b style={{color:TX,fontWeight:600}}>{plan.next}</b>.</div>}
+        <button onClick={()=>{SFX.tap();go('ng-treino')}}
+          style={{width:'100%',marginTop:16,padding:'17px',background:`linear-gradient(135deg,${AC},#e6a900)`,border:'none',borderRadius:16,cursor:'pointer',fontFamily:FONT,fontSize:17,fontWeight:900,color:'#14230e'}}>▶ Start</button>
+        {currentUnit&&<div style={{display:'flex',alignItems:'center',gap:10,marginTop:14}}>
+          <div style={{flex:1,height:3,background:BD,borderRadius:3,overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${currentUnit.pct||0}%`,background:AC,borderRadius:3}}/>
+          </div>
+          <span style={{fontSize:11,color:MU}}>{currentUnit.title} · {currentUnit.pct||0}%</span>
+        </div>}
       </div>
     </div>
 
-    {/* Coach's note — from the nightly brain */}
+    {/* Coach's note — the one voice allowed to speak unprompted */}
     {coachNote&&<div onClick={()=>go&&go('ng-today')} style={{margin:'14px 20px 0',background:`${AC}0d`,border:`1px solid ${AC}33`,borderRadius:16,padding:'14px 16px',cursor:'pointer'}}>
-      <div style={{fontSize:9,color:AC,fontWeight:700,letterSpacing:2,textTransform:'uppercase',marginBottom:6}}>Coach's note · tap for today</div>
       <div style={{fontSize:13.5,color:TX,lineHeight:1.7}}>{coachNote}</div>
     </div>}
 
-    {/* CONTINUE — the one big button */}
-    <div style={{margin:'16px 20px 0'}}>
-      <button onClick={()=>{SFX.tap();go('ng-treino')}} style={{width:'100%',padding:'15px 18px',background:`${GR}14`,border:`1.5px solid ${GR}66`,borderRadius:18,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left'}}>
-        <span style={{display:'block',fontSize:10,color:GR,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>▶ Daily Training</span>
-        <span style={{display:'block',fontSize:15,color:TX,fontWeight:700}}>Opens straight into today's session</span>
-      </button>
-      <button onClick={()=>{SFX.tap();go('ng-oficina')}} style={{width:'100%',padding:'11px 18px',background:S,border:`1px solid ${BD}`,borderRadius:14,cursor:'pointer',fontFamily:FONT,marginBottom:10,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontSize:12.5,color:TX,fontWeight:600}}>🛠 Sentence Workshop</span>
-        <span style={{fontSize:10,color:MU}}>free construction · 8 sentences</span>
-      </button>
-      <button onClick={()=>{SFX.tap();if(continueTarget.unit){go&&go('__unit:'+continueTarget.unit.unit_id+':'+encodeURIComponent(continueTarget.unit.title))}else{go&&go(continueTarget.go)}}}
-        style={{width:'100%',padding:'18px',background:`linear-gradient(135deg,${AC},#e6a900)`,border:'none',borderRadius:18,cursor:'pointer',fontFamily:FONT,animation:`ringGlow ${phase.due>=8?1.6:phase.due>=4?2.2:3.2}s ease-in-out infinite`}}>
-        <span style={{display:'block',fontSize:10,color:'#16240fbb',fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:4}}>Continue</span>
-        <span style={{display:'block',fontSize:16,color:'#14230e',fontWeight:800}}>{continueTarget.label}</span>
-      </button>
-    </div>
-
-    {pendCount>0&&<div onClick={()=>go&&go('ng-map')} style={{margin:'12px 20px 0',display:'flex',alignItems:'center',gap:9,background:`${GD}0c`,border:`1px solid ${GD}44`,borderRadius:14,padding:'10px 14px',cursor:'pointer'}}>
+    {pendCount>0&&<div onClick={()=>go&&go('ng-map')} style={{margin:'14px 20px 0',display:'flex',alignItems:'center',gap:9,background:`${GD}0c`,border:`1px solid ${GD}44`,borderRadius:14,padding:'10px 14px',cursor:'pointer'}}>
       <span style={{fontSize:14}}>📥</span>
-      <span style={{flex:1,fontSize:12.5,color:TX,fontWeight:600}}>{pendCount} sugest{pendCount===1?'ão':'ões'} esperando seu veredito</span>
-      <span style={{fontSize:11,color:GD,fontWeight:700}}>revisar →</span>
+      <span style={{flex:1,fontSize:12.5,color:TX,fontWeight:600}}>{pendCount} suggestion{pendCount!==1?'s':''} waiting in your inbox</span>
+      <span style={{fontSize:11,color:GD,fontWeight:700}}>review →</span>
     </div>}
 
-    {/* Live tiles */}
+    {/* Come-sit experiences — the only two invitations */}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'14px 20px 0'}}>
-      <div onClick={()=>go&&go('ng-learn')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
-        <div style={{fontSize:20,marginBottom:6}}>⛰</div>
-        <div style={{fontSize:13,fontWeight:800,color:TX}}>Path</div>
-        <div style={{fontSize:11,color:MU,marginTop:2}}>{currentUnit?`${currentUnit.title} · ${currentUnit.pct||0}%`:'Building…'}</div>
-        {currentUnit&&<div style={{height:3,background:BD,borderRadius:3,overflow:'hidden',marginTop:8}}>
-          <div style={{height:'100%',width:`${currentUnit.pct||0}%`,background:AC,borderRadius:3}}/>
-        </div>}
-      </div>
-      <div onClick={()=>go&&go('ng-study')} style={{background:S,border:`1px solid ${phase.due?YE+'44':BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
-        <div style={{fontSize:20,marginBottom:6}}>◌</div>
-        <div style={{fontSize:13,fontWeight:800,color:TX}}>Reviews</div>
-        <div style={{fontSize:11,color:phase.due?YE:MU,marginTop:2}}>{phase.due?`${phase.due} lights blinking — Chico doubts you`:"Nothing due. Even I'm surprised ✓"}</div>
-      </div>
       <div onClick={()=>go&&go('ng-radio')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
         <div style={{fontSize:20,marginBottom:6}}>📻</div>
         <div style={{fontSize:13,fontWeight:800,color:TX}}>Rádio Carioca</div>
@@ -4768,12 +4761,6 @@ function NGHome({isOnline,go,active=true}){
         <div style={{fontSize:11,color:MU,marginTop:2}}>Come talk to me</div>
       </div>
     </div>
-
-    {/* Brain ticker */}
-    {brainLine&&<div onClick={()=>go&&go('ng-brain')} style={{margin:'14px 20px 0',display:'flex',gap:10,alignItems:'flex-start',background:S2,border:`1px solid ${BD}`,borderRadius:14,padding:'11px 14px',cursor:'pointer'}}>
-      <span style={{fontSize:13,flexShrink:0}}>🧠</span>
-      <div style={{flex:1,fontSize:11.5,color:MU,lineHeight:1.55,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{brainLine.thought}</div>
-    </div>}
   </div>
 }
 function NGFieldReport({isOnline,onBack}){
