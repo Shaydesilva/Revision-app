@@ -1,9 +1,10 @@
+const LANG=require('./lang.cjs')
 // ng-memory.js — The Memory Engine
 // FSRS-style stability/retrievability model per (scaffold, stage, skill).
 // Actions: review (update after an answer), due (list items due), backfill (bootstrap from event history), state (full memory map)
 
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 
 async function brainLog(sb,proc,thought,data=null,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process:proc,thought,data,importance})}catch(_){}
@@ -36,6 +37,7 @@ function dueDate(stabilityDays){
 }
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)

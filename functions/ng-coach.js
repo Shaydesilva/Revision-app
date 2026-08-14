@@ -1,11 +1,14 @@
+const LANG=require('./lang.cjs')
 // ng-coach.js — Live session coaching endpoint.
 // Client calls mid-session (every ~5 events). Fast analysis, returns an
 // actionable hint if intervention is warranted, logs thought to brain stream.
 
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+  const PACK=LANG.packFromEvent(event) // register law + city for this call
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
@@ -31,7 +34,7 @@ exports.handler=async(event)=>{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:150,
-        messages:[{role:'user',content:`Mid-session live coaching. A Carioca Portuguese learner in "${mode}" mode is failing ${Math.round(failRate*100)}% of the last ${recent.length} items. Failing patterns: ${failDesc||failIds.join(', ')}.
+        messages:[{role:'user',content:`Mid-session live coaching. A learner of ${PACK.label} ${PACK.language} in "${mode}" mode is failing ${Math.round(failRate*100)}% of the last ${recent.length} items. Failing patterns: ${failDesc||failIds.join(', ')}.
 Return JSON only: {"hint":"ONE short sentence shown to the learner right now — specific, direct, useful (e.g. what these failures share, or a micro-strategy)","thought":"one sentence for the brain log describing what you noticed"}`}]})
     })
     const d=await r.json()

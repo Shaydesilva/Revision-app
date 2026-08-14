@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-frontier.js — computes frontier, review queue, recommendation
 // Category rotation, hybrid eligibility, urgency engine
 // Phase 0 (Calçadão): per-brick rung derivation + the 'guided' deck (keep floor /
@@ -10,7 +11,7 @@ exports.handler=async(event)=>{
   try{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const UID='00000000-0000-0000-0000-000000000001'
+    const UID=LANG.uidFromEvent(event) // Rio or Paisa bank
     let deck=null,deckCategory=null,deckUnitId=null,deckScope=null
     try{const b=JSON.parse(event.body||'{}');deck=b.deck||null;deckCategory=b.category||null;deckUnitId=b.unit_id||null;deckScope=b.scope||null}catch(_){}
     console.log('ng-frontier: start deck=',deck)

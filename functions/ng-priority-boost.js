@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-priority-boost.js — star priority + failure boost
 // Stored in profile.priority_boosts: {scaffold_id: boost_value}
 
@@ -6,7 +7,7 @@ exports.handler=async(event)=>{
   try{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const UID='00000000-0000-0000-0000-000000000001'
+    const UID=LANG.uidFromEvent(event) // Rio or Paisa bank
     const{scaffold_id,boost_type='star',remove=false}=JSON.parse(event.body||'{}')
     if(!scaffold_id)return{statusCode:400,body:JSON.stringify({error:'No scaffold_id'})}
 

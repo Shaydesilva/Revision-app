@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-write-eval.js — production evaluation under the FEEDBACK CONSTITUTION.
 // Hierarchy: MEANING > grammar > accents. Phase-aware weights:
 //  P1-2: meaning-right GUARANTEES q>=3; grammar separates 3/4; accents only 4->5.
@@ -6,8 +7,10 @@
 // targeted at the highest failed tier only.
 const{REGISTER_LAW_GRADE:REGISTER_LAW}=require('./register-law.cjs')
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+  const PACK=LANG.packFromEvent(event) // register law + city for this call
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const{target_pt='',user_answer='',en_prompt='',scaffold_id,stage,mode='',bricks=[]}=JSON.parse(event.body||'{}')
@@ -24,17 +27,17 @@ exports.handler=async(event)=>{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:420,
-        system:`${REGISTER_LAW}
-You grade a learner's typed Portuguese under the FEEDBACK CONSTITUTION (learner phase ${phase}; weights: ${weights}).
+        system:`${PACK.lawGrade}
+You grade a learner's typed ${PACK.language} under the FEEDBACK CONSTITUTION (learner phase ${phase}; weights: ${weights}).
 Judge THREE tiers independently:
-- MEANING: would a Carioca understand the intended message? (intent match vs the target/prompt)
-- GRAMMAR: register-aware correctness. Contractions and spoken forms are CORRECT. NÓS RULE: 'nós' is this learner's first-plural; accept BOTH reduced agreement (nós vai, nós tá, nós foi) AND standard (nós vamos, nós estamos) as fully correct — never mark reduced nós as an error. 'a gente' is also acceptable, never penalize it. At phase<=2 be generous.
+- MEANING: would someone from ${PACK.city} understand the intended message? (intent match vs the target/prompt)
+- GRAMMAR: register-aware correctness, judged ONLY against the register law above — that law, not textbook grammar, defines what counts as correct here. Contractions and spoken forms are CORRECT. At phase<=2 be generous.
 - FORM: accents/spelling only. Compare ACCENT-INSENSITIVELY for meaning/grammar; accents affect ONLY the 4->5 step.
 QUALITY: meaning wrong -> max 2. meaning ok + grammar rough -> 3. + grammar clean -> 4. + form perfect -> 5.
 TIP: exactly ONE line, warm Bia voice, targeting ONLY the highest failed tier. If meaning failed, do not mention grammar or accents at all. If quality=5, tip is a specific 4-word praise.
-JSON only: {"quality":1-5,"correct":bool,"meaning_ok":bool,"grammar_ok":bool,"form_ok":bool,"feedback":"one short line","tip":"one line","carioca_correction":"the natural Carioca way to say it","what_was_right":"one specific thing they nailed"}`,
+JSON only: {"quality":1-5,"correct":bool,"meaning_ok":bool,"grammar_ok":bool,"form_ok":bool,"feedback":"one short line","tip":"one line","carioca_correction":"the natural ${PACK.label} way to say it (key name is legacy)","what_was_right":"one specific thing they nailed"}`,
         messages:[{role:'user',content:mode==='monta'
-          ?`MONTA (free build): the learner was asked to build ANY natural sentence using these bricks (any natural conjugation/inflection of them counts): ${bricks.map(b=>`"${b}"`).join(' + ')}\nThere is NO single target. Judge MEANING as: is it a sensible, natural sentence a Carioca could actually say? ADDITIONAL RULE: if a required brick (or a natural form of it) is missing, quality caps at 3 and the tip names the missing brick. carioca_correction = one natural example sentence that uses ALL the bricks.\nLEARNER TYPED: "${user_answer}"`
+          ?`MONTA (free build): the learner was asked to build ANY natural sentence using these bricks (any natural conjugation/inflection of them counts): ${bricks.map(b=>`"${b}"`).join(' + ')}\nThere is NO single target. Judge MEANING as: is it a sensible, natural sentence someone from ${PACK.city} could actually say? ADDITIONAL RULE: if a required brick (or a natural form of it) is missing, quality caps at 3 and the tip names the missing brick. carioca_correction = one natural example sentence that uses ALL the bricks.\nLEARNER TYPED: "${user_answer}"`
           :`TARGET (a valid answer): "${target_pt}"\nPROMPT SHOWN: "${en_prompt}"\nLEARNER TYPED: "${user_answer}"`}]})
     })
     const data=await res.json()

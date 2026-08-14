@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-reset.js — Full progress wipe, V2-compatible.
 // Clears: events, memory, daily brain output, radio, missions, brain log,
 // heartbeat state, intel sessions, milestones, write log, earned scaffolds
@@ -10,7 +11,7 @@ exports.handler=async(event)=>{
   try{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const UID='00000000-0000-0000-0000-000000000001'
+    const UID=LANG.uidFromEvent(event) // Rio or Paisa bank
     const{confirmed=false}=JSON.parse(event.body||'{}')
     if(!confirmed)return{statusCode:400,body:JSON.stringify({error:'Must confirm reset'})}
 

@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-suggest.js — THE UNIFIED SUGGESTION PIPELINE
 // Law: nothing enters the bank unseen. Every surface proposes here;
 // the analyzer places the phrase (base / above / below / extend existing),
@@ -7,7 +8,7 @@
 const{createClient}=require('@supabase/supabase-js')
 const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
 const INTEL=require('./ng-intel.cjs')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 async function brainLog(sb,thought,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process:'suggest',thought,importance})}catch(_){}
 }
@@ -15,6 +16,8 @@ const stageFlags=s=>({...s,acquired:false,acquired_at:null,practice_count:0,mode
 const norm=t=>(t||'').toLowerCase().replace(/[.,!?…]/g,'').replace(/\s+/g,' ').trim()
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+  const PACK=LANG.packFromEvent(event) // register law + city for this call
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
@@ -154,12 +157,12 @@ exports.handler=async(event)=>{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1100,
-        system:`${REGISTER_LAW_GENERATE}\n\nYou are the scaffold analyzer for a Carioca Portuguese learner. A phrase was tapped in the wild. Decide its place in their pattern bank.
+        system:`${PACK.lawGenerate}\n\nYou are the scaffold analyzer for a learner of ${PACK.label} ${PACK.language} (${PACK.city}). A phrase was tapped in the wild. Decide its place in their pattern bank.
 
 IRON LAW: the tapped phrase appears VERBATIM as one stage of whatever you propose. Never paraphrase it away.
 RULES:
 - The phrase is a SAMPLE from a difficulty ladder, not automatically the base. Simple phrase → it IS the base, build 1-2 harder stages above. Complex/street phrase → decompose BELOW it into simpler, complete, natural sayable utterances (semantic decomposition, never truncation), phrase sits at the top or near-top. Mid → build both directions.
-- 2-4 stages total, each a complete natural thing a Carioca actually says.
+- 2-4 stages total, each a complete natural thing someone from ${PACK.city} actually says.
 - Judge difficulty relative to THIS learner: phase ${profile?.phase||1}, ${(profile?.controlled||[]).length} controlled stages.
 - If the phrase clearly belongs as a new stage of an EXISTING pattern in the reference list, choose extend_existing instead of duplicating.
 - If it looks like a transcription mishearing, keep the verbatim as required but add a "note" with the likely intended form.

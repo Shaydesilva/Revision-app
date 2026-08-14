@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-session-end.js
 // Runs after every study/phrase/luna session
 // Logs scaffold events, checks acquisition, updates profile
@@ -14,7 +15,7 @@ exports.handler=async(event)=>{
 // changing them mid-journey invalidates every comparison the learner relies on.
 const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const UID='00000000-0000-0000-0000-000000000001'
+    const UID=LANG.uidFromEvent(event) // Rio or Paisa bank
 
 async function brainLog(sb,proc,thought,data=null,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process:proc,thought,data,importance})}catch(_){}

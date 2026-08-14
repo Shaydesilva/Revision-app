@@ -1,7 +1,25 @@
 import React,{useState,useEffect,useRef,useCallback,useMemo} from 'react'
 import{createClient}from'@supabase/supabase-js'
 
-const USER_ID='00000000-0000-0000-0000-000000000001'
+
+// ── LANGUAGE MODE ────────────────────────────────────────────────────
+// "Same hardware, different ingredients." The active mode decides which bank
+// every read and write touches. It rides on EVERY ngFetch call and every direct
+// Supabase query, so no surface can quietly end up in the wrong language.
+// Must mirror functions/lang.cjs — that file is the server-side authority.
+const LANG_MODES=[
+  {id:'pt-rio',label:'Carioca',sub:'Rio de Janeiro Portuguese',emoji:'🇧🇷',
+   uid:'00000000-0000-0000-0000-000000000001',accent:'#2ee56f',blurb:'Your original bank — 438 patterns, untouched.'},
+  {id:'es-med',label:'Paisa',sub:'Medellín Spanish',emoji:'🇨🇴',
+   uid:'00000000-0000-0000-0000-000000000002',accent:'#ffd52e',blurb:'From zero. Vos, usted, and pues.'}
+]
+let ACTIVE_LANG=(()=>{try{return localStorage.getItem('carioca_lang')||''}catch(_){return ''}})()
+const langMode=()=>LANG_MODES.find(m=>m.id===ACTIVE_LANG)||LANG_MODES[0]
+const uid=()=>langMode().uid   // the active bank identity — use this, never a literal
+const setLang=id=>{
+  ACTIVE_LANG=id
+  try{localStorage.setItem('carioca_lang',id)}catch(_){}
+}
 const SB_URL=import.meta.env.VITE_SUPABASE_URL
 const SB_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY
 const sb=(SB_URL&&SB_KEY)?createClient(SB_URL,SB_KEY):null
@@ -1613,7 +1631,7 @@ function NGScaffoldMap({isOnline,onBack}){
   const load=async()=>{
     setLoading(true)
     try{
-      const UID='00000000-0000-0000-0000-000000000001'
+      const UID=uid()
       const[frontierData,{data:scaffoldData},{data:profileData}]=await Promise.all([
         ngFetch('ng-frontier'),
         sb.from('ng_scaffolds')
@@ -2539,7 +2557,7 @@ const takeGuidedPrefetch=()=>{
 const ngFetch=async(fn,body={})=>{
   const r=await fetch(`/.netlify/functions/${fn}`,{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
+    body:JSON.stringify({lang:ACTIVE_LANG||'pt-rio',...body})
   })
   return r.json()
 }
@@ -2571,7 +2589,7 @@ function NGBrain({isOnline,onBack}){
     if(!isOnline||!sb)return
     try{
       const{data}=await sb.from('ng_brain_log').select('*')
-        .eq('user_id','00000000-0000-0000-0000-000000000001')
+        .eq('user_id',uid())
         .order('created_at',{ascending:false}).limit(60)
       setThoughts(data||[])
     }catch{}
@@ -3269,7 +3287,7 @@ function NGRadio({isOnline,onBack}){
       const[{data:scf},{data:memRows}]=await Promise.all([
         sb.from('ng_scaffolds').select('*').eq('id',f.scaffold_id).single(),
         sb.from('ng_memory').select('stage,skill,stability')
-          .eq('user_id','00000000-0000-0000-0000-000000000001').eq('scaffold_id',f.scaffold_id)
+          .eq('user_id',uid()).eq('scaffold_id',f.scaffold_id)
       ])
       setPatternPopup({f,loading:false,scaffold:scf,mem:memRows||[]})
     }catch{setPatternPopup(p=>p?{...p,loading:false}:null)}
@@ -3317,7 +3335,7 @@ function NGRadio({isOnline,onBack}){
     try{
       const{data:segs}=await sb.from('ng_radio_segments')
         .select('session_key,segment_index,lines,created_at')
-        .eq('user_id','00000000-0000-0000-0000-000000000001')
+        .eq('user_id',uid())
         .order('created_at',{ascending:false}).limit(40)
       if(!segs?.length){setExportMsg('Nothing to export yet');return}
       const sessions={},order=[]
@@ -4681,7 +4699,7 @@ function NGHome({isOnline,go,active=true}){
       if(cur)ngFetch('ng-lesson-gen',{unit_id:cur.unit_id}).catch(()=>{})
     }).catch(()=>{})
     if(sb)sb.from('ng_milestones').select('*')
-      .eq('user_id','00000000-0000-0000-0000-000000000001')
+      .eq('user_id',uid())
       .eq('seen',false).order('created_at').limit(1)
       .then(({data})=>{if(data?.[0])setMilestone(data[0])})
   },[active,isOnline])
@@ -5019,6 +5037,39 @@ function NGIntelligence({isOnline,onBack}){
   </div>
 }
 
+// ── LangPicker — the neutral front door. ─────────────────────────────
+// Two modes, two banks, one engine. Shown once; reachable again from More.
+function LangPicker({onPick,current}){
+  const[busy,setBusy]=useState(null)
+  const choose=async(m)=>{
+    setBusy(m.id)
+    setLang(m.id)
+    // Paisa plants its floor on first entry. Idempotent — a no-op ever after.
+    if(m.id==='es-med'){try{await ngFetch('es-seed-floor',{})}catch(_){}}
+    onPick(m.id)
+  }
+  return<div style={{padding:'90px 24px 60px',maxWidth:480,margin:'0 auto',animation:'up 0.4s ease'}}>
+    <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:34}}>
+      <Poste size={26}/>
+      <span style={{fontSize:10.5,letterSpacing:4.5,color:MU,fontWeight:700,fontFamily:FONTD}}>LEARN</span>
+    </div>
+    <div style={{fontSize:27,fontWeight:900,color:TX,fontFamily:FONTD,marginBottom:8}}>What are we speaking?</div>
+    <div style={{fontSize:13,color:MU,marginBottom:30,lineHeight:1.6}}>Two separate banks, one brain. Switch any time from More — nothing mixes.</div>
+    {LANG_MODES.map(m=><button key={m.id} disabled={!!busy} onClick={()=>choose(m)}
+      style={{width:'100%',textAlign:'left',background:S,border:`1.5px solid ${current===m.id?m.accent+'88':BD}`,borderRadius:20,padding:'20px 20px',marginBottom:12,cursor:'pointer',fontFamily:FONT,opacity:busy&&busy!==m.id?0.4:1}}>
+      <div style={{display:'flex',alignItems:'center',gap:13}}>
+        <span style={{fontSize:30}}>{m.emoji}</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:19,fontWeight:800,color:m.accent}}>{m.label}</div>
+          <div style={{fontSize:12.5,color:TX,marginTop:2}}>{m.sub}</div>
+          <div style={{fontSize:11,color:MU,marginTop:5}}>{busy===m.id?'Planting your first bricks…':m.blurb}</div>
+        </div>
+        {current===m.id&&<span style={{fontSize:12,color:m.accent,fontWeight:700}}>current</span>}
+      </div>
+    </button>)}
+  </div>
+}
+
 export default function App(){
   // Calçadão: nextgen IS the app. The classic app, its card pipeline and the
   // mode picker were culled — one brain, one write path, no decision toll-booth.
@@ -5029,10 +5080,12 @@ export default function App(){
   const[treinoSeedDeck,setTreinoSeedDeck]=useState(null)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
   const[setupState,setSetupState]=useState(null) // null=checking, 'done'=skip wizard, else step
+  const[lang,setLangState]=useState(ACTIVE_LANG) // '' until a mode is chosen
+  const[picking,setPicking]=useState(false)      // re-opened from More
   useEffect(()=>{
-    if(!isOnline){return}
+    if(!isOnline||!lang){return}
     ngFetch('ng-setup',{action:'status'}).then(r=>setSetupState(r?.state||'done')).catch(()=>setSetupState('done'))
-  },[isOnline])
+  },[isOnline,lang])
 
   // Always-on brain: heartbeat ping on load + every 5 min while app is open
   useEffect(()=>{
@@ -5051,6 +5104,18 @@ export default function App(){
     window.addEventListener('offline',goOffline)
     return()=>{window.removeEventListener('online',goOnline);window.removeEventListener('offline',goOffline)}
   },[])
+
+  // LANGUAGE GATE — nothing loads until we know which bank we're in.
+  if(!lang||picking){
+    return<div style={{background:`radial-gradient(1100px 520px at 50% -8%,rgba(255,213,46,0.05),transparent 60%),linear-gradient(#0a1a10,${BG})`,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
+      <ErrorBoundary>
+        <LangPicker current={lang} onPick={id=>{
+          setLangState(id);setPicking(false)
+          setNgScreen('ng-home');setSetupState(null);setShowMore(false)
+        }}/>
+      </ErrorBoundary>
+    </div>
+  }
 
   // PRIMEIRO DIA gate — the wizard owns the screen until setup completes.
   if(isOnline&&setupState&&setupState!=='done'){
@@ -5115,7 +5180,8 @@ export default function App(){
           {k:'ng-radio',i:'📻',l:'Radio',d:'Chico & Bia, live'},
           {k:'ng-phrase',i:'◇',l:'Phrase',d:'Scenario practice'},
           {k:'ng-shuffle',i:'◈',l:'Shuffle',d:'Combine patterns'},
-          {k:'ng-say-it',i:'💬',l:'Say It',d:'Carioca translator'},
+          {k:'ng-say-it',i:'💬',l:'Say It',d:'Say it like a local'},
+          {k:'__lang',i:langMode().emoji,l:langMode().label,d:'Switch language mode'},
           {k:'ng-map',i:'⊞',l:'Map',d:'Pattern progress'},
           {k:'ng-intelligence',i:'◎',l:'Intel',d:'System dashboard'},
           {k:'ng-import',i:'📥',l:'Import',d:"Victor's notes"},
@@ -5141,6 +5207,7 @@ export default function App(){
               if(off)SFX.complete()
               setShowMore(false);return
             }
+            if(t.k==='__lang'){SFX.tap();setShowMore(false);setPicking(true);return}
             setNgScreen(t.k);setShowMore(false)
           }} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
           <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
