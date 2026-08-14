@@ -74,7 +74,7 @@ const WORLDS=[
     ["tinto","¿me regala un tinto?","Can I get a black coffee?",[["¿me regala un tinto?","Can I get a black coffee?"],["un tintico, porfa","A little coffee, please"]],"slot-phrase"],
     ["hambre","tengo hambre","I'm hungry",[["tengo hambre","I'm hungry"],["tengo un filo que no veo","I'm starving (street)"]],"chunk"],
     ["recomienda","¿qué me recomienda?","What do you recommend?",[["¿qué me recomienda?","What do you recommend?"],["¿qué es lo bueno acá?","What's good here?"]],"chunk"],
-    ["quiero","yo quiero ___","I want ___",[["yo quiero una arepa","I want an arepa"],["me regala una bandeja paisa","Get me a bandeja paisa"]],"slot-phrase"],
+    ["parami","para mí ___","For me, ___",[["para mí una arepa","An arepa for me"],["para mí lo mismo","Same for me"]],"slot-phrase"],
     ["sin","sin ___","Without ___",[["sin cebolla, por favor","No onion, please"],["sin hielo","No ice"]],"slot-phrase"],
     ["rico","está muy rico","It's delicious",[["está muy rico","It's delicious"],["¡qué delicia, parce!","So good, mate!"]],"chunk"],
     ["lleno","estoy lleno","I'm full",[["estoy lleno","I'm full"],["quedé full, gracias","I'm stuffed, thanks"]],"chunk"],
@@ -102,7 +102,7 @@ const WORLDS=[
     ["este","este de acá","This one here",[["este de acá","This one here"],["¿este o aquel?","This one or that one?"]],"vocab"],
     ["aca","acá / allá","Here / over there",[["acá","Here"],["allá","Over there"]],"vocab"],
     ["cerquita","acá cerquita","Nearby",[["¿hay una tienda acá cerquita?","Is there a shop nearby?"],["la droguería queda ahí mismito","The pharmacy is right there"]],"chunk"],
-    ["necesito","necesito ___","I need ___",[["necesito una droguería","I need a pharmacy"],["necesito comprar agua","I need to buy water"]],"slot-phrase"],
+    ["consigo","¿dónde consigo ___?","Where do I get ___?",[["¿dónde consigo agua?","Where do I get water?"],["¿dónde consigo una droguería por acá?","Where do I find a pharmacy round here?"]],"slot-phrase"],
     ["hay","¿hay ___?","Is there ___?",[["¿hay baño acá?","Is there a bathroom here?"],["¿hay wifi?","Is there wifi?"]],"slot-phrase"],
     ["abierto","¿está abierto?","Is it open?",[["¿está abierto?","Is it open?"],["¿a qué hora cierran?","What time do you close?"]],"chunk"],
     ["buscando","estoy buscando ___","I'm looking for ___",[["estoy buscando una droguería","I'm looking for a pharmacy"],["estoy buscando el supermercado","I'm looking for the supermarket"]],"slot-phrase"],
@@ -149,3 +149,5 @@ exports.handler=async(event)=>{
     return{statusCode:500,body:JSON.stringify({error:e.message})}
   }
 }
+
+exports.WORLDS=WORLDS // exported for the content harness

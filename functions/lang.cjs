@@ -53,7 +53,17 @@ const ES_SPAIN=/\b(vosotros|vuestro|vuestra|vale que|tío|guay|ordenador|móvil|
 const ES_MEX=/\b(güey|wey|órale|chido|ándale|no manches|platicar|padrísimo)\b/i
 const ES_ARG=/\b(boludo|pibe|quilombo|laburo|che\b)\b/i
 // Portuguese markers with NO valid Spanish reading — the portuñol tripwire.
-const ES_PT=/\b(você|vocês|não|então|muito|muita|obrigad[oa]|tudo|fazer|faço|coisa|agora|dinheiro|mais\b|bem\b|tô|tá|pra|pro|cê|beleza|vou|tem que|com\b|sim\b|é\b|aí\b|ontem|hoje|amanhã)\b/i
+// TWO TIERS, deliberately. JavaScript's \b is defined over [A-Za-z0-9_], so
+// accented letters count as NON-word characters and boundaries land in absurd
+// places: /é\b/ happily matches inside "qué", "querés", "hacés" and "déjeme",
+// which flagged half the voseo paradigm as Portuguese. Learned the hard way.
+//   Tier 1 — multi-letter markers, matched on ACCENT-STRIPPED text so \b only
+//            ever sees ASCII. No Spanish word deaccents into any of these.
+//   Tier 2 — short/ambiguous markers, matched on the ORIGINAL text with
+//            explicit delimiters instead of \b.
+const ES_PT_WORDS=/\b(voce|voces|nao|entao|muito|muita|obrigad[oa]|tudo|fazer|faco|coisa|agora|dinheiro|mais|bem|beleza|vou|ontem|hoje|amanha|pra|pro|tem que)\b/i
+const ES_PT_SHORT=/(^|[\s¡¿"'(,.])(é|aí|tá|tô|cê|sim|com)([\s.,!?;:)"']|$)/i
+const deaccent=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
 
 function lintES(text){
   const t=String(text||'')
@@ -61,7 +71,7 @@ function lintES(text){
   if(ES_SPAIN.test(t))flags.push('Spain register')
   if(ES_MEX.test(t))flags.push('Mexican register')
   if(ES_ARG.test(t))flags.push('Argentine register')
-  if(ES_PT.test(t))flags.push('PORTUGUESE leakage (portuñol)')
+  if(ES_PT_WORDS.test(deaccent(t))||ES_PT_SHORT.test(t))flags.push('PORTUGUESE leakage (portuñol)')
   return{ok:!flags.length,flags}
 }
 

@@ -5044,8 +5044,11 @@ function LangPicker({onPick,current}){
   const choose=async(m)=>{
     setBusy(m.id)
     setLang(m.id)
-    // Paisa plants its floor on first entry. Idempotent — a no-op ever after.
-    if(m.id==='es-med'){try{await ngFetch('es-seed-floor',{})}catch(_){}}
+    // Paisa plants floor then spine on first entry. Both idempotent — no-ops after.
+    if(m.id==='es-med'){
+      try{await ngFetch('es-seed-floor',{})}catch(_){}
+      try{await ngFetch('es-seed-spine',{})}catch(_){}
+    }
     onPick(m.id)
   }
   return<div style={{padding:'90px 24px 60px',maxWidth:480,margin:'0 auto',animation:'up 0.4s ease'}}>
