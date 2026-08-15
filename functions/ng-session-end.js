@@ -44,7 +44,7 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
 
     if(transcript.length&&mode==='luna'){
       const frontier=profile?.frontier||[]
-      const transcriptText=transcript.map(t=>`${t.role==='assistant'?'Luna':'Shay'}: ${t.text}`).join('\n')
+      const transcriptText=transcript.map(t=>`${t.role==='assistant'?'Luna':'Learner'}: ${t.text}`).join('\n')
       const frontierList=frontier.map(f=>`${f.scaffold_id}|${f.pt}`).join('\n')
       const existingNotes=profile?.luna_notes||''
       try{
@@ -55,7 +55,7 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
             model:'gpt-4o-mini',max_tokens:800,temperature:0.1,
             response_format:{type:'json_object'},
             messages:[
-              {role:'system',content:`Analyse a Portuguese learning conversation and UPDATE the learner's cumulative notes.
+              {role:'system',content:`Analyse a ${LANG.packFromEvent(event).language} learning conversation and UPDATE the learner's cumulative notes.
 Frontier: ${frontierList}
 
 EXISTING NOTES (accumulated across all previous sessions):

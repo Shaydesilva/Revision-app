@@ -121,11 +121,20 @@ function uidFor(idOrBody){return getPack(idOrBody).uid}
 // Resolve straight from a Lambda event. Safe on missing/malformed bodies —
 // anything unrecognised falls back to the original Rio bank, so every legacy
 // call site keeps working exactly as before.
+// Reads the body first, then ?lang= — GET endpoints (ng-export) have no body.
+function langFromEvent(event){
+  try{
+    const b=JSON.parse((event&&event.body)||'{}')
+    if(b&&(b.lang||b.language))return b.lang||b.language
+  }catch(_){}
+  const q=event&&event.queryStringParameters
+  return(q&&q.lang)||null
+}
 function uidFromEvent(event){
-  try{return uidFor(JSON.parse((event&&event.body)||'{}'))}catch(_){return PACKS[DEFAULT_LANG].uid}
+  try{return uidFor(langFromEvent(event))}catch(_){return PACKS[DEFAULT_LANG].uid}
 }
 function packFromEvent(event){
-  try{return getPack(JSON.parse((event&&event.body)||'{}'))}catch(_){return PACKS[DEFAULT_LANG]}
+  try{return getPack(langFromEvent(event))}catch(_){return PACKS[DEFAULT_LANG]}
 }
 
-module.exports={PACKS,DEFAULT_LANG,getPack,uidFor,uidFromEvent,packFromEvent,lintES,ES_GEN,ES_GRADE}
+module.exports={PACKS,DEFAULT_LANG,getPack,uidFor,uidFromEvent,packFromEvent,langFromEvent,lintES,ES_GEN,ES_GRADE}

@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-intelligence.js
 // Intelligence chat — Luna in settings
 // Loads complete learner profile + history
@@ -8,7 +9,8 @@ exports.handler=async(event)=>{
   try{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const UID='00000000-0000-0000-0000-000000000001'
+    const UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+    const PACK=LANG.packFromEvent(event) // which language this dashboard speaks
 
     const{messages=[],extractInsights=false,action=null}=JSON.parse(event.body||'{}')
 
@@ -109,10 +111,10 @@ exports.handler=async(event)=>{
         return`"${sc?.base_portuguese||a.scaffold_id}" — in frontier ${a.times_in_frontier}x, produced ${a.times_produced}x`
       }).join('\n')
 
-    const systemPrompt=`You are Luna — the intelligence layer of Carioca, Shay's Portuguese learning app.
+    const systemPrompt=`You are Luna — the intelligence layer of this ${PACK.label} ${PACK.language} learning app.
 
 In this mode you are NOT having a language practice conversation.
-You are having a direct, honest conversation about Shay's learning progress.
+You are having a direct, honest conversation with the learner about their progress.
 
 You have access to real data. Everything you say must be grounded in that data.
 Never invent progress. Never give empty encouragement. Be honest.
@@ -139,7 +141,7 @@ Phase progress: ${Math.round((profile?.phase_progress||0)*100)}%
 Total stages controlled: ${controlled.length}
 Sessions logged: ${(recentScaffoldEvents||[]).length} recent events in DB
 
-Current frontier (what he's actively working on — loaded from profile):
+Current frontier (what they are actively working on — loaded from profile):
 ${frontier.length>0?frontier.map(f=>`- "${f.pt}" [Stage ${f.stage}] — ${f.practice_count||0}/3 sessions, modes: ${(f.modes_used||[]).join(',')||'none'}`).join('\n'):'Frontier not yet computed — user needs to visit Home first'}
 
 Recent session activity:
@@ -154,24 +156,24 @@ ${avoidanceSummary||'None detected yet'}
 Field reports (real-world conversations):
 ${fieldReports.slice(0,3).map(r=>`- ${r.date||''}: ${r.summary||r.text||''}`).join('\n')||'None recorded yet'}
 
-Luna's running notes on Shay:
+Luna's running notes on the learner:
 ${lunaNotes||'No notes yet — not enough sessions'}
 
 Previous intelligence conversations:
 ${prevIntelSummary||'This is the first intelligence session'}
 
 == WHAT YOU CAN DO ==
-- Tell Shay honestly where he is and what's blocking him
+- Tell the learner honestly where they are and what is blocking them
 - Explain what you plan to focus on in upcoming sessions and why
-- Identify specific patterns he's avoiding
-- Answer questions about his progress grounded in real data
-- Accept his input: if he describes a real-world situation, note it for next session
-- Adjust your plan based on what he tells you
+- Identify specific patterns they are avoiding
+- Answer questions about their progress grounded in real data
+- Accept their input: if they describe a real-world situation, note it for next session
+- Adjust your plan based on what they tell you
 
 == WHAT YOU NEVER DO ==
 - Invent sessions that didn't happen
 - Give vague encouragement not grounded in data
-- Pretend his progress is better than it is
+- Pretend their progress is better than it is
 - Say "I don't have access to" when you can see the data above`
 
     // Call Claude

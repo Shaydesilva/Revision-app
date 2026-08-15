@@ -1,9 +1,11 @@
+const LANG=require('./lang.cjs')
 // ng-placement-seed.js — the placement test's ONLY writes.
 // Placement HYPOTHESIZES mastery, never grants it: priors capped at 2 days,
 // failures write nothing (absence of evidence, not negative evidence).
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)

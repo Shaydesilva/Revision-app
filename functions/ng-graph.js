@@ -1,8 +1,10 @@
+const LANG=require('./lang.cjs')
 // ng-graph.js — Graph read API: neighbours, clusters, propagation credits
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)

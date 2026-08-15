@@ -1,10 +1,12 @@
+const LANG=require('./lang.cjs')
 // ng-setup.js — Primeiro Dia state machine.
 // Tracks setup_state: new -> world -> planting -> organizing -> placement -> done.
 // Resumable: the client asks 'status' and jumps to the right step.
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 const STEPS=['new','world','planting','organizing','placement','done']
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)

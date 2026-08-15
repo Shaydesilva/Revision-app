@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-profile-update.js
 // Single write function for learner profile — everything goes through here
 // Version-checked to prevent race conditions
@@ -7,7 +8,7 @@ exports.handler=async(event)=>{
   try{
     const{createClient}=require('@supabase/supabase-js')
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const UID='00000000-0000-0000-0000-000000000001'
+    const UID=LANG.uidFromEvent(event) // Rio or Paisa bank
     const body=JSON.parse(event.body||'{}')
     const{update={},expectedVersion=null}=body
 

@@ -15,6 +15,7 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
 
 exports.handler=async(event)=>{
   UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+  const PACK=LANG.packFromEvent(event) // unit authoring must speak the active language
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
@@ -44,7 +45,7 @@ exports.handler=async(event)=>{
         method:'POST',
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
         body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2400,
-          system:`${REGISTER_LAW_GENERATE}\n\nCluster Carioca Portuguese patterns into 3-6 learning UNITS of 4-7 scaffolds each. MANDATORY: EVERY scaffold id in the list appears in EXACTLY one unit — omit NONE. Create more units rather than dropping any id. Each unit = a REAL Rio situation where those patterns live together (graph edges hint at relatedness). Order by phase. Every scaffold id appears in EXACTLY one unit. Portuguese titles, punchy. JSON only:
+          system:`${PACK.lawGenerate}\n\nCluster ${PACK.label} ${PACK.language} patterns into 3-6 learning UNITS of 4-7 scaffolds each. MANDATORY: EVERY scaffold id in the list appears in EXACTLY one unit — omit NONE. Create more units rather than dropping any id. Each unit = a REAL ${PACK.city} situation where those patterns live together (graph edges hint at relatedness). Order by phase. Every scaffold id appears in EXACTLY one unit. Titles in ${PACK.language}, punchy. JSON only:
 {"units":[{"unit_id":"snake_case_id","title":"","emoji":"🍺","situation":"one line in English","scaffold_ids":[]}]}`,
           messages:[{role:'user',content:`CATEGORY: ${cat}\nPATTERNS:\n${bank}\nRELATED PAIRS: ${catEdges||'none'}`}]})
       })
@@ -111,7 +112,7 @@ exports.handler=async(event)=>{
         method:'POST',
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
         body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1400,
-          system:`${REGISTER_LAW_GENERATE}\n\nYou evolve a Carioca Portuguese learning unit to its next level. The learner MASTERED the current patterns — design 4-5 NEW, harder ones for the SAME situation: longer chains, faster register, more idiomatic/street, weave in their weak spots. Portuguese must be authentic Rio street register — real gíria a Carioca says TODAY, never textbook-flavored or invented slang. If unsure a construction is natural, choose a simpler one that definitely is. JSON only:
+          system:`${PACK.lawGenerate}\n\nYou evolve a ${PACK.label} ${PACK.language} learning unit to its next level. The learner MASTERED the current patterns — design 4-5 NEW, harder ones for the SAME situation: longer chains, faster register, more idiomatic/street, weave in their weak spots. It must be authentic ${PACK.city} street register — real slang people say TODAY, never textbook-flavored or invented. If unsure a construction is natural, choose a simpler one that definitely is. JSON only:
 {"scaffolds":[{"base_portuguese":"","base_english":"","stages":[{"pt":"","en":""},{"pt":"","en":""},{"pt":"","en":""}]}]}
 Stages escalate: 1 core → 2 extended → 3 full street flow.`,
           messages:[{role:'user',content:`UNIT: "${unit.title}" — ${unit.situation}\nEVOLVING: level ${unit.level||1} → ${(unit.level||1)+1}\nMASTERED PATTERNS:\n${current}\nLEARNER WEAK SPOTS: ${struggles}\nLEARNER LIFE (principles — draw scenarios from these THEMES, never invent private people): ${profile?.life_context||'general Rio life'}`}]})

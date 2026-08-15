@@ -36,7 +36,7 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
 
     if(transcript.length&&mode==='luna'){
       const frontier=profile?.frontier||[]
-      const transcriptText=transcript.map(t=>`${t.role==='assistant'?'Luna':'Shay'}: ${t.text}`).join('\n')
+      const transcriptText=transcript.map(t=>`${t.role==='assistant'?'Luna':'Learner'}: ${t.text}`).join('\n')
       const frontierList=frontier.map(f=>`${f.scaffold_id}|${f.pt}`).join('\n')
       const existingNotes=profile?.luna_notes||''
       try{

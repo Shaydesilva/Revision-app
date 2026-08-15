@@ -48,7 +48,7 @@ ${bankSample.slice(0,6000)}`,
 
     // ═══ FINALIZE: transcript → matrix → fill rules → write ════════
     if(action==='finalize'){
-      const transcript=messages.map(m=>`${m.role==='assistant'?'Luna':'Shay'}: ${m.content}`).join('\n')
+      const transcript=messages.map(m=>`${m.role==='assistant'?'Luna':'Learner'}: ${m.content}`).join('\n')
       const bankFull=(scaffolds||[]).map(s=>`${s.id}|P${s.phase}|${s.category}|stages:${s.stages?.length||4}|"${s.base_portuguese}"`).join('\n')
 
       const raw=await claude(

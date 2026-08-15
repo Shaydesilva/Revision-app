@@ -21,7 +21,7 @@ const{REGISTER_LAW_GENERATE}=require('./register-law.cjs')
     const productionGap=cards.filter(c=>c.recognitionMastery>=2&&c.productionMastery<=1).slice(0,6)
 
     // Word list — use ALL deck cards as known vocabulary (mastery reset doesn't mean unknown)
-    // Shay has studied these with Victor, they're in his deck for a reason
+    // the learner has studied these with Victor, they're in his deck for a reason
     const knownWords=cards.slice(0,60).map(c=>`${c.portuguese}(${c.english})`).join(', ')
     const targetWords=neverSpoken.map(c=>c.portuguese).join(', ')
 
@@ -49,13 +49,11 @@ A1 means:
 - If a word isn't in his list: say the English first, then the Portuguese word once
 
 EXAMPLE of correct Luna responses at this level:
-  Shay: "oi"
+  Learner: "oi"
   Luna: "Oi! Tudo bem? Você foi à praia hoje?"
-
-  Shay: "sim, fui"
+  Learner: "sim, fui"
   Luna: "Legal! Estava quente? Ipanema ou Copacabana?"
-
-  Shay: "Ipanema"
+  Learner: "Ipanema"
   Luna: "Boa escolha. Eu adoro Ipanema. Você foi de manhã?"
 
 EXAMPLE of WRONG Luna responses (too complex — never do this):
@@ -106,7 +104,7 @@ ${loopRule}
 ${correctionRule}
 
 ## WHO YOU ARE
-Luna — a warm, direct Carioca local in Rio. You're Shay's conversation partner, not his teacher.
+Luna — a warm, direct Carioca local in Rio. You're the learner's conversation partner, not his teacher.
 Always masculine forms: obrigado, cansado, animado. Every time.
 
 ## SHAY'S VOCABULARY — USE ONLY THESE WORDS

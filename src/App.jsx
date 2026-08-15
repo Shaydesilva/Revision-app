@@ -13,6 +13,17 @@ const LANG_MODES=[
   {id:'es-med',label:'Paisa',sub:'Medellín Spanish',emoji:'🇨🇴',
    uid:'00000000-0000-0000-0000-000000000002',accent:'#ffd52e',blurb:'From zero. Vos, usted, and pues.'}
 ]
+// Screens whose backend still speaks only Portuguese. Greyed, never hidden —
+// you should see what's coming rather than wonder where it went. Removing an
+// entry here is the LAST step of converting that mode, never the first.
+const LANG_LOCKED={
+  'es-med':{
+    'ng-radio':true,'ng-voice':true,'ng-phrase':true,'ng-shuffle':true,
+    'ng-import':true,'ng-field-report':true,'ng-oficina':true,'ng-aula':true
+  }
+}
+const isLocked=k=>!!(LANG_LOCKED[ACTIVE_LANG]||{})[k]
+
 let ACTIVE_LANG=(()=>{try{return localStorage.getItem('carioca_lang')||''}catch(_){return ''}})()
 const langMode=()=>LANG_MODES.find(m=>m.id===ACTIVE_LANG)||LANG_MODES[0]
 const uid=()=>langMode().uid   // the active bank identity — use this, never a literal
@@ -276,7 +287,7 @@ function VoiceMode({cards=[],onRateMultiple=()=>{},onAddCard=()=>{},isOnline,ngM
         const toSave=prev.filter(m=>m.role!=='system').slice(-50)
         fetch('/.netlify/functions/ng-profile-update',{
           method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({update:{luna_chat_history:toSave}})
+          body:JSON.stringify({lang:ACTIVE_LANG||'pt-rio',update:{luna_chat_history:toSave}})
         }).catch(()=>{})
         return prev
       })
@@ -703,7 +714,7 @@ function VoiceMode({cards=[],onRateMultiple=()=>{},onAddCard=()=>{},isOnline,ngM
       setLunaSuggestion({loading:true,phrase:word||sentence||''})
       try{
         const r=await fetch('/.netlify/functions/ng-suggest',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({action:'propose',phrase:word||'',translation:translation||'',context_sentence:sentence||'',source:'luna'})}).then(x=>x.json())
+          body:JSON.stringify({lang:ACTIVE_LANG||'pt-rio',action:'propose',phrase:word||'',translation:translation||'',context_sentence:sentence||'',source:'luna'})}).then(x=>x.json())
         if(r?.duplicate)setLunaSuggestion({duplicate:true,existing:r.existing})
         else if(r?.suggestion)setLunaSuggestion({sug:r.suggestion})
         else setLunaSuggestion({error:r?.error||'Analysis failed'})
@@ -717,7 +728,7 @@ function VoiceMode({cards=[],onRateMultiple=()=>{},onAddCard=()=>{},isOnline,ngM
   const approveSug=useCallback(async(sug)=>{
     try{
       await fetch('/.netlify/functions/ng-say-it',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({approvedScaffolds:[sug]})})
+        body:JSON.stringify({lang:ACTIVE_LANG||'pt-rio',approvedScaffolds:[sug]})})
       SFX.unlock()
       setPendingSug(p=>p.filter(x=>x._id!==sug._id))
     }catch(e){log('Approve failed: '+e.message)}
@@ -960,7 +971,7 @@ function NGFlashCards({isOnline,onBack,reviewItems=[],seed,clearSeed,goTreinoGra
       try{
         fetch('/.netlify/functions/ng-session-end',{method:'POST',keepalive:true,
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({mode:'flashcard',events:bufRef.current.splice(0,bufRef.current.length),duration_seconds:30})})
+          body:JSON.stringify({lang:ACTIVE_LANG||'pt-rio',mode:'flashcard',events:bufRef.current.splice(0,bufRef.current.length),duration_seconds:30})})
       }catch(_){}
     }
   },[])
@@ -1730,7 +1741,7 @@ function NGScaffoldMap({isOnline,onBack}){
       {[['constellation','✦ Live map'],['grid','⊞ Grid'],['matrix','⚙ Matrix']].map(([k,l])=>
         <button key={k} onClick={()=>setMapView(k)}
           style={{flex:1,padding:'10px',background:mapView===k?`${AC}18`:S2,border:`1px solid ${mapView===k?AC+'55':BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:13,fontWeight:mapView===k?700:400,color:mapView===k?AC:MU}}>{l}</button>)}
-      <button onClick={()=>{SFX.tap();fetch('/.netlify/functions/ng-export').then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='carioca-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}).catch(()=>{})}}
+      <button onClick={()=>{SFX.tap();fetch('/.netlify/functions/ng-export?lang='+(ACTIVE_LANG||'pt-rio')).then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='carioca-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}).catch(()=>{})}}
         style={{padding:'10px 14px',background:S2,border:`1px solid ${BD}`,borderRadius:12,cursor:'pointer',fontFamily:FONT,fontSize:14,color:GD}}>⬇</button>
     </div>
 
@@ -2949,7 +2960,7 @@ function NGLearn({isOnline,onBack,startUnit,startAula}){
         </div>)}
         <div style={{marginTop:16}}>
           <PBtn label={sheet.status==='complete'?'↻ Review this unit':'▶ Practice this unit'} onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startUnit(u)}}/>
-          <div style={{marginTop:8}}><GBtn label="🎓 Aula guiada — Escuta · Pratica · Cena" onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startAula&&startAula(u)}}/></div>
+          {!isLocked('ng-aula')&&<div style={{marginTop:8}}><GBtn label="🎓 Aula guiada — Escuta · Pratica · Cena" onClick={()=>{SFX.tap();const u=sheet;setSheet(null);startAula&&startAula(u)}}/></div>}
           {sheet.level_ready&&<div style={{marginTop:10}}>
             <PBtn label={`⬆ Evoluir para nível ${(sheet.level||1)+1}`} color={GR} onClick={()=>levelUp(sheet)}/>
             <div style={{fontSize:10,color:MU,textAlign:'center',marginTop:6}}>Claude forges 4-5 harder patterns for this exact situation — built from your weak spots.</div>
@@ -3939,7 +3950,7 @@ function NGTreino({isOnline,onBack,seedUnit,seedDeck,onDone}){
       try{
         fetch('/.netlify/functions/ng-session-end',{method:'POST',keepalive:true,
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({mode:'daily',events:bufRef.current.splice(0,bufRef.current.length),duration_seconds:Math.max(10,bufSecsRef.current)})})
+          body:JSON.stringify({lang:ACTIVE_LANG||'pt-rio',mode:'daily',events:bufRef.current.splice(0,bufRef.current.length),duration_seconds:Math.max(10,bufSecsRef.current)})})
       }catch(_){}
     }
   },[])
@@ -4766,18 +4777,18 @@ function NGHome({isOnline,go,active=true}){
       <span style={{fontSize:11,color:GD,fontWeight:700}}>review →</span>
     </div>}
 
-    {/* Come-sit experiences — the only two invitations */}
+    {/* Come-sit experiences — greyed where the backend still speaks Portuguese */}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'14px 20px 0'}}>
-      <div onClick={()=>go&&go('ng-radio')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
-        <div style={{fontSize:20,marginBottom:6}}>📻</div>
-        <div style={{fontSize:13,fontWeight:800,color:TX}}>Rádio Carioca</div>
-        <div style={{fontSize:11,color:MU,marginTop:2}}>Chico & Bia · always on air</div>
-      </div>
-      <div onClick={()=>go&&go('ng-voice')} style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:'pointer'}}>
-        <div style={{fontSize:20,marginBottom:6}}>◉</div>
-        <div style={{fontSize:13,fontWeight:800,color:TX}}>Luna</div>
-        <div style={{fontSize:11,color:MU,marginTop:2}}>Come talk to me</div>
-      </div>
+      {[{k:'ng-radio',i:'📻',t:'Rádio Carioca',d:'Chico & Bia · always on air'},
+        {k:'ng-voice',i:'◉',t:'Luna',d:'Come talk to me'}].map(x=>{
+        const lock=isLocked(x.k)
+        return<div key={x.k} onClick={()=>{if(!lock&&go)go(x.k)}}
+          style={{background:S,border:`1px solid ${BD}`,borderRadius:16,padding:'14px',cursor:lock?'default':'pointer',opacity:lock?0.32:1}}>
+          <div style={{fontSize:20,marginBottom:6,filter:lock?'grayscale(1)':'none'}}>{x.i}</div>
+          <div style={{fontSize:13,fontWeight:800,color:TX}}>{x.t}</div>
+          <div style={{fontSize:11,color:MU,marginTop:2}}>{lock?'Rio only for now':x.d}</div>
+        </div>
+      })}
     </div>
   </div>
 }
@@ -5085,18 +5096,22 @@ export default function App(){
   const[setupState,setSetupState]=useState(null) // null=checking, 'done'=skip wizard, else step
   const[lang,setLangState]=useState(ACTIVE_LANG) // '' until a mode is chosen
   const[picking,setPicking]=useState(false)      // re-opened from More
+  const[lockNote,setLockNote]=useState(null)     // tapped a not-yet-converted mode
+  useEffect(()=>{if(!lockNote)return;const t=setTimeout(()=>setLockNote(null),2600);return()=>clearTimeout(t)},[lockNote])
   useEffect(()=>{
     if(!isOnline||!lang){return}
     ngFetch('ng-setup',{action:'status'}).then(r=>setSetupState(r?.state||'done')).catch(()=>setSetupState('done'))
   },[isOnline,lang])
 
-  // Always-on brain: heartbeat ping on load + every 5 min while app is open
+  // Always-on brain: heartbeat ping on load + every 5 min while app is open.
+  // Rio-only — the heartbeat fires the Portuguese seeders and nightly brain, so
+  // running it from Paisa mode would just do Rio housekeeping on your time.
   useEffect(()=>{
-    if(!isOnline)return
+    if(!isOnline||lang!=='pt-rio')return
     ngFetch('ng-heartbeat',{}).catch(()=>{})
     const hb=setInterval(()=>{ngFetch('ng-heartbeat',{}).catch(()=>{})},5*60*1000)
     return()=>clearInterval(hb)
-  },[isOnline])
+  },[isOnline,lang])
 
   useEffect(()=>{const s=document.createElement('style');s.textContent=CSS;document.head.appendChild(s);return()=>document.head.removeChild(s)},[])
 
@@ -5161,14 +5176,24 @@ export default function App(){
       startAula={u=>{setAulaUnit(u);setNgScreen('ng-aula')}}/>}
     <div style={{display:ngScreen==='ng-say-it'?'block':'none'}}><NGSayIt isOnline={isOnline} onBack={()=>setNgScreen('ng-home')}/></div>
     </ErrorBoundary>
+    {/* Locked-mode notice — says why, never leaves you guessing. */}
+    {lockNote&&<div style={{position:'fixed',bottom:96,left:'50%',transform:'translateX(-50%)',zIndex:120,background:S,border:`1px solid ${BD}`,borderRadius:20,padding:'9px 16px',fontSize:12,color:MU,whiteSpace:'nowrap',animation:'up 0.2s ease',maxWidth:'92vw',overflow:'hidden',textOverflow:'ellipsis'}}>
+      <b style={{color:TX}}>{lockNote}</b> speaks Portuguese only — not converted yet.
+    </div>}
+
     {/* Nav — 5 primary + More sheet */}
     <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:`${BG}f0`,backdropFilter:'blur(12px)',borderTop:`1px solid ${BD}`,display:'flex',justifyContent:'space-around',padding:'8px 0 24px',zIndex:100}}>
-      {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-learn',i:'⛰',l:'Learn'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>
-        <button key={t.k} onClick={()=>{setNgScreen(t.k);setShowMore(false)}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
-          <span style={{fontSize:20,opacity:ngScreen===t.k&&!showMore?1:0.3,filter:ngScreen===t.k&&!showMore?`drop-shadow(0 0 8px ${AC})`:'none'}}>{t.i}</span>
-          <span style={{fontSize:10,color:ngScreen===t.k&&!showMore?AC:MU,fontWeight:ngScreen===t.k&&!showMore?700:400}}>{t.l}</span>
+      {[{k:'ng-home',i:'◈',l:'Home'},{k:'ng-learn',i:'⛰',l:'Learn'},{k:'ng-today',i:'☀',l:'Today'},{k:'ng-voice',i:'◉',l:'Luna'},{k:'ng-study',i:'▣',l:'Study'}].map(t=>{
+        const lock=isLocked(t.k)
+        const on=ngScreen===t.k&&!showMore
+        return<button key={t.k} disabled={lock}
+          onClick={()=>{if(lock){setLockNote(t.l);return}setNgScreen(t.k);setShowMore(false)}}
+          title={lock?`${t.l} is Rio-only for now`:undefined}
+          style={{background:'none',border:'none',cursor:lock?'default':'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent',opacity:lock?0.28:1}}>
+          <span style={{fontSize:20,opacity:on?1:0.3,filter:on?`drop-shadow(0 0 8px ${AC})`:'none',...(lock?{filter:'grayscale(1)'}:{})}}>{t.i}</span>
+          <span style={{fontSize:10,color:on?AC:MU,fontWeight:on?700:400}}>{t.l}</span>
         </button>
-      )}
+      })}
       <button onClick={()=>setShowMore(m=>!m)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 14px',WebkitTapHighlightColor:'transparent'}}>
         <span style={{fontSize:20,opacity:showMore?1:0.3,filter:showMore?`drop-shadow(0 0 8px ${AC})`:'none'}}>⋯</span>
         <span style={{fontSize:10,color:showMore?AC:MU,fontWeight:showMore?700:400}}>More</span>
@@ -5195,7 +5220,7 @@ export default function App(){
         ].map(t=><button key={t.k} onClick={()=>{
             if(t.k==='__export'){
               SFX.tap()
-              fetch('/.netlify/functions/ng-export').then(r=>r.blob()).then(b=>{
+              fetch('/.netlify/functions/ng-export?lang='+(ACTIVE_LANG||'pt-rio')).then(r=>r.blob()).then(b=>{
                 const u=URL.createObjectURL(b)
                 const a=document.createElement('a')
                 a.href=u;a.download='carioca-backup-'+new Date().toISOString().slice(0,10)+'.json'
@@ -5211,11 +5236,12 @@ export default function App(){
               setShowMore(false);return
             }
             if(t.k==='__lang'){SFX.tap();setShowMore(false);setPicking(true);return}
+            if(isLocked(t.k)){setLockNote(t.l);return}
             setNgScreen(t.k);setShowMore(false)
-          }} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
-          <div style={{fontSize:22,marginBottom:4}}>{t.i}</div>
+          }} style={{background:ngScreen===t.k?`${AC}12`:S2,border:`1px solid ${ngScreen===t.k?AC+'33':BD}`,borderRadius:14,padding:'14px',cursor:isLocked(t.k)?'default':'pointer',fontFamily:FONT,textAlign:'left',WebkitTapHighlightColor:'transparent',opacity:isLocked(t.k)?0.32:1}}>
+          <div style={{fontSize:22,marginBottom:4,filter:isLocked(t.k)?'grayscale(1)':'none'}}>{t.i}</div>
           <div style={{fontSize:13,fontWeight:700,color:ngScreen===t.k?AC:TX}}>{t.l}</div>
-          <div style={{fontSize:11,color:MU}}>{t.d}</div>
+          <div style={{fontSize:11,color:MU}}>{isLocked(t.k)?'Rio only for now':t.d}</div>
         </button>)}
       </div>
     </div></>
