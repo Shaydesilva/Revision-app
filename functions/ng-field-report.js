@@ -3,12 +3,15 @@
 // Closes the loop: street conversation → intelligence layer → new scaffolds
 
 const{createClient}=require('@supabase/supabase-js')
+const LANG=require('./lang.cjs')
+const INTEL=require('./ng-intel.cjs')
 
 exports.handler=async(event)=>{
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const UID='00000000-0000-0000-0000-000000000001'
+    const UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+    const PACK=LANG.packFromEvent(event)
 
 async function brainLog(sb,proc,thought,data=null,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process:proc,thought,data,importance})}catch(_){}
@@ -17,20 +20,30 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
 
     // ── Approval path: write approved scaffolds to bank ────────────────
     if(Array.isArray(approvedScaffolds)&&approvedScaffolds.length){
+      // NOTE: this insert used to carry `is_hybrid:false` — a column that does
+      // not exist on ng_scaffolds (the hybrid system was culled). Every approval
+      // failed with a column error, which is why the bank held zero field
+      // captures despite the feature shipping. Removed.
       const rows=approvedScaffolds.map((sc,i)=>({
         id:sc.id||`sc_field_${Date.now()}_${i}`,
         user_id:UID,
         base_portuguese:sc.base_portuguese,
-        base_english:sc.base_english,
-        stages:sc.stages||[],
+        base_english:sc.base_english||'',
+        // Same stage shape every other write path uses — the engine reads these flags.
+        stages:(sc.stages||[]).map((st,j)=>({stage:st.stage||j+1,pt:st.pt,en:st.en,
+          acquired:false,acquired_at:null,practice_count:0,modes_used:[]})),
+        current_stage:1,
         phase:sc.phase||1,
-        category:sc.category||'field_learned',
+        category:INTEL.safeCategory(sc.category), // 'field_learned' was never a valid category
         context:sc.context||'real_world',
-        is_hybrid:false,
-        source:source||'field_report'
+        cluster:'field_report',
+        source:source||'field_report',
+        last_practiced:null
       }))
       const{error}=await sb.from('ng_scaffolds').insert(rows)
       if(error)return{statusCode:500,body:JSON.stringify({error:error.message})}
+      // Born with a home — street captures were orphaned until the nightly sweep.
+      try{await INTEL.attachToInbox(sb,UID,rows.map(r=>r.id))}catch(e){console.log('inbox attach:',e.message)}
       return{statusCode:200,body:JSON.stringify({ok:true,added:rows.length})}
     }
 
@@ -67,9 +80,11 @@ async function brainLog(sb,proc,thought,data=null,importance=1){
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
         body:JSON.stringify({
           model:'claude-sonnet-4-6',max_tokens:900,
-          system:`You mine real-world Portuguese conversation reports for learnable Carioca patterns.
-The learner lives in Rio. Extract patterns they TRIED to say but couldn't, MISHEARD, or ENCOUNTERED and didn't know.
-Only suggest genuinely useful, natural Carioca patterns — not textbook Portuguese.
+          system:`${PACK.lawGenerate}
+
+You mine real-world conversation reports for learnable ${PACK.label} ${PACK.language} patterns.
+The learner lives in ${PACK.city}. Extract patterns they TRIED to say but couldn't, MISHEARD, or ENCOUNTERED and didn't know.
+Only suggest genuinely useful, natural ${PACK.label} patterns — obey the register law above absolutely; never textbook ${PACK.language}, never another country's register.
 Skip anything they clearly already know or that already exists in their bank.
 
 EXISTING PATTERNS IN BANK (do not duplicate):

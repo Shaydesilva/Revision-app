@@ -19,7 +19,7 @@ const LANG_MODES=[
 const LANG_LOCKED={
   'es-med':{
     'ng-radio':true,'ng-voice':true,'ng-phrase':true,'ng-shuffle':true,
-    'ng-import':true,'ng-field-report':true,'ng-oficina':true,'ng-aula':true
+    'ng-import':true,'ng-oficina':true,'ng-aula':true
   }
 }
 const isLocked=k=>!!(LANG_LOCKED[ACTIVE_LANG]||{})[k]
