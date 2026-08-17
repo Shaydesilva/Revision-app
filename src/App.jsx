@@ -5068,7 +5068,12 @@ function LangPicker({onPick,current}){
   const choose=async(m)=>{
     setBusy(m.id)
     setLang(m.id)
-    if(m.id==='es-med')await plantPaisa()
+    // Seeding must never be able to trap you on the front door. Wait a few
+    // seconds for the first plant, then go in regardless — the same idempotent
+    // seeding also runs on load, so nothing is lost by not waiting.
+    if(m.id==='es-med'){
+      await Promise.race([plantPaisa(),new Promise(r=>setTimeout(r,6000))])
+    }
     onPick(m.id)
   }
   return<div style={{padding:'90px 24px 60px',maxWidth:480,margin:'0 auto',animation:'up 0.4s ease'}}>
@@ -5103,7 +5108,11 @@ export default function App(){
   const[treinoSeedDeck,setTreinoSeedDeck]=useState(null)
   const[isOnline,setIsOnline]=useState(navigator.onLine)
   const[setupState,setSetupState]=useState(null) // null=checking, 'done'=skip wizard, else step
-  const[lang,setLangState]=useState(ACTIVE_LANG) // '' until a mode is chosen
+  // ALWAYS start at the picker on a fresh open — the stored choice is remembered
+  // and shown as "current", but never auto-entered. Two reasons: switching modes
+  // is a deliberate act on a phone you open twenty times a day, and it guarantees
+  // an escape hatch from any screen that ever manages to trap you.
+  const[lang,setLangState]=useState('')
   const[picking,setPicking]=useState(false)      // re-opened from More
   const[lockNote,setLockNote]=useState(null)     // tapped a not-yet-converted mode
   useEffect(()=>{if(!lockNote)return;const t=setTimeout(()=>setLockNote(null),2600);return()=>clearTimeout(t)},[lockNote])
@@ -5137,7 +5146,7 @@ export default function App(){
   if(!lang||picking){
     return<div style={{background:`radial-gradient(1100px 520px at 50% -8%,rgba(255,213,46,0.05),transparent 60%),linear-gradient(#0a1a10,${BG})`,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
       <ErrorBoundary>
-        <LangPicker current={lang} onPick={id=>{
+        <LangPicker current={ACTIVE_LANG} onPick={id=>{
           setLangState(id);setPicking(false)
           setNgScreen('ng-home');setSetupState(null);setShowMore(false)
         }}/>
@@ -5148,6 +5157,12 @@ export default function App(){
   // PRIMEIRO DIA gate — the wizard owns the screen until setup completes.
   if(isOnline&&setupState&&setupState!=='done'){
     return<div style={{background:`radial-gradient(1100px 520px at 50% -8%,rgba(255,213,46,0.05),transparent 60%),linear-gradient(#0a1a10,${BG})`,minHeight:'100vh',maxWidth:480,margin:'0 auto',fontFamily:FONT,color:TX}}>
+      {/* Always an exit. Setup is a helper, never a cage. */}
+      <div style={{position:'fixed',top:12,right:14,zIndex:200,display:'flex',gap:8}}>
+        <button onClick={()=>{setLangState('');setPicking(false)}} style={{background:'none',border:`1px solid ${BD}`,borderRadius:20,padding:'6px 12px',fontSize:11,color:MU,cursor:'pointer',fontFamily:FONT}}>← Modes</button>
+        <button onClick={()=>{ngFetch('ng-setup',{action:'set',state:'done'}).catch(()=>{});setSetupState('done');setNgScreen('ng-home')}}
+          style={{background:'none',border:`1px solid ${BD}`,borderRadius:20,padding:'6px 12px',fontSize:11,color:MU,cursor:'pointer',fontFamily:FONT}}>Skip setup →</button>
+      </div>
       <ErrorBoundary>
         <NGSetup isOnline={isOnline} initialState={setupState}
           onEnterApp={()=>{setSetupState('done');setNgScreen('ng-home')}}
