@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-bank-audit.js — hunts ARTIFACTS in the live bank: old imported cards that
 // have no good place in today's app. REPORT-ONLY (fail loudly, never delete
 // silently) — findings land in ng_brain_log for the Intel feed, and the response
@@ -13,13 +14,14 @@
 //                    (not curated chunks — leftover word-list entries)
 
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 const norm=s=>(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim()
 const EN_WORDS=/\b(the|and|with|you|your|are|was|this|that|what|when|have|from|about|would|could)\b/
 const FULLFORM=/\b(eu estou|voc[eê] est[aá]|n[oó]s estamos|estou|estamos)\b/i
 const STREET=/\b(t[oô]|t[aá]|tamo|c[eê]|pra|pro|bora)\b/i
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)

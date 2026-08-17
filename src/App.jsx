@@ -5114,10 +5114,10 @@ export default function App(){
   },[isOnline,lang])
 
   // Always-on brain: heartbeat ping on load + every 5 min while app is open.
-  // Rio-only — the heartbeat fires the Portuguese seeders and nightly brain, so
-  // running it from Paisa mode would just do Rio housekeeping on your time.
+  // Language-aware — it dispatches THIS pack's housekeeping (Rio seeders and
+  // reconcilers, or the Paisa bands) and hands the nightly brain its lang.
   useEffect(()=>{
-    if(!isOnline||lang!=='pt-rio')return
+    if(!isOnline||!lang)return
     ngFetch('ng-heartbeat',{}).catch(()=>{})
     const hb=setInterval(()=>{ngFetch('ng-heartbeat',{}).catch(()=>{})},5*60*1000)
     return()=>clearInterval(hb)

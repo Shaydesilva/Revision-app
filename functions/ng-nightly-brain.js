@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-nightly-brain.js — The Nightly Brain
 // Deep daily run: error autopsy + interference detection, coach's note,
 // tomorrow's workout assembly, daily radio dialogue, fluency dials,
@@ -7,7 +8,8 @@
 const{createClient}=require('@supabase/supabase-js')
 const{REGISTER_LAW_GENERATE:REGISTER_LAW}=require('./register-law.cjs')
 const INTEL=require('./ng-intel.cjs')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request
+let PACK=LANG.getPack() // ditto
 
 async function brainLog(sb,proc,thought,data=null,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process:proc,thought,data,importance})}catch(_){}
@@ -17,17 +19,23 @@ async function claude(system,user,maxTokens=1500){
   const res=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system:REGISTER_LAW+'\n\n'+system,messages:[{role:'user',content:user}]})
+    // The ACTIVE pack's law, not a static import — every nightly prompt flows
+    // through here, so this one line decides which language the brain thinks in.
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system:PACK.lawGenerate+'\n\n'+system,messages:[{role:'user',content:user}]})
   })
   const data=await res.json()
   return(data.content?.[0]?.text||'').replace(/```json|```/g,'').trim()
 }
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+  PACK=LANG.packFromEvent(event)
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
-    const today=new Date(Date.now()-3*3600000).toISOString().slice(0,10) // Rio date
+    // Local date for THIS pack's city — Rio is UTC-3, Medellín UTC-5. Hardcoding
+    // Rio's offset would roll the Paisa day over at 2am local.
+    const today=new Date(Date.now()+PACK.utcOffset*3600000).toISOString().slice(0,10)
 
     // Skip if already ran today
     const{data:existing}=await sb.from('ng_daily').select('id,workout').eq('user_id',UID).eq('date',today).single()
@@ -63,8 +71,8 @@ exports.handler=async(event)=>{
     let analysis={}
     try{
       const raw=await claude(
-`You are the nightly analysis brain for a Carioca Portuguese learning system.
-The learner lives in Rio and learns street Carioca, not textbook Portuguese.
+`You are the nightly analysis brain for a ${PACK.label} ${PACK.language} learning system.
+The learner lives in ${PACK.city} and learns street ${PACK.label}, not textbook ${PACK.language}.
 Analyse the last 24h of learning events. Return JSON only:
 {
  "error_autopsy":{"clusters":[{"pattern":"description of error mechanism","examples":[],"prescription":"what drill fixes it"}]},
@@ -105,10 +113,10 @@ Analyse the last 24h of learning events. Return JSON only:
     let listening=null,composition=null
     try{
       const wk=await claude(
-`Generate workout content for a Carioca Portuguese learner. Return JSON only:
+`Generate workout content for a ${PACK.label} ${PACK.language} learner. Return JSON only:
 {
- "listening":{"pt":"one natural Carioca sentence at street register using mostly known patterns","en":"translation","target_pattern":"the key pattern inside"},
- "composition":{"scenario_en":"vivid Rio scenario under 50 words requiring 2-3 of the given patterns","patterns":["pt strings"]}
+ "listening":{"pt":"one natural ${PACK.label} sentence at street register using mostly known patterns","en":"translation","target_pattern":"the key pattern inside"},
+ "composition":{"scenario_en":"vivid ${PACK.city} scenario under 50 words requiring 2-3 of the given patterns","patterns":["target-language strings"]}
 }`,
 `KNOWN PATTERNS: ${controlledPatterns.slice(0,40).join(', ')}\nFRONTIER: ${frontierPatterns.join(', ')}\nFOCUS TODAY: ${focus.join(', ')||'general'}`,
       700)
@@ -141,7 +149,9 @@ Analyse the last 24h of learning events. Return JSON only:
 
     // ── 3. DAILY RADIO DIALOGUE (script only; TTS on demand) ─────────
     let dialogue=null
-    try{
+    // The radio show is authored per pack (Chico & Bia are Cariocas). A pack with
+    // no cast skips it rather than generating a Rio show into another language.
+    if(PACK.hasRadio)try{
       const showBible=profile?.show_bible||''
       const stationPrompt=profile?.radio_station_prompt||''
       const{data:recentSegsNB}=await sb.from('ng_radio_segments').select('lines')
@@ -194,7 +204,7 @@ speaker "echo"=Chico, "shimmer"=Bia.`,
         const rRaw=await claude(
 `Write a weekly recap for a language learner. Return JSON only:
 {"headline":"one punchy line","best_moment":"one sentence","number_that_moved":"one stat sentence","next_week":"one sentence"}`,
-`Week's events count: ${events.length}. Controlled: ${strongSet.size}/197 scaffolds strong. Coach analysis: ${analysis.coach_note||''}`,
+`Week's events count: ${events.length}. Controlled: ${strongSet.size}/${(scaffolds||[]).length} scaffolds strong. Coach analysis: ${analysis.coach_note||''}`,
         400)
         weekRecap=JSON.parse(rRaw)
       }catch(_){}
@@ -205,7 +215,7 @@ speaker "echo"=Chico, "shimmer"=Bia.`,
       const{data:shelf}=await sb.from('ng_missions').select('id').eq('user_id',UID).eq('status','shelf')
       if((shelf||[]).length<3){
         const mRaw=await claude(
-`Generate 3 low-pressure real-world Carioca practice opportunities + 3 home Luna-roleplay equivalents.
+`Generate 3 low-pressure real-world ${PACK.label} practice opportunities + 3 home Luna-roleplay equivalents.
 Casual framing — "next time you happen to be..." never "go do this". Return JSON only:
 {"missions":[{"title":"","prompt_pt":"","prompt_en":"","context":"uber|boteco|beach|shop|home_luna","is_home_variant":false}]}`,
 `Frontier patterns to weave in: ${frontierPatterns.slice(0,6).join(', ')}`,
@@ -276,7 +286,7 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
             const{data:scs}=await sb.from('ng_scaffolds').select('id,base_portuguese,base_english,category').eq('user_id',UID).in('id',ids)
             const listing=(scs||[]).map(s=>`${s.id} | "${s.base_portuguese}" (${s.base_english||''}) [${s.category}]`).join('\n')
             const raw=await claude(
-`You cluster leftover Carioca Portuguese patterns into REAL situational learning units. 3-6 patterns per unit, every id placed exactly once. Titles: short evocative PT + emoji. JSON only:
+`You cluster leftover ${PACK.label} ${PACK.language} patterns into REAL situational learning units. 3-6 patterns per unit, every id placed exactly once. Titles: short evocative ${PACK.language} + emoji. JSON only:
 {"units":[{"unit_id":"snake_case","title":"","title_en":"","emoji":"","situation":"one line: the situation these live in","scaffold_ids":[]}]}`,
 `PATTERNS TO CLUSTER:\n${listing}`,1400)
             let out=null;try{out=JSON.parse(raw)}catch(_){}
@@ -412,7 +422,7 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
       const siteUrlBA=process.env.URL||process.env.DEPLOY_URL||''
       if(siteUrlBA){
         const _acA=new AbortController();const _tmA=setTimeout(()=>_acA.abort(),1200)
-        await fetch(`${siteUrlBA}/.netlify/functions/ng-bank-audit`,{method:'POST',body:'{}',signal:_acA.signal}).catch(()=>{})
+        await fetch(`${siteUrlBA}/.netlify/functions/ng-bank-audit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lang:PACK.id}),signal:_acA.signal}).catch(()=>{})
         clearTimeout(_tmA)
       }
     }catch(_){}
@@ -424,12 +434,15 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
       const siteUrlBK=process.env.URL||process.env.DEPLOY_URL||''
       if(siteUrlBK){
         const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200)
-        await fetch(`${siteUrlBK}/.netlify/functions/ng-brick-kinds`,{method:'POST',body:'{}',signal:_ac.signal}).catch(()=>{})
+        await fetch(`${siteUrlBK}/.netlify/functions/ng-brick-kinds`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lang:PACK.id}),signal:_ac.signal}).catch(()=>{})
         clearTimeout(_tm)
-        // Register sweep: heal pre-rewire 'a gente' bricks still in the bank
-        const _ac2=new AbortController();const _tm2=setTimeout(()=>_ac2.abort(),1200)
-        await fetch(`${siteUrlBK}/.netlify/functions/ng-register-sweep`,{method:'POST',body:'{}',signal:_ac2.signal}).catch(()=>{})
-        clearTimeout(_tm2)
+        // Register sweep heals pre-rewire 'a gente' bricks — a Portuguese-specific
+        // healer. It has no meaning for another pack, so it only runs for Rio.
+        if(PACK.id==='pt-rio'){
+          const _ac2=new AbortController();const _tm2=setTimeout(()=>_ac2.abort(),1200)
+          await fetch(`${siteUrlBK}/.netlify/functions/ng-register-sweep`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lang:PACK.id}),signal:_ac2.signal}).catch(()=>{})
+          clearTimeout(_tm2)
+        }
       }
     }catch(_){}
 
@@ -438,7 +451,7 @@ Casual framing — "next time you happen to be..." never "go do this". Return JS
       dialogue:dialogue||{},fluency_dials:dials,week_recap:weekRecap
     }).eq('user_id',UID).eq('date',today)
 
-    await brainLog(sb,'nightly_brain',`Deep run complete for ${today}: workout assembled (${due.length} reviews + ${frontierPick.length} frontier), radio dialogue written (${dialogue?.lines?.length||0} lines), dials computed. Coach note is on the home screen.`,{date:today},3)
+    await brainLog(sb,'nightly_brain',`Deep run complete for ${today}: workout assembled (${due.length} reviews + ${frontierPick.length} frontier)${PACK.hasRadio?`, radio dialogue written (${dialogue?.lines?.length||0} lines)`:''}, dials computed. Coach note is on the home screen.`,{date:today},3)
 
     return{statusCode:200,body:JSON.stringify({ok:true,date:today,workout_items:due.length+frontierPick.length,dialogue_lines:dialogue?.lines?.length||0})}
   }catch(e){

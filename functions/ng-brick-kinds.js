@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-brick-kinds.js — backfills a `kind` onto each brick (stage) so bricks can snap.
 // Kinds power the Lego surfaces: what composes with what.
 //
@@ -9,7 +10,7 @@
 // touches scaffolds whose stages lack a kind.
 
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request in the handler
 const KINDS=['chunk','verb-form','connector','time-word','person-form','slot-phrase','vocab']
 const MODEL='claude-haiku-4-5-20251001' // classification is cheap work — Haiku tier
 
@@ -18,6 +19,8 @@ async function brainLog(sb,thought,data=null){
 }
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+  const PACK=LANG.packFromEvent(event)
   if(event.httpMethod!=='POST')return{statusCode:405}
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
@@ -42,7 +45,7 @@ exports.handler=async(event)=>{
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({
         model:MODEL,max_tokens:1500,
-        system:`You classify spoken Rio Portuguese phrases into Lego-brick kinds for a language-learning system. Kinds:
+        system:`You classify spoken ${PACK.label} ${PACK.language} phrases into Lego-brick kinds for a language-learning system. The examples below are Portuguese; apply the same reasoning to whatever language you are given. Kinds:
 - chunk: a frozen social phrase used whole (e.g. "e aí, de boa?", "valeu", "espero que esteja tudo bem")
 - verb-form: the phrase's learning target is a verb form/tense cell (e.g. "nós vai amanhã", "tava fazendo")
 - connector: target is a linking word in context (e.g. "fui lá, mas tava fechado" teaching "mas")

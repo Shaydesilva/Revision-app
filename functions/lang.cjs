@@ -89,7 +89,9 @@ const PACKS={
     lawGrade:PT_GRADE,
     lint:lintPT,
     ttsVoice:'echo',
-    ttsSpeed:1.05
+    ttsSpeed:1.05,
+    utcOffset:-3,      // Rio — decides when "today" rolls over for the nightly brain
+    hasRadio:true      // the daily radio dialogue is authored for this pack
   },
   'es-med':{
     id:'es-med',
@@ -103,7 +105,9 @@ const PACKS={
     lawGrade:ES_GRADE,
     lint:lintES,
     ttsVoice:'echo',
-    ttsSpeed:1.05
+    ttsSpeed:1.05,
+    utcOffset:-5,      // Medellín — two hours behind Rio; the day must roll over locally
+    hasRadio:false     // no paisa cast yet; the nightly brain skips radio for this pack
   }
 }
 

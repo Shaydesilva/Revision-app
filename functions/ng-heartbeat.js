@@ -1,3 +1,4 @@
+const LANG=require('./lang.cjs')
 // ng-heartbeat.js — The always-on watcher.
 // Cheap: mostly local logic, Haiku only for observation thoughts.
 // Dispatches expensive jobs (nightly brain, speculative radio, coach sweeps).
@@ -5,7 +6,8 @@
 // AND client ping on app open / every 5 min while app is foregrounded.
 
 const{createClient}=require('@supabase/supabase-js')
-const UID='00000000-0000-0000-0000-000000000001'
+let UID=LANG.uidFromEvent() // reassigned per request
+let PACK=LANG.getPack()
 
 async function brainLog(sb,process,thought,data=null,importance=1){
   try{await sb.from('ng_brain_log').insert({user_id:UID,process,thought,data,importance})}catch(_){}
@@ -24,12 +26,14 @@ async function haiku(prompt,maxTokens=200){
 }
 
 exports.handler=async(event)=>{
+  UID=LANG.uidFromEvent(event) // Rio or Paisa bank
+  PACK=LANG.packFromEvent(event)
   try{
     const sb=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_ANON_KEY)
     const siteUrl=process.env.URL||process.env.DEPLOY_URL||''
     const now=Date.now()
     const nowIso=new Date(now).toISOString()
-    const rioNow=new Date(now-3*3600000)
+    const rioNow=new Date(now+PACK.utcOffset*3600000) // local clock for THIS pack city
     const today=rioNow.toISOString().slice(0,10)
     const actions=[]
 
@@ -63,17 +67,24 @@ exports.handler=async(event)=>{
 
     // ── 1. Nightly brain missing? Dispatch. ──────────────────────────
     if(!daily?.workout&&rioNow.getUTCHours()>=4){
-      if(siteUrl){try{const _ac=new AbortController();const _tm=setTimeout(()=>_ac.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-nightly-brain`,{method:'POST',signal:_ac.signal}).catch(()=>{});clearTimeout(_tm)}catch(_){}}
-      // First Contact world — plants once, no-op forever after
-      if(siteUrl){try{const _acF=new AbortController();const _tmF=setTimeout(()=>_acF.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-seed-first-contact`,{method:'POST',body:'{}',signal:_acF.signal}).catch(()=>{});clearTimeout(_tmF)}catch(_){}}
-      // Early worlds (Me & You, Numbers & Money) — plant once, no-op forever
-      if(siteUrl){try{const _acW=new AbortController();const _tmW=setTimeout(()=>_acW.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-seed-worlds`,{method:'POST',body:'{}',signal:_acW.signal}).catch(()=>{});clearTimeout(_tmW)}catch(_){}}
-      // Survival breadth worlds — plant once, no-op forever
-      if(siteUrl){try{const _acS=new AbortController();const _tmS=setTimeout(()=>_acS.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-seed-survival`,{method:'POST',body:'{}',signal:_acS.signal}).catch(()=>{});clearTimeout(_tmS)}catch(_){}}
-      // Curriculum V2 reconciler — one-shot, no-op after applied
-      if(siteUrl){try{const _acV=new AbortController();const _tmV=setTimeout(()=>_acV.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-curriculum-v2`,{method:'POST',body:'{}',signal:_acV.signal}).catch(()=>{});clearTimeout(_tmV)}catch(_){}}
-      // Register sweep — heal pre-rewire 'a gente' bank bricks (no-op when clean)
-      if(siteUrl){try{const _acR=new AbortController();const _tmR=setTimeout(()=>_acR.abort(),1200);await fetch(`${siteUrl}/.netlify/functions/ng-register-sweep`,{method:'POST',body:'{}',signal:_acR.signal}).catch(()=>{});clearTimeout(_tmR)}catch(_){}}
+      // Housekeeping is PER PACK. Rio gets its seeders and reconcilers; Paisa
+      // gets its own bands. Every dispatch carries the lang, so each job writes
+      // to the bank it was called for and never the other one.
+      const JOBS=PACK.id==='es-med'
+        ?['ng-nightly-brain','es-seed-floor','es-seed-spine','es-seed-past']
+        :['ng-nightly-brain','ng-seed-first-contact','ng-seed-worlds','ng-seed-survival','ng-curriculum-v2','ng-register-sweep']
+      for(const job of JOBS){
+        if(!siteUrl)break
+        // Awaited-send: Lambda freezes on return, so each dispatch must leave the
+        // box before we move on. 1.2s is enough to hand off, not to wait for work.
+        try{
+          const ac=new AbortController();const tm=setTimeout(()=>ac.abort(),1200)
+          await fetch(`${siteUrl}/.netlify/functions/${job}`,{method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({lang:PACK.id}),signal:ac.signal}).catch(()=>{})
+          clearTimeout(tm)
+        }catch(_){}
+      }
       actions.push('dispatched_nightly_brain')
       await brainLog(sb,'heartbeat','Nightly brain hasn\'t run today — dispatching the deep analysis now.',null,2)
     }
