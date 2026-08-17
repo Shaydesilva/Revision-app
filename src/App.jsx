@@ -2565,6 +2565,19 @@ const takeGuidedPrefetch=()=>{
   GUIDED_PREFETCH=null
   return(p&&Date.now()-p.ts<180000)?p.data:null
 }
+// Paisa seeding. Every seeder is idempotent (find-or-create per world), so this
+// is safe to call repeatedly — and it must run on LOAD, not only on picking the
+// mode, or a new band of worlds would never reach someone who chose Paisa before
+// it shipped. Once per page load; sequential so a slow one can't stampede.
+let PAISA_PLANTED=false
+const plantPaisa=async()=>{
+  if(PAISA_PLANTED)return
+  PAISA_PLANTED=true
+  for(const s of['es-seed-floor','es-seed-spine','es-seed-past']){
+    try{await ngFetch(s,{})}catch(_){}
+  }
+}
+
 const ngFetch=async(fn,body={})=>{
   const r=await fetch(`/.netlify/functions/${fn}`,{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -5055,11 +5068,7 @@ function LangPicker({onPick,current}){
   const choose=async(m)=>{
     setBusy(m.id)
     setLang(m.id)
-    // Paisa plants floor then spine on first entry. Both idempotent — no-ops after.
-    if(m.id==='es-med'){
-      try{await ngFetch('es-seed-floor',{})}catch(_){}
-      try{await ngFetch('es-seed-spine',{})}catch(_){}
-    }
+    if(m.id==='es-med')await plantPaisa()
     onPick(m.id)
   }
   return<div style={{padding:'90px 24px 60px',maxWidth:480,margin:'0 auto',animation:'up 0.4s ease'}}>
@@ -5100,6 +5109,7 @@ export default function App(){
   useEffect(()=>{if(!lockNote)return;const t=setTimeout(()=>setLockNote(null),2600);return()=>clearTimeout(t)},[lockNote])
   useEffect(()=>{
     if(!isOnline||!lang){return}
+    if(lang==='es-med')plantPaisa() // idempotent: catches worlds shipped after you first chose Paisa
     ngFetch('ng-setup',{action:'status'}).then(r=>setSetupState(r?.state||'done')).catch(()=>setSetupState('done'))
   },[isOnline,lang])
 
